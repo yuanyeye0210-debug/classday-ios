@@ -1,0 +1,90 @@
+# 课间 / Classday
+
+Native SwiftUI iPhone app and WidgetKit extension for a local weekly timetable. Working title: 课间 / Classday. It is an independent design. It is not the official「超级课程表」app and does not aim for feature parity with it.
+
+There is no campus account, grade query, or school server. Courses live in a JSON file on the phone and, when signing is set up, in an App Group the widgets can read.
+
+## Open it on a Mac
+
+Requirements: Xcode 16 or newer, iOS 17 or newer. A free Apple ID is enough for a personal team on a simulator or your own iPhone. This repository was prepared on Linux, so the iOS compile and the simulator were **not** run here. Do not treat this tree as an installable IPA.
+
+```bash
+cd Classday
+open Classday.xcodeproj
+```
+
+The shared scheme is **Classday**. It builds the app and embeds `ClassdayWidget.appex`.
+
+Regenerate the project file after adding or removing Swift files:
+
+```bash
+python3 Tools/generate_xcodeproj.py
+```
+
+`project.yml` is an equivalent spec for [XcodeGen](https://github.com/yonaskolb/XcodeGen). The checked-in `Classday.xcodeproj` is what you open. If you regenerate with XcodeGen, do that instead of mixing the two outputs.
+
+## Signing
+
+See [Docs/SIGNING.md](Docs/SIGNING.md). Both targets need your team, and both need the App Group `group.com.classday.shared`. Until that group exists, the app keeps the timetable in Application Support and says so in 我的. Widgets cannot see that fallback.
+
+Bundle IDs in the project:
+
+- App: `com.classday.app`
+- Widget: `com.classday.app.widget`
+
+Change them together with the entitlements and `AppGroup.identifier` in `ClassdayCore` if your developer account needs different identifiers.
+
+## Run on iPhone
+
+1. Select your Team for **Classday** and **ClassdayWidget**.
+2. Let Xcode register the App Group, or create `group.com.classday.shared` in the developer portal and enable it on both App IDs.
+3. Choose an iPhone or simulator and Run.
+4. The first launch writes clearly marked demo courses (2026 秋季学期, week of 2–8 November 2026 is week 10). The timetable shows a 演示数据 badge. 我的 can restore that demo or clear every course.
+5. On the Home Screen, long-press, tap +, and search 课间. Add **下一节** (small) and **今日课程** (medium).
+
+Deep links use `classday://course/<uuid>?meeting=<uuid>`. Notification taps and widget taps open the course detail.
+
+## What V1 does
+
+- Create, edit, and delete courses: name, teacher, location, department, note, kind, color, weeks, one or more weekday/period meetings, reminder lead time.
+- Semester name, start date, week count, and the ten default period clocks. Overlap is detected by weekday, period span, and shared weeks.
+- Week grid and day list. Swipe or use the arrows to change week or day. 回本周 returns to today. Reduced Motion turns the spring animation off.
+- Tap a block to expand into course detail and shrink back. Sheets use a spring presentation and a light material blur.
+- Press feedback and haptics on pickup, save, and a rejected drop.
+- Long-press a week-grid block to drag it. A conflicting or out-of-range drop is cancelled. A successful drop can be undone for a few seconds. VoiceOver uses 调整时间 instead of the drag.
+- Current class progress and a next-class countdown.
+- Small next-class widget and medium today widget. They read the App Group file, follow the device timezone, show an empty state, and deep-link into the course. Edits reload timelines. The timeline itself moves at class boundaries so the app does not poll WidgetKit.
+- Local notification reminders, requested only when a reminder is turned on. Status is shown in 我的. At most 60 pending reminders.
+- JSON import and export, schema version 1. See [Docs/DATA_SCHEMA.md](Docs/DATA_SCHEMA.md).
+- Dynamic Type, VoiceOver labels, portrait iPhone layout, light and dark appearance.
+- Demo seed with reset and clear.
+
+The approved week grid and the detail mock disagree about 高等数学 on Wednesday (the grid places it in periods 3–4, the detail text says periods 1–2 on both days). The stored demo follows the grid and the Monday widget times. Detail copy lists each meeting with its own period and clock.
+
+## Tests without Xcode
+
+Logic that does not need SwiftUI lives in `ClassdayCore` and runs on Linux or Mac:
+
+```bash
+cd Classday/ClassdayCore
+swift test
+python3 ../Tools/check_project.py
+```
+
+Or `Tools/linux-check.sh`. Covered areas: week dates, overlap and drag validation, JSON persistence and import, next class and widget selection, notification plans, and version-backup rotation.
+
+Xcode build, simulator, and device runs were not executed in the environment that added this tree. There is no IPA here.
+
+## Version backups
+
+`VersionArchive/` is the only directory the backup tool may change. V1 does not contain a `previous/` snapshot. When a later update replaces this tree, run `Tools/rotate-backup.sh` first. It keeps the current tree plus one previous snapshot, deletes older version directories inside the archive, skips the archive when copying, and does not rewrite git history. Details: [Docs/VERSION_BACKUPS.md](Docs/VERSION_BACKUPS.md).
+
+## Limits
+
+- No school login, roster sync, grades, or attendance.
+- Portrait iPhone. iPad is not a separate target.
+- Chinese interface only.
+- Widgets need a signed App Group. WidgetKit may still delay a reload; the timeline covers the next 36 hours of class boundaries.
+- Reminders are local notifications, capped at 60.
+- Drag-and-drop rescheduling is on the week grid. The day list uses 调整时间.
+- Overlap is based on period numbers, not on clock times that a custom period table might make overlap.
