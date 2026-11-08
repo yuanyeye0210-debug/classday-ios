@@ -1,6 +1,38 @@
 import SwiftUI
 import ClassdayCore
 
+private struct GhostBlock: View {
+    var title: String
+    var caption: String
+    var fill: Color
+    var border: Color
+    var width: CGFloat
+    var height: CGFloat
+    var x: CGFloat
+    var y: CGFloat
+    var accessibilityText: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.system(size: 11, weight: .bold))
+                .lineLimit(2)
+            Text(caption)
+                .font(.system(size: 9, weight: .medium))
+        }
+        .padding(4)
+        .frame(width: width, height: height, alignment: .topLeading)
+        .background(fill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(border, lineWidth: 1.5)
+        }
+        .position(x: x, y: y)
+        .allowsHitTesting(false)
+        .accessibilityLabel(accessibilityText)
+    }
+}
+
 struct CourseBlockView: View {
     var occurrence: Occurrence
     var namespace: Namespace.ID
@@ -151,26 +183,7 @@ struct WeekTimetableView: View {
                 }
             }
             ForEach(items) { item in
-                let span = CGFloat(item.endPeriod - item.startPeriod + 1)
-                let height = rowHeight * span - 4
-                let hidden = model.drag?.meetingID == item.meetingID || model.presented?.meetingID == item.meetingID
-                CourseBlockView(
-                    occurrence: item,
-                    namespace: namespace,
-                    showsProgress: true,
-                    onOpen: { model.present(courseID: item.courseID, meetingID: item.meetingID) },
-                    onEdit: { model.editor = .edit(item.courseID) },
-                    onReschedule: { model.editor = .reschedule(courseID: item.courseID, meetingID: item.meetingID) }
-                )
-                .frame(width: columnWidth - 4, height: height)
-                .position(
-                    x: timeWidth + columnWidth * CGFloat(item.weekday - 1) + columnWidth / 2,
-                    y: rowHeight * CGFloat(item.startPeriod - 1) + (height + 4) / 2
-                )
-                .opacity(hidden ? 0 : 1)
-                .gesture(rescheduleGesture(for: item, timeWidth: timeWidth, columnWidth: columnWidth, periodCount: periods.count))
-                .accessibilitySortPriority(Double(1000 - (item.weekday * 20 + item.startPeriod)))
-                .accessibilityHidden(hidden)
+                placedBlock(item, timeWidth: timeWidth, columnWidth: columnWidth, periodCount: periods.count)
             }
             if let drag = model.drag {
                 ghost(drag: drag, columnWidth: columnWidth, timeWidth: timeWidth)
@@ -179,8 +192,35 @@ struct WeekTimetableView: View {
         .coordinateSpace(name: "week-grid")
     }
 
+    private func placedBlock(_ item: Occurrence, timeWidth: CGFloat, columnWidth: CGFloat, periodCount: Int) -> some View {
+        let span = CGFloat(item.endPeriod - item.startPeriod + 1)
+        let height = rowHeight * span - 4
+        let width = columnWidth - 4
+        let centerX = timeWidth + columnWidth * CGFloat(item.weekday - 1) + columnWidth / 2
+        let centerY = rowHeight * CGFloat(item.startPeriod - 1) + (height + 4) / 2
+        let hidden = model.drag?.meetingID == item.meetingID || model.presented?.meetingID == item.meetingID
+        let priority = Double(1000 - (item.weekday * 20 + item.startPeriod))
+        return CourseBlockView(
+            occurrence: item,
+            namespace: namespace,
+            showsProgress: true,
+            onOpen: { model.present(courseID: item.courseID, meetingID: item.meetingID) },
+            onEdit: { model.editor = .edit(item.courseID) },
+            onReschedule: { model.editor = .reschedule(courseID: item.courseID, meetingID: item.meetingID) }
+        )
+        .frame(width: width, height: height)
+        .position(x: centerX, y: centerY)
+        .opacity(hidden ? 0 : 1)
+        .gesture(rescheduleGesture(for: item, timeWidth: timeWidth, columnWidth: columnWidth, periodCount: periodCount))
+        .accessibilitySortPriority(priority)
+        .accessibilityHidden(hidden)
+    }
+
     private func ghost(drag: DragSession, columnWidth: CGFloat, timeWidth: CGFloat) -> some View {
-        let height = rowHeight * CGFloat(drag.duration) - 4
+        let blockHeight = rowHeight * CGFloat(drag.duration) - 4
+        let blockWidth = columnWidth - 4
+        let originX = timeWidth + columnWidth * CGFloat(drag.proposedWeekday - 1) + columnWidth / 2
+        let originY = rowHeight * CGFloat(max(0, drag.proposedStart - 1)) + (blockHeight + 4) / 2
         let validation = model.dragValidation()
         let conflict: Bool
         let caption: String
@@ -195,29 +235,21 @@ struct WeekTimetableView: View {
             conflict = !drag.fingerInside
             caption = drag.fingerInside ? "松开调整" : "松开取消"
         }
-        return VStack(alignment: .leading, spacing: 2) {
-            Text(model.course(drag.courseID)?.name ?? "课程")
-                .font(.system(size: 11, weight: .bold))
-                .lineLimit(2)
-            Text(caption)
-                .font(.system(size: 9, weight: .medium))
-        }
-        .padding(4)
-        .frame(width: columnWidth - 4, height: height, alignment: .topLeading)
-        .background(
-            (conflict ? Color.red.opacity(0.16) : Theme.hero),
-            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+        let fill = conflict ? Color.red.opacity(0.16) : Theme.hero
+        let border = conflict ? Color.red : Theme.accent
+        let title = model.course(drag.courseID)?.name ?? "课程"
+        let label = "正在调整时间，\(caption)"
+        return GhostBlock(
+            title: title,
+            caption: caption,
+            fill: fill,
+            border: border,
+            width: blockWidth,
+            height: blockHeight,
+            x: originX,
+            y: originY,
+            accessibilityText: label
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(conflict ? Color.red : Theme.accent, lineWidth: 1.5)
-        )
-        .position(
-            x: timeWidth + columnWidth * CGFloat(drag.proposedWeekday - 1) + columnWidth / 2,
-            y: rowHeight * CGFloat(max(0, drag.proposedStart - 1)) + (height + 4) / 2
-        )
-        .allowsHitTesting(false)
-        .accessibilityLabel("正在调整时间，\(caption)")
     }
 
     private func rescheduleGesture(
