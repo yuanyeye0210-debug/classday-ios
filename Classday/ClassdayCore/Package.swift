@@ -3,6 +3,10 @@ import PackageDescription
 
 let package = Package(
     name: "ClassdayCore",
+    platforms: [
+        .iOS(.v17),
+        .macOS(.v13),
+    ],
     products: [
         .library(name: "ClassdayCore", targets: ["ClassdayCore"]),
         .executable(name: "classday-backup", targets: ["ClassdayBackupTool"]),
