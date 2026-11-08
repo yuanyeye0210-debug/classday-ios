@@ -14,6 +14,30 @@ import hashlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def marketing_version() -> str:
+    line = (ROOT / "VERSION").read_text(encoding="utf-8").splitlines()[0].strip()
+    parts = line.split(".")
+    if len(parts) != 3 or not all(part.isdigit() and part != "" for part in parts):
+        raise SystemExit(f"Classday/VERSION must look like 1.2.3, got {line!r}")
+    return line
+
+
+def sync_project_yml(version: str) -> None:
+    import re
+
+    path = ROOT / "project.yml"
+    text = path.read_text(encoding="utf-8")
+    updated, count = re.subn(
+        r'(MARKETING_VERSION:\s*")[^"]+(")',
+        rf"\g<1>{version}\2",
+        text,
+        count=1,
+    )
+    if count != 1:
+        raise SystemExit("project.yml MARKETING_VERSION was not updated")
+    path.write_text(updated, encoding="utf-8")
 APP_SOURCES = sorted((ROOT / "ClassdayApp" / "Sources").glob("*.swift"))
 WIDGET_SOURCES = sorted((ROOT / "ClassdayWidget" / "Sources").glob("*.swift"))
 PROJECT = ROOT / "Classday.xcodeproj"
@@ -62,6 +86,8 @@ def file_ref(path: Path, kind: str) -> tuple[str, str]:
 def main() -> None:
     if not APP_SOURCES or not WIDGET_SOURCES:
         raise SystemExit("missing Swift sources")
+    version = marketing_version()
+    sync_project_yml(version)
 
     objects: list[str] = []
     app_build_files: list[str] = []
@@ -253,7 +279,7 @@ def main() -> None:
         "CURRENT_PROJECT_VERSION": "1",
         "DEVELOPMENT_TEAM": "",
         "IPHONEOS_DEPLOYMENT_TARGET": "17.0",
-        "MARKETING_VERSION": "1.0.0",
+        "MARKETING_VERSION": version,
         "SDKROOT": "iphoneos",
         "SKIP_INSTALL": "NO",
         "SWIFT_EMIT_LOC_STRINGS": "YES",

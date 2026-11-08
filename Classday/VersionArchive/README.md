@@ -1,15 +1,9 @@
 # VersionArchive
 
-This directory is the only tree the Classday version-backup tool may modify.
+This is the only directory version snapshots may modify or delete.
 
-V1 is the first version, so there is no `previous/` snapshot. Do not invent one.
+V1 is `1.0.0` and has no `previous/` snapshot. Do not invent one.
 
-When a later version replaces this tree, run `Tools/rotate-backup.sh` first. The tool:
+The version-update command is `Tools/bump-version.sh X.Y.Z`. It archives the last commit into `previous/` before it writes the new version, then removes older version directories here. Ordinary git commits are not archived.
 
-- copies the current `Classday/` tree into `VersionArchive/previous`, excluding this archive, `.git`, build products, and symlinks
-- deletes other directories inside `VersionArchive` (older version folders)
-- leaves `previous/`, this README, the marker file, and other ordinary files in place
-- refuses to run if the directory is not named `VersionArchive` or the marker file is missing or wrong
-- never rewrites git history and never deletes paths outside this directory
-
-The marker file `.classday-backup-root` must contain exactly `classday-version-archive-v1` followed by a single newline.
+The marker file `.classday-backup-root` must contain exactly `classday-version-archive-v1` followed by a newline. A snapshot also contains `VERSION` and `.classday-snapshot-version` for the replaced version. This folder must not contain another `VersionArchive`.

@@ -49,11 +49,24 @@ def main() -> int:
     check("ClassdayCore" in pbx, "local package missing")
     check("PBXCopyFilesBuildPhase" in pbx and "dstSubfolderSpec = 13" in pbx, "widget is not embedded")
 
+    version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+    check(f'MARKETING_VERSION: "{version}"' in (ROOT / "project.yml").read_text(encoding="utf-8"), "project.yml version drifted from VERSION")
+    check(f"MARKETING_VERSION = {version};" in pbx, "pbxproj version drifted from VERSION")
+    check((ROOT / "Tools" / "bump-version.sh").is_file(), "bump-version.sh missing")
+
     archive = ROOT / "VersionArchive"
     marker = (archive / ".classday-backup-root").read_text(encoding="utf-8")
-    check(marker == "classday-version-archive-v1\n", "backup marker is not the V1 sentinel")
-    check(not (archive / "previous").exists(), "V1 must not contain a fabricated previous snapshot")
-    check(not any(child.is_dir() and child.name not in {".git"} for child in archive.iterdir()), "VersionArchive contains a directory")
+    check(marker == "classday-version-archive-v1\n", "backup marker is wrong")
+    directory_names = sorted(child.name for child in archive.iterdir() if child.is_dir() and not child.is_symlink())
+    check(directory_names in ([], ["previous"]), f"VersionArchive directories must be only previous, found {directory_names}")
+    previous = archive / "previous"
+    if previous.exists():
+        stamp = (previous / ".classday-snapshot-version").read_text(encoding="utf-8").strip()
+        captured = (previous / "VERSION").read_text(encoding="utf-8").strip()
+        check(stamp == captured and stamp != version, "previous snapshot must be the replaced version, not the current one")
+        check(not (previous / "VersionArchive").exists(), "previous snapshot contains a nested archive")
+    else:
+        check(version == "1.0.0", "VERSION changed without a previous snapshot; use Tools/bump-version.sh")
 
     joined = "\n".join(path.read_text(encoding="utf-8") for path in app_sources + widget_sources)
     for banned in ("校园登录", "成绩查询", "密码登录"):

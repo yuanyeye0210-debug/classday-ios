@@ -113,16 +113,24 @@ final class BackupRotationTests: XCTestCase {
     }
 
     func testRepositoryArchiveHasNoFabricatedPreviousVersion() throws {
-        let archive = TestSupport.repositoryClassdayRoot().appendingPathComponent("VersionArchive")
+        let classday = TestSupport.repositoryClassdayRoot()
+        let archive = classday.appendingPathComponent("VersionArchive")
         let marker = archive.appendingPathComponent(BackupRotator.markerFileName)
         XCTAssertEqual(try String(contentsOf: marker, encoding: .utf8), BackupRotator.markerContents)
-        let children = try FileManager.default.contentsOfDirectory(at: archive, includingPropertiesForKeys: nil)
-        XCTAssertFalse(children.contains { $0.lastPathComponent == "previous" })
-        XCTAssertFalse(children.contains { $0.lastPathComponent == "older" || $0.lastPathComponent == "v1" })
         let before = try FileManager.default.contentsOfDirectory(at: archive, includingPropertiesForKeys: nil).map(\.lastPathComponent).sorted()
-        _ = try BackupRotator.inspect(source: TestSupport.repositoryClassdayRoot(), archive: archive)
+        _ = try BackupRotator.inspect(source: classday, archive: archive)
         let after = try FileManager.default.contentsOfDirectory(at: archive, includingPropertiesForKeys: nil).map(\.lastPathComponent).sorted()
         XCTAssertEqual(before, after)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: archive.appendingPathComponent("previous").path))
+        let previous = archive.appendingPathComponent("previous")
+        if FileManager.default.fileExists(atPath: previous.path) {
+            let stamp = try String(contentsOf: previous.appendingPathComponent(VersionBump.stampFileName), encoding: .utf8)
+            let captured = try String(contentsOf: previous.appendingPathComponent(VersionBump.versionFileName), encoding: .utf8)
+            XCTAssertEqual(stamp, captured)
+            XCTAssertNotEqual(stamp.trimmingCharacters(in: .whitespacesAndNewlines), VersionBump.readVersion(in: classday))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: previous.appendingPathComponent("VersionArchive").path))
+        } else {
+            XCTAssertEqual(VersionBump.readVersion(in: classday), "1.0.0")
+            XCTAssertFalse(before.contains("previous"))
+        }
     }
 }

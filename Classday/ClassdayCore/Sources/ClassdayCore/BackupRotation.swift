@@ -51,8 +51,8 @@ public enum BackupRotationError: Error, Equatable, CustomStringConvertible {
     }
 }
 
-/// Copies the current app tree into `VersionArchive/previous` and deletes older version directories
-/// inside that archive only. Initial V1 does not create a previous snapshot.
+/// Copies the given source tree into `VersionArchive/previous` and deletes older version directories
+/// inside that archive only. Version bumps must pass the last committed tree via `VersionBump`, not a working tree that already has the new version.
 public enum BackupRotator {
     public static let managedDirectoryName = "VersionArchive"
     public static let markerFileName = ".classday-backup-root"

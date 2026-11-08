@@ -71,13 +71,19 @@ swift test
 python3 ../Tools/check_project.py
 ```
 
-Or `Tools/linux-check.sh`. Covered areas: week dates, overlap and drag validation, JSON persistence and import, next class and widget selection, notification plans, and version-backup rotation.
+Or `Tools/linux-check.sh`. Covered areas: week dates, overlap and drag validation, JSON persistence and import, next class and widget selection, notification plans, version-bump snapshots, and the check that a skipped snapshot fails.
 
 Xcode build, simulator, and device runs were not executed in the environment that added this tree. There is no IPA here.
 
 ## Version backups
 
-`VersionArchive/` is the only directory the backup tool may change. V1 does not contain a `previous/` snapshot. When a later update replaces this tree, run `Tools/rotate-backup.sh` first. It keeps the current tree plus one previous snapshot, deletes older version directories inside the archive, skips the archive when copying, and does not rewrite git history. Details: [Docs/VERSION_BACKUPS.md](Docs/VERSION_BACKUPS.md).
+The version number lives in `Classday/VERSION`. Change it with one command:
+
+```bash
+Classday/Tools/bump-version.sh 1.1.0
+```
+
+The command archives the last commit into `VersionArchive/previous`, then writes the new version. It keeps that immediate previous snapshot and deletes older directories inside `VersionArchive` only. A normal commit does not take a snapshot. V1 is `1.0.0` and has no `previous/` folder. Details: [Docs/VERSION_BACKUPS.md](Docs/VERSION_BACKUPS.md). Pull requests run `.github/workflows/classday-version-snapshot.yml`, which fails if a version change did not archive the committed version it replaced.
 
 ## Limits
 

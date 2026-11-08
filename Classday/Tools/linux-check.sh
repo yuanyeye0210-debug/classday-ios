@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOG_DIR="${1:-$ROOT/Docs}"
 mkdir -p "$LOG_DIR"
 python3 "$ROOT/Tools/check_project.py" | tee "$LOG_DIR/project-check.log"
+python3 "$ROOT/Tools/check_version_snapshot.py" --self-test | tee "$LOG_DIR/version-snapshot-check.log"
 (
   cd "$ROOT/ClassdayCore"
   swift test --jobs 4
