@@ -103,31 +103,40 @@ final class AppModel {
         let resolved = (try? StoreLocator.resolve(groupURL: groupURL, fallbackURL: fallback)) ?? fallback
         storeURL = resolved
         appGroupAvailable = groupURL != nil
+        undoTask = nil
 
         let fileManager = FileManager.default
+        let loaded: StoreDocument
+        var initialError: String?
+        var shouldSaveFreshCopy = false
         if fileManager.fileExists(atPath: resolved.path) {
             do {
-                document = try StoreFile.load(from: resolved)
+                loaded = try StoreFile.load(from: resolved)
             } catch {
-                document = DemoData.makeDocument()
-                loadError = "课表文件无法读取，原文件还在，没有被覆盖。"
+                loaded = DemoData.makeDocument()
+                initialError = "课表文件无法读取，原文件还在，没有被覆盖。"
             }
         } else {
-            document = DemoData.makeDocument()
-            try? StoreFile.save(document, to: resolved)
-            WidgetReloader.reload()
+            loaded = DemoData.makeDocument()
+            shouldSaveFreshCopy = true
         }
+        document = loaded
+        loadError = initialError
 
         let now = Date()
-        if let week = SemesterCalendar.weekIndex(for: now, semester: document.semester, calendar: calendar) {
+        if let week = SemesterCalendar.weekIndex(for: now, semester: loaded.semester, calendar: calendar) {
             weekIndex = week
         } else {
             weekIndex = 1
-            if loadError == nil {
+            if initialError == nil {
                 banner = "今天不在学期范围内"
             }
         }
         selectedDay = calendar.startOfDay(for: now)
+        if shouldSaveFreshCopy {
+            try? StoreFile.save(loaded, to: resolved)
+            WidgetReloader.reload()
+        }
         Task { [weak self] in
             await self?.refreshNotificationStatus()
             await self?.refreshReminders()
