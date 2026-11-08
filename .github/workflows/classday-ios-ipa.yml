@@ -1,0 +1,99 @@
+name: classday-ios-ipa
+
+# Push trigger: a workflow that exists only on this branch is not eligible for
+# workflow_dispatch until it is on the default branch. Push to the branch runs it.
+on:
+  push:
+    branches:
+      - cursor/classday-v1-ea6a
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  unsigned-iphoneos-ipa:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode version
+        run: |
+          sw_vers
+          xcodebuild -version
+          xcodebuild -showsdks
+
+      - name: Package tests
+        run: |
+          cd Classday/ClassdayCore
+          swift test
+
+      - name: Build unsigned iphoneos app and widget
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project Classday/Classday.xcodeproj \
+            -scheme Classday \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO \
+            ONLY_ACTIVE_ARCH=NO \
+            ARCHS=arm64 \
+            build | tee "$RUNNER_TEMP/xcodebuild-iphoneos.log"
+
+      - name: Package unsigned IPA
+        run: |
+          set -euo pipefail
+          APP="$(find "$RUNNER_TEMP/DerivedData/Build/Products" -type d -name 'Classday.app' -path '*iphoneos*' | head -n 1)"
+          test -n "$APP"
+          test -d "$APP/PlugIns/ClassdayWidget.appex"
+          mkdir -p dist/Payload
+          cp -R "$APP" dist/Payload/Classday.app
+          (cd dist && zip -r -y Classday-v1.ipa Payload)
+          bash Classday/Tools/verify-device-ipa.sh dist/Classday-v1.ipa | tee dist/verify.txt
+          shasum -a 256 dist/Classday-v1.ipa | tee dist/SHA256SUMS
+          cp "$RUNNER_TEMP/xcodebuild-iphoneos.log" dist/xcodebuild-iphoneos.log
+
+      - name: Simulator compile smoke
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project Classday/Classday.xcodeproj \
+            -scheme Classday \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedDataSim" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build | tee dist/xcodebuild-simulator.log
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Classday-v1-ipa
+          path: |
+            dist/Classday-v1.ipa
+            dist/verify.txt
+            dist/SHA256SUMS
+            dist/xcodebuild-iphoneos.log
+            dist/xcodebuild-simulator.log
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: classday-iphoneos-build-log
+          path: |
+            ${{ runner.temp }}/xcodebuild-iphoneos.log
+          if-no-files-found: ignore
