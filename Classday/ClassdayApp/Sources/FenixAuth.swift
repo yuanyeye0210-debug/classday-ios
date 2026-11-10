@@ -99,12 +99,12 @@ private enum WebLogin {
                     continuation.resume(throwing: error ?? URLError(.cancelled))
                 }
             }
+            Anchor.shared.session = session
             session.presentationContextProvider = Anchor.shared
             session.prefersEphemeralWebBrowserSession = false
             if !session.start() {
                 continuation.resume(throwing: URLError(.cannotOpenFile))
             }
-            Anchor.shared.session = session
         }
     }
 }
