@@ -180,6 +180,8 @@ struct CourseGlyphTile: View {
 struct TodayView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var scheme
+    @State private var showNewEvent = false
+    @State private var eventToEdit: PersonalEvent?
 
     var body: some View {
         @Bindable var model = model
@@ -189,6 +191,12 @@ struct TodayView: View {
         .toolbar(model.presented == nil ? .visible : .hidden, for: .tabBar)
         .sheet(isPresented: $model.showExams) {
             ExamsView()
+        }
+        .sheet(isPresented: $showNewEvent) {
+            EventEditorView(existing: nil)
+        }
+        .sheet(item: $eventToEdit) { event in
+            EventEditorView(existing: event)
         }
     }
 
@@ -218,13 +226,14 @@ struct TodayView: View {
                     examCountdownCard(exam: exam, start: start, now: now)
                         .padding(.top, 12)
                 }
-                if !todays.isEmpty {
-                    Text("今天的课")
+                let eventsToday = model.events(on: now)
+                if !todays.isEmpty || !eventsToday.isEmpty {
+                    Text(eventsToday.isEmpty ? "今天的课" : "今天的安排")
                         .font(.system(size: 15, weight: .bold, design: .rounded))
                         .foregroundStyle(Theme.ink)
                         .padding(.top, 22)
                         .padding(.bottom, 10)
-                    timeline(items: todays, now: now)
+                    mergedTimeline(courses: todays, events: eventsToday, now: now)
                 }
                 let pending = pendingHomework()
                 if !pending.isEmpty {
@@ -269,6 +278,7 @@ struct TodayView: View {
             Spacer()
             Menu {
                 Button("新建课程", systemImage: "plus") { model.beginNewCourse() }
+                Button("新建日程", systemImage: "calendar.badge.plus") { showNewEvent = true }
                 Button("导入 JSON", systemImage: "square.and.arrow.down") { model.showImporter = true }
             } label: {
                 Image(systemName: "plus")
@@ -369,6 +379,88 @@ struct TodayView: View {
                 timelineRow(occ: occ, now: now)
             }
         }
+    }
+
+    private func mergedTimeline(courses: [Occurrence], events: [PersonalEvent], now: Date) -> some View {
+        let cal = model.calendar
+        var entries: [(start: Date, course: Occurrence?, event: PersonalEvent?)] = []
+        entries += courses.map { ($0.start, $0, nil) }
+        entries += events.compactMap { event in
+            CivilStamp.date(from: event.startISO, calendar: cal).map { ($0, nil, event) }
+        }
+        entries.sort { $0.start < $1.start }
+        return VStack(spacing: 8) {
+            ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
+                if let course = entry.course {
+                    timelineRow(occ: course, now: now)
+                } else if let event = entry.event {
+                    eventRow(event, now: now)
+                }
+            }
+        }
+    }
+
+    private func eventRow(_ event: PersonalEvent, now: Date) -> some View {
+        let cal = model.calendar
+        let start = CivilStamp.date(from: event.startISO, calendar: cal) ?? now
+        let end = CivilStamp.date(from: event.endISO, calendar: cal) ?? start
+        let past = end <= now
+        let bar = Theme.courseBackground("purple", scheme: scheme)
+        let ink = Theme.courseInk("purple", scheme: scheme)
+        return Button {
+            eventToEdit = event
+        } label: {
+            HStack(spacing: 12) {
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(ScheduleCopy.hhmm(start, calendar: cal))
+                        .font(.system(size: 13.5, weight: .bold, design: .rounded))
+                        .foregroundStyle(past ? Theme.secondary : Theme.ink)
+                    Text(ScheduleCopy.hhmm(end, calendar: cal))
+                        .font(.system(size: 11, design: .rounded))
+                        .foregroundStyle(Theme.secondary)
+                }
+                .frame(width: 46)
+                Capsule()
+                    .fill(past ? Theme.line : bar)
+                    .frame(width: 5)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 7) {
+                        Text(event.title)
+                            .font(.system(size: 15.5, weight: .bold, design: .rounded))
+                            .foregroundStyle(past ? Theme.secondary : Theme.ink)
+                            .lineLimit(1)
+                        Text("日程")
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundStyle(ink)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2.5)
+                            .background(Capsule(style: .continuous).fill(bar))
+                    }
+                    Text(event.note.isEmpty ? "个人日程" : event.note)
+                        .font(.system(size: 12, design: .rounded))
+                        .foregroundStyle(Theme.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                if past {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(Theme.secondary.opacity(0.6))
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Theme.elevated)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(ink.opacity(0.4), style: StrokeStyle(lineWidth: 1.2, dash: [5, 4]))
+            )
+        }
+        .buttonStyle(JournalPressStyle())
+        .accessibilityLabel("日程 \(event.title)，\(ScheduleCopy.hhmm(start, calendar: cal))")
     }
 
     private func timelineRow(occ: Occurrence, now: Date) -> some View {
@@ -969,5 +1061,84 @@ struct ExamEditorView: View {
                 }
             }
         }
+    }
+}
+
+struct EventEditorView: View {
+    var existing: PersonalEvent?
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    @State private var title: String
+    @State private var note: String
+    @State private var day: Date
+    @State private var startTime: Date
+    @State private var endTime: Date
+
+    init(existing: PersonalEvent?) {
+        self.existing = existing
+        let cal = Calendar.current
+        let start = existing.flatMap { CivilStamp.date(from: $0.startISO) }
+            ?? cal.date(bySettingHour: 19, minute: 0, second: 0, of: Date())
+            ?? Date()
+        let end = existing.flatMap { CivilStamp.date(from: $0.endISO) }
+            ?? start.addingTimeInterval(3600)
+        _title = State(initialValue: existing?.title ?? "")
+        _note = State(initialValue: existing?.note ?? "")
+        _day = State(initialValue: start)
+        _startTime = State(initialValue: start)
+        _endTime = State(initialValue: end)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("日程") {
+                    TextField("标题，如 健身", text: $title)
+                    TextField("备注（可选）", text: $note)
+                }
+                Section("时间") {
+                    DatePicker("日期", selection: $day, displayedComponents: .date)
+                    DatePicker("开始", selection: $startTime, displayedComponents: .hourAndMinute)
+                    DatePicker("结束", selection: $endTime, displayedComponents: .hourAndMinute)
+                }
+                if let existing {
+                    Section {
+                        Button("删除这条日程", role: .destructive) {
+                            model.deleteEvent(existing.id)
+                            dismiss()
+                        }
+                    }
+                }
+            }
+            .navigationTitle(existing == nil ? "新建日程" : "编辑日程")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("保存") { save() }
+                        .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+    }
+
+    private func save() {
+        let cal = model.calendar
+        func compose(_ time: Date) -> Date {
+            let t = cal.dateComponents([.hour, .minute], from: time)
+            return cal.date(bySettingHour: t.hour ?? 0, minute: t.minute ?? 0, second: 0, of: day) ?? day
+        }
+        let start = compose(startTime)
+        let end = max(compose(endTime), start.addingTimeInterval(900))
+        let cleanTitle = title.trimmingCharacters(in: .whitespaces)
+        let cleanNote = note.trimmingCharacters(in: .whitespaces)
+        if let existing {
+            model.updateEvent(existing.id, title: cleanTitle, note: cleanNote, start: start, end: end)
+        } else {
+            model.addEvent(title: cleanTitle, note: cleanNote, start: start, end: end)
+        }
+        dismiss()
     }
 }

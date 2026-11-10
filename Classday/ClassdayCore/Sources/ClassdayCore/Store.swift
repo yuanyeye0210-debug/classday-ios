@@ -92,6 +92,7 @@ public enum StoreCodec {
             overrides: document.overrides,
             exams: document.exams,
             homework: document.homework,
+            personalEvents: document.personalEvents,
             rooms: document.rooms,
             library: document.library,
             activeTimetableID: document.activeTimetableID,
@@ -191,7 +192,7 @@ public enum StoreCodec {
             }
         }
 
-        for conflict in ScheduleEngine.conflicts(among: document.courses, context: document.scheduleContext) {
+        for conflict in ScheduleEngine.conflicts(among: document.courses) {
             warnings.append(ScheduleCopy.conflictMessage(conflict))
         }
         return StoreValidationReport(errors: errors, warnings: warnings)

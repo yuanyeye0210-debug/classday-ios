@@ -25,6 +25,8 @@ public enum DemoData {
         public static let examProgramming = UUID(uuidString: "30000000-0000-0000-0000-000000000004")!
         public static let homeworkCalculus = UUID(uuidString: "40000000-0000-0000-0000-000000000001")!
         public static let homeworkProgramming = UUID(uuidString: "40000000-0000-0000-0000-000000000002")!
+        public static let eventGym = UUID(uuidString: "60000000-0000-0000-0000-000000000001")!
+        public static let eventLab = UUID(uuidString: "60000000-0000-0000-0000-000000000002")!
     }
 
     public static func makeDocument() -> StoreDocument {
@@ -42,6 +44,10 @@ public enum DemoData {
             homework: [
                 HomeworkTask(id: ID.homeworkCalculus, courseName: "高等数学", title: "第三章习题", dueISO: "2026-11-11T23:59"),
                 HomeworkTask(id: ID.homeworkProgramming, courseName: "程序设计", title: "实验报告", dueISO: "2026-11-13T23:59")
+            ],
+            personalEvents: [
+                PersonalEvent(id: ID.eventGym, title: "健身", note: "VivaGym · 练背 + 有氧", startISO: "2026-11-10T18:30", endISO: "2026-11-10T20:00"),
+                PersonalEvent(id: ID.eventLab, title: "实验室组会", note: "Lab 2 小组 · 讨论报告", startISO: "2026-11-10T20:30", endISO: "2026-11-10T21:30")
             ]
         )
     }

@@ -295,6 +295,22 @@
     }
   ],
   "origin": "demo",
+  "personalEvents": [
+    {
+      "endISO": "2026-11-10T20:00",
+      "id": "60000000-0000-0000-0000-000000000001",
+      "note": "VivaGym · 练背 + 有氧",
+      "startISO": "2026-11-10T18:30",
+      "title": "健身"
+    },
+    {
+      "endISO": "2026-11-10T21:30",
+      "id": "60000000-0000-0000-0000-000000000002",
+      "note": "Lab 2 小组 · 讨论报告",
+      "startISO": "2026-11-10T20:30",
+      "title": "实验室组会"
+    }
+  ],
   "schemaVersion": 1,
   "semester": {
     "defaultReminderMinutes": 10,

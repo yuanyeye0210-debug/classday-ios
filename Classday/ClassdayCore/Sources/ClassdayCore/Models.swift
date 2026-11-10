@@ -189,6 +189,22 @@ public struct Course: Codable, Equatable, Hashable, Identifiable, Sendable {
     }
 }
 
+public struct PersonalEvent: Codable, Equatable, Hashable, Sendable, Identifiable {
+    public var id: UUID
+    public var title: String
+    public var note: String
+    public var startISO: String
+    public var endISO: String
+
+    public init(id: UUID = UUID(), title: String, note: String = "", startISO: String, endISO: String) {
+        self.id = id
+        self.title = title
+        self.note = note
+        self.startISO = startISO
+        self.endISO = endISO
+    }
+}
+
 public struct Semester: Codable, Equatable, Hashable, Sendable {
     public var name: String
     public var shortName: String
@@ -225,6 +241,7 @@ public struct StoreDocument: Codable, Equatable, Hashable, Sendable {
     public var overrides: [OccurrenceOverride]
     public var exams: [ExamEvent]
     public var homework: [HomeworkTask]
+    public var personalEvents: [PersonalEvent]
     public var rooms: [RoomPin]
     public var library: [StoredTimetable]
     public var activeTimetableID: UUID
@@ -240,6 +257,7 @@ public struct StoreDocument: Codable, Equatable, Hashable, Sendable {
         overrides: [OccurrenceOverride] = [],
         exams: [ExamEvent] = [],
         homework: [HomeworkTask] = [],
+        personalEvents: [PersonalEvent] = [],
         rooms: [RoomPin] = [],
         library: [StoredTimetable] = [],
         activeTimetableID: UUID = TimetableLibrary.implicitID,
@@ -254,6 +272,7 @@ public struct StoreDocument: Codable, Equatable, Hashable, Sendable {
         self.overrides = overrides
         self.exams = exams
         self.homework = homework
+        self.personalEvents = personalEvents
         self.rooms = rooms
         self.library = library
         self.activeTimetableID = activeTimetableID
@@ -266,7 +285,7 @@ public struct StoreDocument: Codable, Equatable, Hashable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case schemaVersion, origin, semester, courses, weekRules, overrides, exams, homework, rooms, library
+        case schemaVersion, origin, semester, courses, weekRules, overrides, exams, homework, personalEvents, rooms, library
         case activeTimetableID, appearance, subscribedICSURL
     }
 
@@ -280,6 +299,7 @@ public struct StoreDocument: Codable, Equatable, Hashable, Sendable {
         overrides = try container.decodeIfPresent([OccurrenceOverride].self, forKey: .overrides) ?? []
         exams = try container.decodeIfPresent([ExamEvent].self, forKey: .exams) ?? []
         homework = try container.decodeIfPresent([HomeworkTask].self, forKey: .homework) ?? []
+        personalEvents = try container.decodeIfPresent([PersonalEvent].self, forKey: .personalEvents) ?? []
         rooms = try container.decodeIfPresent([RoomPin].self, forKey: .rooms) ?? []
         library = try container.decodeIfPresent([StoredTimetable].self, forKey: .library) ?? []
         activeTimetableID = try container.decodeIfPresent(UUID.self, forKey: .activeTimetableID) ?? TimetableLibrary.implicitID

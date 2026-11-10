@@ -408,6 +408,7 @@ struct WeekJournalView: View {
         let date = weekday - 1 < dates.count ? dates[weekday - 1] : Date()
         let isToday = model.calendar.isDateInToday(date)
         let items = model.occurrences().filter { $0.weekday == weekday }.sorted { $0.start < $1.start }
+        let events = model.events(on: date)
         return HStack(alignment: .top, spacing: 14) {
             VStack(spacing: 2) {
                 Text("\(model.calendar.component(.day, from: date))")
@@ -427,7 +428,7 @@ struct WeekJournalView: View {
             }
             .frame(width: 42)
             VStack(alignment: .leading, spacing: 8) {
-                if items.isEmpty {
+                if items.isEmpty && events.isEmpty {
                     Text("无课")
                         .font(.system(size: 13.5, design: .rounded))
                         .foregroundStyle(Theme.secondary.opacity(0.7))
@@ -435,6 +436,9 @@ struct WeekJournalView: View {
                 } else {
                     ForEach(items, id: \.id) { occ in
                         miniRow(occ: occ)
+                    }
+                    ForEach(events, id: \.id) { event in
+                        miniEventRow(event)
                     }
                 }
             }
@@ -479,6 +483,48 @@ struct WeekJournalView: View {
             .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(bg.opacity(scheme == .dark ? 0.25 : 0.35)))
         }
         .buttonStyle(JournalPressStyle())
+    }
+
+    private func miniEventRow(_ event: PersonalEvent) -> some View {
+        let cal = model.calendar
+        let start = CivilStamp.date(from: event.startISO, calendar: cal)
+        let end = CivilStamp.date(from: event.endISO, calendar: cal)
+        let bar = Theme.courseBackground("purple", scheme: scheme)
+        let ink = Theme.courseInk("purple", scheme: scheme)
+        return HStack(spacing: 10) {
+            Capsule()
+                .fill(bar)
+                .frame(width: 5, height: 34)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 7) {
+                    Text(event.title)
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .foregroundStyle(Theme.ink)
+                        .lineLimit(1)
+                    Text("日程")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .foregroundStyle(ink)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2.5)
+                        .background(Capsule(style: .continuous).fill(bar))
+                }
+                if let start, let end {
+                    Text("\(ScheduleCopy.hhmm(start, calendar: cal))–\(ScheduleCopy.hhmm(end, calendar: cal))\(event.note.isEmpty ? "" : " · \(event.note)")")
+                        .font(.system(size: 12, design: .rounded))
+                        .foregroundStyle(Theme.secondary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(bar.opacity(scheme == .dark ? 0.25 : 0.35)))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(ink.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+        )
+        .accessibilityElement(children: .combine)
     }
 
     private var summaryCard: some View {

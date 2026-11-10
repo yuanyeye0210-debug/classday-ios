@@ -627,6 +627,38 @@ final class AppModel {
         persist(markUserEdited: true)
     }
 
+    func addEvent(title: String, note: String, start: Date, end: Date) {
+        document.personalEvents.append(PersonalEvent(
+            title: title,
+            note: note,
+            startISO: CivilStamp.string(from: start, calendar: calendar),
+            endISO: CivilStamp.string(from: end, calendar: calendar)
+        ))
+        persist(markUserEdited: true)
+    }
+
+    func updateEvent(_ id: UUID, title: String, note: String, start: Date, end: Date) {
+        guard let index = document.personalEvents.firstIndex(where: { $0.id == id }) else { return }
+        document.personalEvents[index].title = title
+        document.personalEvents[index].note = note
+        document.personalEvents[index].startISO = CivilStamp.string(from: start, calendar: calendar)
+        document.personalEvents[index].endISO = CivilStamp.string(from: end, calendar: calendar)
+        persist(markUserEdited: true)
+    }
+
+    func deleteEvent(_ id: UUID) {
+        document.personalEvents.removeAll { $0.id == id }
+        persist(markUserEdited: true)
+    }
+
+    func events(on date: Date) -> [PersonalEvent] {
+        document.personalEvents
+            .compactMap { event in CivilStamp.date(from: event.startISO, calendar: calendar).map { (event, $0) } }
+            .filter { calendar.isDate($0.1, inSameDayAs: date) }
+            .sorted { $0.1 < $1.1 }
+            .map(\.0)
+    }
+
     private static func courseSignature(_ course: Course) -> String {
         let meetings = course.meetings
             .map { "\($0.weekday):\($0.startPeriod)-\($0.endPeriod)" }
