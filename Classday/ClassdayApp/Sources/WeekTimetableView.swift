@@ -49,7 +49,10 @@ struct CourseBlockView: View {
             let current = showsProgress && occurrence.start <= context.date && context.date < occurrence.end
             block(current: current, progress: current ? ScheduleCopy.progress(from: occurrence.start, to: occurrence.end, now: context.date) : nil)
         }
-        .matchedGeometryEffect(id: occurrence.meetingID.uuidString, in: namespace)
+        // No matchedGeometryEffect here: the detail hero lives inside a
+        // ScrollView, and geometry-matched destinations in scroll views can
+        // resolve to a collapsed frame (the hero rendered as a thin capsule).
+        // The detail uses its own scale/opacity transition instead.
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .onTapGesture(perform: onOpen)
         .accessibilityElement(children: .ignore)

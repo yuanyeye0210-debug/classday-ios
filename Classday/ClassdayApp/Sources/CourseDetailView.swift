@@ -110,7 +110,6 @@ struct CourseDetailView: View {
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.hero, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .matchedGeometryEffect(id: meeting.id.uuidString, in: namespace)
         .accessibilityElement(children: .combine)
     }
 
