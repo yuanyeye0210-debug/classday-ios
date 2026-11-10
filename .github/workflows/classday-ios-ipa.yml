@@ -116,6 +116,8 @@ jobs:
             dist/SHA256SUMS
             dist/xcodebuild-iphoneos.log
             dist/xcodebuild-simulator.log
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload theme screenshots
         if: always()
@@ -124,8 +126,6 @@ jobs:
           name: Classday-theme-screenshots
           path: dist/screenshots/*.png
           if-no-files-found: ignore
-          retention-days: 14
-          if-no-files-found: error
           retention-days: 14
 
       - name: Upload build log on failure
