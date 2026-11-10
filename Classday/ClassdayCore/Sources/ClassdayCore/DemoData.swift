@@ -26,7 +26,17 @@ public enum DemoData {
             schemaVersion: StoreDocument.currentSchema,
             origin: .demo,
             semester: makeSemester(),
-            courses: makeCourses()
+            courses: makeCourses(),
+            exams: [
+                ExamEvent(courseName: "高等数学", location: "教学楼 A · 301", startISO: "2026-12-22T09:00", endISO: "2026-12-22T11:00", note: "期末考试"),
+                ExamEvent(courseName: "大学物理", location: "教学楼 A · 206", startISO: "2026-12-24T14:00", endISO: "2026-12-24T16:00", note: "期末考试"),
+                ExamEvent(courseName: "大学英语", location: "教学楼 B · 205", startISO: "2026-12-29T10:10", endISO: "2026-12-29T12:10", note: "期末考试"),
+                ExamEvent(courseName: "程序设计", location: "机房 2", startISO: "2027-01-05T14:00", endISO: "2027-01-05T16:00", note: "期末考试")
+            ],
+            homework: [
+                HomeworkTask(courseName: "高等数学", title: "第三章习题", dueISO: "2026-11-11T23:59"),
+                HomeworkTask(courseName: "程序设计", title: "实验报告", dueISO: "2026-11-13T23:59")
+            ]
         )
     }
 

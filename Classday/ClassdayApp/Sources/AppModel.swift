@@ -98,6 +98,7 @@ final class AppModel {
     var lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
     var showThemeGallery = false
     var showStudyDesk = false
+    var showExams = false
 
     let calendar: Calendar
     private let storeURL: URL
@@ -608,6 +609,21 @@ final class AppModel {
     func toggleHomework(_ id: UUID) {
         guard let index = document.homework.firstIndex(where: { $0.id == id }) else { return }
         document.homework[index].done.toggle()
+        persist(markUserEdited: true)
+    }
+
+    func addExam(courseName: String, location: String, start: Date, end: Date) {
+        document.exams.append(ExamEvent(
+            courseName: courseName,
+            location: location,
+            startISO: CivilStamp.string(from: start, calendar: calendar),
+            endISO: CivilStamp.string(from: end, calendar: calendar)
+        ))
+        persist(markUserEdited: true)
+    }
+
+    func deleteExam(_ id: UUID) {
+        document.exams.removeAll { $0.id == id }
         persist(markUserEdited: true)
     }
 

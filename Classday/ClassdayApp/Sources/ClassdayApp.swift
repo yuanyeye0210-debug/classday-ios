@@ -78,6 +78,10 @@ private struct ChromeInstaller: ViewModifier {
         if arguments.contains("--courses") {
             model.tab = .courses
         }
+        if arguments.contains("--exams") {
+            model.tab = .today
+            model.showExams = true
+        }
         guard let index = arguments.firstIndex(of: "--theme"), index + 1 < arguments.count else { return }
         model.setAppearance(AppearanceChoice(themeID: arguments[index + 1], performance: .balanced))
     }

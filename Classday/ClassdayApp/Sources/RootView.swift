@@ -182,10 +182,14 @@ struct TodayView: View {
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
+        @Bindable var model = model
         TimelineView(.periodic(from: .now, by: 60)) { tick in
             content(now: tick.date)
         }
         .toolbar(model.presented == nil ? .visible : .hidden, for: .tabBar)
+        .sheet(isPresented: $model.showExams) {
+            ExamsView()
+        }
     }
 
     private func content(now: Date) -> some View {
@@ -210,6 +214,10 @@ struct TodayView: View {
                     allDoneCard(now: now)
                         .padding(.top, 18)
                 }
+                if let exam = nextExam(now: now), let start = examStart(exam) {
+                    examCountdownCard(exam: exam, start: start, now: now)
+                        .padding(.top, 12)
+                }
                 if !todays.isEmpty {
                     Text("今天的课")
                         .font(.system(size: 15, weight: .bold, design: .rounded))
@@ -217,6 +225,10 @@ struct TodayView: View {
                         .padding(.top, 22)
                         .padding(.bottom, 10)
                     timeline(items: todays, now: now)
+                }
+                let pending = pendingHomework()
+                if !pending.isEmpty {
+                    homeworkSection(pending, now: now)
                 }
                 if let loadError = model.loadError {
                     Text(loadError)
@@ -483,6 +495,157 @@ struct TodayView: View {
         .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(Theme.elevated))
         .accessibilityElement(children: .combine)
     }
+
+    private func examStart(_ exam: ExamEvent) -> Date? {
+        CivilStamp.date(from: exam.startISO, calendar: model.calendar)
+    }
+
+    private func nextExam(now: Date) -> ExamEvent? {
+        model.document.exams
+            .compactMap { exam in examStart(exam).map { (exam, $0) } }
+            .filter { $0.1 > now }
+            .sorted { $0.1 < $1.1 }
+            .first?.0
+    }
+
+    private func daysUntil(_ date: Date, now: Date) -> Int {
+        let cal = model.calendar
+        return cal.dateComponents([.day], from: cal.startOfDay(for: now), to: cal.startOfDay(for: date)).day ?? 0
+    }
+
+    private func examCountdownCard(exam: ExamEvent, start: Date, now: Date) -> some View {
+        let bg = Theme.courseBackground("orange", scheme: scheme)
+        let ink = Theme.courseInk("orange", scheme: scheme)
+        let days = daysUntil(start, now: now)
+        let cal = model.calendar
+        let subtitle = "\(cal.component(.month, from: start))月\(cal.component(.day, from: start))日 \(ScheduleCopy.weekdayName(SemesterCalendar.isoWeekday(start, calendar: cal))) \(ScheduleCopy.hhmm(start, calendar: cal)) · \(exam.location)"
+        return Button {
+            model.showExams = true
+        } label: {
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("考试倒计时")
+                        .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                        .foregroundStyle(ink)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 4)
+                        .background(Capsule(style: .continuous).fill(ink.opacity(0.16)))
+                    Text(exam.note.isEmpty ? exam.courseName : "\(exam.courseName) · \(exam.note)")
+                        .font(.system(size: 19, weight: .heavy, design: .rounded))
+                        .foregroundStyle(ink)
+                        .lineLimit(1)
+                        .padding(.top, 10)
+                    Text(subtitle)
+                        .font(.system(size: 12.5, weight: .medium, design: .rounded))
+                        .foregroundStyle(ink.opacity(0.75))
+                        .lineLimit(1)
+                        .padding(.top, 3)
+                }
+                Spacer(minLength: 0)
+                VStack(spacing: 1) {
+                    Text(days <= 0 ? "今天" : "\(days)")
+                        .font(.system(size: 34, weight: .heavy, design: .rounded))
+                        .foregroundStyle(ink)
+                    if days > 0 {
+                        Text("天后开考")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundStyle(ink.opacity(0.7))
+                    }
+                }
+            }
+            .padding(18)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                ZStack(alignment: .topTrailing) {
+                    LinearGradient(colors: [bg, bg.opacity(0.6)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    Circle()
+                        .fill(Color.white.opacity(scheme == .dark ? 0.05 : 0.35))
+                        .frame(width: 120, height: 120)
+                        .offset(x: 40, y: -55)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .shadow(color: bg.opacity(0.3), radius: 14, x: 0, y: 8)
+        }
+        .buttonStyle(JournalPressStyle())
+        .accessibilityLabel("考试倒计时，\(exam.courseName)，\(subtitle)")
+    }
+
+    private func pendingHomework() -> [HomeworkTask] {
+        model.document.homework
+            .filter { !$0.done }
+            .sorted { (CivilStamp.date(from: $0.dueISO, calendar: model.calendar) ?? .distantFuture) < (CivilStamp.date(from: $1.dueISO, calendar: model.calendar) ?? .distantFuture) }
+    }
+
+    private func homeworkSection(_ items: [HomeworkTask], now: Date) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("待办作业")
+                .font(.system(size: 15, weight: .bold, design: .rounded))
+                .foregroundStyle(Theme.ink)
+                .padding(.top, 22)
+                .padding(.bottom, 10)
+            VStack(spacing: 0) {
+                ForEach(Array(items.prefix(5).enumerated()), id: \.element.id) { index, task in
+                    if index > 0 {
+                        Divider().padding(.leading, 47)
+                    }
+                    homeworkRow(task, now: now)
+                }
+                if items.count > 5 {
+                    Text("还有 \(items.count - 5) 项未完成，在「我的 · 学习」里查看全部")
+                        .font(.system(size: 12, design: .rounded))
+                        .foregroundStyle(Theme.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 10)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 4)
+            .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Theme.elevated))
+        }
+    }
+
+    private func homeworkRow(_ task: HomeworkTask, now: Date) -> some View {
+        Button {
+            model.toggleHomework(task.id)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "circle")
+                    .font(.system(size: 21))
+                    .foregroundStyle(Theme.secondary.opacity(0.55))
+                Text(task.courseName.isEmpty ? task.title : "\(task.courseName) · \(task.title)")
+                    .font(.system(size: 14.5, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Theme.ink)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                dueChip(task, now: now)
+            }
+            .padding(.vertical, 11)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("作业 \(task.title)，点按标记完成")
+    }
+
+    private func dueChip(_ task: HomeworkTask, now: Date) -> some View {
+        let due = CivilStamp.date(from: task.dueISO, calendar: model.calendar)
+        let days = due.map { daysUntil($0, now: now) }
+        let (text, colorID): (String, String) = {
+            guard let due, let days else { return ("", "orange") }
+            if days < 0 { return ("已逾期", "pink") }
+            if days == 0 { return ("今天截止", "orange") }
+            if days == 1 { return ("明天截止", "orange") }
+            let cal = model.calendar
+            return ("\(cal.component(.month, from: due))月\(cal.component(.day, from: due))日截止", "gray")
+        }()
+        return Text(text)
+            .font(.system(size: 11.5, weight: .bold, design: .rounded))
+            .foregroundStyle(colorID == "gray" ? Theme.secondary : Theme.courseInk(colorID, scheme: scheme))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Capsule(style: .continuous).fill(colorID == "gray" ? Theme.segment : Theme.courseBackground(colorID, scheme: scheme)))
+    }
 }
 
 struct CoursesView: View {
@@ -574,5 +737,237 @@ struct CoursesView: View {
             }
         }
         return best
+    }
+}
+
+struct ExamsView: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var scheme
+    @State private var showAdd = false
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    if let next = upcoming.first, let start = start(of: next) {
+                        heroCard(exam: next, start: start)
+                    }
+                    if upcoming.isEmpty && past.isEmpty {
+                        Text("还没有考试。从 Fénix 或日历导入的考试会自动出现在这里，也可以点右上角 + 手动添加。")
+                            .font(.system(size: 14, design: .rounded))
+                            .foregroundStyle(Theme.secondary)
+                            .padding(.top, 24)
+                    }
+                    if !upcoming.isEmpty {
+                        Text("全部考试")
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .foregroundStyle(Theme.ink)
+                            .padding(.top, 22)
+                            .padding(.bottom, 10)
+                        VStack(spacing: 10) {
+                            ForEach(upcoming, id: \.id) { exam in
+                                examRow(exam)
+                            }
+                        }
+                    }
+                    if !past.isEmpty {
+                        Text("已结束")
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .foregroundStyle(Theme.secondary)
+                            .padding(.top, 22)
+                            .padding(.bottom, 10)
+                        VStack(spacing: 10) {
+                            ForEach(past, id: \.id) { exam in
+                                examRow(exam)
+                                    .opacity(0.55)
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+                .padding(.bottom, 28)
+            }
+            .scrollIndicators(.hidden)
+            .navigationTitle("考试")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("关闭") { dismiss() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showAdd = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .accessibilityLabel("添加考试")
+                }
+            }
+            .sheet(isPresented: $showAdd) {
+                ExamEditorView()
+            }
+        }
+    }
+
+    private func start(of exam: ExamEvent) -> Date? {
+        CivilStamp.date(from: exam.startISO, calendar: model.calendar)
+    }
+
+    private var upcoming: [ExamEvent] {
+        let now = Date()
+        return model.document.exams
+            .compactMap { exam in start(of: exam).map { (exam, $0) } }
+            .filter { $0.1 > now }
+            .sorted { $0.1 < $1.1 }
+            .map(\.0)
+    }
+
+    private var past: [ExamEvent] {
+        let now = Date()
+        return model.document.exams
+            .compactMap { exam in start(of: exam).map { (exam, $0) } }
+            .filter { $0.1 <= now }
+            .sorted { $0.1 > $1.1 }
+            .map(\.0)
+    }
+
+    private func daysUntil(_ date: Date) -> Int {
+        let cal = model.calendar
+        return cal.dateComponents([.day], from: cal.startOfDay(for: Date()), to: cal.startOfDay(for: date)).day ?? 0
+    }
+
+    private func colorID(for exam: ExamEvent) -> String {
+        model.document.courses.first { $0.name == exam.courseName }?.colorID ?? "orange"
+    }
+
+    private func subtitle(of exam: ExamEvent, start: Date) -> String {
+        let cal = model.calendar
+        return "\(cal.component(.month, from: start))月\(cal.component(.day, from: start))日 \(ScheduleCopy.hhmm(start, calendar: cal)) · \(exam.location)"
+    }
+
+    private func heroCard(exam: ExamEvent, start: Date) -> some View {
+        let bg = Theme.courseBackground("orange", scheme: scheme)
+        let ink = Theme.courseInk("orange", scheme: scheme)
+        let days = daysUntil(start)
+        return HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("最近一场")
+                    .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                    .foregroundStyle(ink)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 4)
+                    .background(Capsule(style: .continuous).fill(ink.opacity(0.16)))
+                Text(exam.note.isEmpty ? exam.courseName : "\(exam.courseName) · \(exam.note)")
+                    .font(.system(size: 19, weight: .heavy, design: .rounded))
+                    .foregroundStyle(ink)
+                    .lineLimit(1)
+                    .padding(.top, 10)
+                Text(subtitle(of: exam, start: start))
+                    .font(.system(size: 12.5, weight: .medium, design: .rounded))
+                    .foregroundStyle(ink.opacity(0.75))
+                    .lineLimit(1)
+                    .padding(.top, 3)
+            }
+            Spacer(minLength: 0)
+            VStack(spacing: 1) {
+                Text(days <= 0 ? "今天" : "\(days)")
+                    .font(.system(size: 34, weight: .heavy, design: .rounded))
+                    .foregroundStyle(ink)
+                if days > 0 {
+                    Text("天后开考")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundStyle(ink.opacity(0.7))
+                }
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            ZStack(alignment: .topTrailing) {
+                LinearGradient(colors: [bg, bg.opacity(0.6)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                Circle()
+                    .fill(Color.white.opacity(scheme == .dark ? 0.05 : 0.35))
+                    .frame(width: 120, height: 120)
+                    .offset(x: 40, y: -55)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .shadow(color: bg.opacity(0.3), radius: 14, x: 0, y: 8)
+    }
+
+    private func examRow(_ exam: ExamEvent) -> some View {
+        let start = start(of: exam)
+        let days = start.map { daysUntil($0) }
+        return HStack(spacing: 13) {
+            CourseGlyphTile(name: exam.courseName, colorID: colorID(for: exam), size: 48)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(exam.courseName)
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .foregroundStyle(Theme.ink)
+                    .lineLimit(1)
+                Text(start.map { subtitle(of: exam, start: $0) } ?? exam.startISO)
+                    .font(.system(size: 12.5, design: .rounded))
+                    .foregroundStyle(Theme.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            if let days {
+                Text(days <= 0 ? "已结束" : "还有 \(days) 天")
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(Theme.courseInk("orange", scheme: scheme))
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(Capsule(style: .continuous).fill(Theme.courseBackground("orange", scheme: scheme)))
+            }
+        }
+        .padding(13)
+        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Theme.elevated))
+        .contextMenu {
+            Button("删除这场考试", systemImage: "trash", role: .destructive) {
+                model.deleteExam(exam.id)
+            }
+        }
+    }
+}
+
+struct ExamEditorView: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    @State private var courseName = ""
+    @State private var location = ""
+    @State private var start = Date().addingTimeInterval(86_400)
+    @State private var end = Date().addingTimeInterval(86_400 + 7_200)
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                TextField("课程名，如 高等数学", text: $courseName)
+                TextField("地点，如 教学楼 A · 301", text: $location)
+                DatePicker("开始时间", selection: $start)
+                DatePicker("结束时间", selection: $end)
+            }
+            .navigationTitle("添加考试")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("保存") {
+                        model.addExam(
+                            courseName: courseName.trimmingCharacters(in: .whitespaces),
+                            location: location.trimmingCharacters(in: .whitespaces),
+                            start: start,
+                            end: max(end, start)
+                        )
+                        dismiss()
+                    }
+                    .disabled(courseName.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
     }
 }
