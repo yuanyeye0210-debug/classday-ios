@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>课间</string>
+	<string>课曜</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

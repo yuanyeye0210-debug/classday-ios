@@ -127,7 +127,7 @@ struct SettingsView: View {
                     if model.notificationStatusText == "已拒绝" {
                         Button("打开系统设置") { openSettings() }
                     }
-                    Text("开启某门课的提醒时才会向系统请求权限。允许后，课间会在本地安排最多 \(NotificationPlan.pendingLimit) 条即将上课的通知。")
+                    Text("开启某门课的提醒时才会向系统请求权限。允许后，课曜会在本地安排最多 \(NotificationPlan.pendingLimit) 条即将上课的通知。")
                         .font(.footnote)
                         .foregroundStyle(Theme.secondary)
                 }
@@ -146,7 +146,7 @@ struct SettingsView: View {
                         .foregroundStyle(Theme.secondary)
                 }
                 section("关于") {
-                    Text("课间 / Classday")
+                    Text("课曜 / Heptara")
                         .font(.system(size: 17, weight: .semibold))
                     Text("版本 \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0")")
                         .foregroundStyle(Theme.secondary)
@@ -174,7 +174,7 @@ struct SettingsView: View {
             isPresented: $exporting,
             document: exportDocument,
             contentType: .json,
-            defaultFilename: "课间课表.json"
+            defaultFilename: "课曜课表.json"
         ) { result in
             if case .failure = result { model.banner = "导出没有完成" }
         }

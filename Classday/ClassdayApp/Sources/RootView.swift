@@ -192,7 +192,7 @@ struct TimetableRoot: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
-                Text("课间")
+                Text("课曜")
                     .font(.system(size: 34, weight: .bold))
                     .foregroundStyle(Theme.ink)
                 Spacer()

@@ -113,11 +113,26 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		438A41ACF2FAC670C1BF3FA3 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		C7734C769644D56141196E79 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
+		91D0EC5D4C244EBE8699E11A /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				438A41ACF2FAC670C1BF3FA3 /* en */,
+				C7734C769644D56141196E79 /* zh-Hans */,
+			);
+			name = InfoPlist.strings;
+			sourceTree = "<group>";
+		};
+		1658B5EB43DF7C8A0491E0F2 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 91D0EC5D4C244EBE8699E11A /* InfoPlist.strings */; };
+		915B3832C0F1257FBE6E9371 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 91D0EC5D4C244EBE8699E11A /* InfoPlist.strings */; };
+		1C361AFF577372DB45D41693 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8E5DF11AD37DA63072365373 /* Assets.xcassets */; };
 		4C29BBC16528FEA9E858725B /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 				FB90684E69A6C96ED866993E /* Assets.xcassets in Resources */,
+				1658B5EB43DF7C8A0491E0F2 /* InfoPlist.strings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -125,7 +140,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-
+				1C361AFF577372DB45D41693 /* Assets.xcassets in Resources */,
+				915B3832C0F1257FBE6E9371 /* InfoPlist.strings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -199,6 +215,7 @@
 				2FDE1C8B81AFF7684CF9A46F /* Classday.entitlements */,
 				319D4794F860E4AD87ED6EFF /* ClassdayWidget-Info.plist */,
 				45FADA922FA25EB21D85474D /* ClassdayWidget.entitlements */,
+				91D0EC5D4C244EBE8699E11A /* InfoPlist.strings */,
 			);
 			path = Config;
 			sourceTree = "<group>";

@@ -15,7 +15,7 @@ enum CalendarSync {
 
     private static func finish(_ document: StoreDocument, calendar: Calendar, granted: Bool, error: Error?) {
         guard granted, error == nil, let ek = store.defaultCalendarForNewEvents else {
-            status = "没有日历权限，课表仍只保存在课间里。"
+            status = "没有日历权限，课表仍只保存在课曜里。"
             return
         }
         let now = Date()

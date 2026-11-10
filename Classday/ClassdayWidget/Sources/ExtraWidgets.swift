@@ -6,7 +6,7 @@ import ClassdayCore
 
 struct MarkArrivedIntent: AppIntent {
     static var title: LocalizedStringResource = "已到教室"
-    static var description = IntentDescription("记下这节课已经到教室。")
+    static var description = IntentDescription("课曜：记下这节课已经到教室。")
     static var openAppWhenRun = false
 
     func perform() async throws -> some IntentResult {
@@ -18,6 +18,7 @@ struct MarkArrivedIntent: AppIntent {
 
 struct DelayClassIntent: AppIntent {
     static var title: LocalizedStringResource = "推迟 10 分钟"
+    static var description = IntentDescription("课曜：把即将开始的这一节推迟 10 分钟。")
     static var openAppWhenRun = false
 
     func perform() async throws -> some IntentResult {
@@ -43,6 +44,7 @@ struct DelayClassIntent: AppIntent {
 
 struct NextFanCardIntent: AppIntent {
     static var title: LocalizedStringResource = "下一张卡片"
+    static var description = IntentDescription("课曜：翻开今日课程的下一张卡片。")
     static var openAppWhenRun = false
 
     func perform() async throws -> some IntentResult {
@@ -55,6 +57,7 @@ struct NextFanCardIntent: AppIntent {
 
 struct WhereIsNextIntent: AppIntent {
     static var title: LocalizedStringResource = "下一节在哪上课"
+    static var description = IntentDescription("课曜：说出下一节课的地点。")
     static var openAppWhenRun = true
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
@@ -70,6 +73,7 @@ struct WhereIsNextIntent: AppIntent {
 
 struct OpenNextClassIntent: AppIntent {
     static var title: LocalizedStringResource = "打开下一节"
+    static var description = IntentDescription("课曜：打开下一节课。")
     static var openAppWhenRun = true
 
     func perform() async throws -> some IntentResult {
@@ -196,10 +200,10 @@ struct LockNextView: View {
     var body: some View {
         let snapshot = SharedWidgetStore.load().flatMap { NextClassSnapshot.make(document: $0, now: date) }
         VStack(alignment: .leading) {
-            Text(snapshot?.title ?? "课间")
+            Text(snapshot?.title ?? "课曜")
                 .font(.headline)
                 .widgetAccentable()
-            Text(snapshot?.location ?? "打开课间")
+            Text(snapshot?.location ?? "打开课曜")
                 .font(.caption2)
             if let end = snapshot?.endsAt {
                 Text(end, style: .timer).font(.caption2.monospacedDigit())

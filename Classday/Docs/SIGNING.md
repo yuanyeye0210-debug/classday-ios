@@ -73,7 +73,7 @@ The app and the widget each parse their own `embedded.mobileprovision` and the o
 5. Open **Advanced Options**. Leave **Remove Extensions** unchecked. If a plugin list is shown, leave `ClassdayWidget.appex` unchecked so it is installed. Do not inject a tweak. Removing the appex saves one App ID and deletes the widgets. The app and the widget each need an App ID. A free account can register 10 App IDs every 7 days, and iOS 10 and later can keep 3 sideloaded apps installed.
 6. Start the install and leave the device connected until it finishes. If the log contains `An Application Group with Identifier 'group.com.classday.shared' is not available`, run the same IPA again with the same Apple ID so the signer can register the Team ID or bundle-id form. Classday reads whichever id landed in both profiles.
 7. On the iPhone open **设置 → 通用 → VPN 与设备管理**, tap the Apple ID, and tap Trust. Turn on Developer Mode if iOS asks.
-8. Open 课间 once. That copies the on-phone timetable into the shared group and reloads the widgets. Add **下一节** and **今日课程** from the widget gallery if they are not on the Home Screen yet.
+8. Open 课曜 once. That copies the on-phone timetable into the shared group and reloads the widgets. Add **下一节** and **今日课程** from the widget gallery if they are not on the Home Screen yet. The English home-screen name is Heptara.
 9. A free Apple ID signature expires after 7 days. Refresh with the same Apple ID and the same bundle ID, and leave Remove Extensions off, so the app is replaced rather than installed a second time.
 
 我的 keeps the warning when no shared group opened. The text includes any group ids the profiles did contain. The widgets then show **读不到课表**.
@@ -95,7 +95,7 @@ These degrade, with a Chinese explanation in 学习:
 
 - **iCloud / CloudKit.** The IPA does not declare the iCloud entitlement, because a free Apple ID profile usually rejects it and Sideloadly would drop or fail the install. 尝试 iCloud reports that and keeps the timetable on the phone.
 - **Live Activity push.** The countdown is updated while the app is running. A push token for updates after the app is suspended needs a paid account. That entitlement is not in this IPA.
-- **System calendar.** The first sync asks for calendar access. If you deny it, the timetable stays inside 课间.
+- **System calendar.** The first sync asks for calendar access. If you deny it, the timetable stays inside 课曜.
 
 ### Fénix
 

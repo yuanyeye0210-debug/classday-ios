@@ -144,7 +144,7 @@ public enum WidgetProjection {
             timeText: "—",
             name: "读不到课表",
             locationText: "",
-            footnote: "打开课间同步，或保留小组件后重装",
+            footnote: "打开课曜同步，或保留小组件后重装",
             colorID: "blue",
             progress: nil,
             url: nil
@@ -153,11 +153,11 @@ public enum WidgetProjection {
             title: "今日课程",
             dateText: ScheduleCopy.monthDayLabel(date, calendar: calendar),
             chips: [],
-            footerLeft: "课间",
+            footerLeft: "课曜",
             footerRight: "尚未同步",
             isEmpty: true,
             emptyTitle: "读不到课表",
-            emptyMessage: "打开课间同步。仍空白就在 Sideloadly 里保留小组件后重装"
+            emptyMessage: "打开课曜同步。仍空白就在 Sideloadly 里保留小组件后重装"
         )
         return WidgetRenderState(small: small, medium: medium)
     }
@@ -245,7 +245,7 @@ public enum WidgetProjection {
                 timeText: "—",
                 name: "还没有课程",
                 locationText: "",
-                footnote: "打开课间添加一门课",
+                footnote: "打开课曜添加一门课",
                 colorID: "blue",
                 progress: nil,
                 url: nil
@@ -278,7 +278,7 @@ public enum WidgetProjection {
                 title: "今日课程",
                 dateText: dateText,
                 chips: [],
-                footerLeft: "课间",
+                footerLeft: "课曜",
                 footerRight: "今天没有课",
                 isEmpty: true,
                 emptyTitle: "今天没有课",
@@ -300,7 +300,7 @@ public enum WidgetProjection {
             title: "今日课程",
             dateText: dateText,
             chips: chips,
-            footerLeft: "课间",
+            footerLeft: "课曜",
             footerRight: "今天共 \(today.count) 门课",
             isEmpty: false,
             emptyTitle: "",
