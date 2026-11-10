@@ -8,6 +8,7 @@ struct CourseDetailView: View {
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var focusedMeetingID: UUID?
+    @State private var appeared = false
 
     var body: some View {
         let course = model.course(presentation.courseID)
@@ -61,19 +62,40 @@ struct CourseDetailView: View {
             if let course, let meeting {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
-                        heroCard(course: course, meeting: meeting)
-                        weekStrip(course: course, focused: meeting)
-                            .padding(.top, 14)
-                        if let next = nextOccurrence(course: course) {
-                            nextBanner(next, course: course)
-                                .padding(.top, 12)
+                        visualHero(course: course, meeting: meeting)
+                            .staggerIn(index: 0, on: appeared)
+                        if nextOccurrence(course: course) != nil {
+                            bigFact(course: course)
+                                .staggerIn(index: 1, on: appeared)
+                                .padding(.top, 20)
                         }
-                        infoCard(course: course)
-                            .padding(.top, 12)
+                        weekStrip(course: course, focused: meeting)
+                            .staggerIn(index: 2, on: appeared)
+                            .padding(.top, 18)
+                        infoSticker(
+                            icon: "mappin.and.ellipse",
+                            label: "上课地点",
+                            primary: course.location,
+                            secondary: course.note,
+                            course: course
+                        )
+                        .staggerIn(index: 3, on: appeared)
+                        .padding(.top, 12)
+                        infoSticker(
+                            icon: "person.fill",
+                            label: "任课教师",
+                            primary: course.teacher.isEmpty ? "未填写" : course.teacher,
+                            secondary: course.department,
+                            course: course
+                        )
+                        .staggerIn(index: 4, on: appeared)
+                        .padding(.top, 10)
                         scheduleCard(course: course, focusedID: meeting.id)
-                            .padding(.top, 12)
+                            .staggerIn(index: 5, on: appeared)
+                            .padding(.top, 10)
                         reminderCard(course)
-                            .padding(.top, 12)
+                            .staggerIn(index: 6, on: appeared)
+                            .padding(.top, 10)
                         PrimaryButton(title: "编辑课程") {
                             model.editor = .edit(course.id)
                         }
@@ -81,6 +103,7 @@ struct CourseDetailView: View {
                     }
                     .padding(.horizontal, 20)
                     .padding(.bottom, 28)
+                    .onAppear { appeared = true }
                 }
                 .scrollIndicators(.hidden)
             } else {
@@ -93,74 +116,63 @@ struct CourseDetailView: View {
         .background(Theme.background.ignoresSafeArea())
     }
 
-    private func heroCard(course: Course, meeting: Meeting) -> some View {
+    private func visualHero(course: Course, meeting: Meeting) -> some View {
         let bg = Theme.courseBackground(course.colorID, scheme: scheme)
         let ink = Theme.courseInk(course.colorID, scheme: scheme)
-        return VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                heroChip(text: course.kind.isEmpty ? "课程" : course.kind, ink: ink)
-                heroChip(text: ScheduleCopy.weekList(course.weeks), ink: ink)
-                Spacer(minLength: 0)
-            }
-            Text(course.name)
-                .font(.system(size: 34, weight: .bold))
-                .foregroundStyle(ink)
-                .padding(.top, 12)
-            Text(subtitle(course: course, meeting: meeting))
-                .font(.system(size: 13.5))
-                .foregroundStyle(ink.opacity(0.78))
-                .padding(.top, 5)
-            Rectangle().fill(ink.opacity(0.18)).frame(height: 0.5)
-                .padding(.top, 14)
-            HStack(spacing: 18) {
-                heroFact(icon: "mappin.and.ellipse", text: course.location, ink: ink)
-                heroFact(icon: "person.fill", text: course.teacher.isEmpty ? "未填写" : course.teacher, ink: ink)
-            }
-            .padding(.top, 12)
-        }
-        .padding(18)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            ZStack(alignment: .topTrailing) {
+        return VStack(spacing: 0) {
+            ZStack {
                 LinearGradient(
-                    colors: [bg, bg.opacity(0.62)],
+                    colors: [bg, bg.opacity(0.5)],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
                 Circle()
-                    .fill(ink.opacity(0.14))
-                    .frame(width: 190, height: 190)
-                    .blur(radius: 42)
-                    .offset(x: 56, y: -64)
+                    .fill(Color.white.opacity(scheme == .dark ? 0.06 : 0.45))
+                    .frame(width: 170, height: 170)
+                    .offset(x: -115, y: -85)
+                Circle()
+                    .fill(Color.white.opacity(scheme == .dark ? 0.04 : 0.3))
+                    .frame(width: 110, height: 110)
+                    .offset(x: 135, y: 65)
+                Image(systemName: "sparkles")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(ink.opacity(0.45))
+                    .offset(x: -118, y: 42)
+                Image(systemName: "star.fill")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(ink.opacity(0.35))
+                    .offset(x: 120, y: -54)
                 Text(String(course.name.prefix(1)))
-                    .font(.system(size: 118, weight: .heavy))
-                    .foregroundStyle(ink.opacity(0.09))
-                    .offset(x: 10, y: -18)
+                    .font(.system(size: 116, weight: .heavy, design: .rounded))
+                    .foregroundStyle(ink)
             }
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .shadow(color: bg.opacity(0.38), radius: 18, x: 0, y: 10)
+            .frame(maxWidth: .infinity)
+            .frame(height: 176)
+            .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
+            Text(course.name)
+                .font(.system(size: 30, weight: .heavy, design: .rounded))
+                .foregroundStyle(Theme.ink)
+                .padding(.top, 16)
+            HStack(spacing: 8) {
+                sticker(text: course.kind.isEmpty ? "课程" : course.kind, bg: bg, ink: ink, rotation: -2)
+                sticker(text: ScheduleCopy.weekList(course.weeks), bg: Theme.elevated, ink: Theme.ink, rotation: 1.5)
+                sticker(text: subtitle(course: course, meeting: meeting), bg: Theme.elevated, ink: Theme.ink, rotation: -1)
+            }
+            .padding(.top, 10)
+        }
+        .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)
     }
 
-    private func heroChip(text: String, ink: Color) -> some View {
+    private func sticker(text: String, bg: Color, ink: Color, rotation: Double) -> some View {
         Text(text)
-            .font(.system(size: 11, weight: .semibold))
+            .font(.system(size: 12, weight: .bold, design: .rounded))
             .foregroundStyle(ink)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 4)
-            .background(Capsule(style: .continuous).fill(ink.opacity(0.16)))
-    }
-
-    private func heroFact(icon: String, text: String, ink: Color) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: icon)
-                .font(.system(size: 11, weight: .semibold))
-            Text(text)
-                .font(.system(size: 12.5, weight: .medium))
-                .lineLimit(1)
-        }
-        .foregroundStyle(ink.opacity(0.92))
+            .padding(.horizontal, 11)
+            .padding(.vertical, 6)
+            .background(Capsule(style: .continuous).fill(bg))
+            .shadow(color: .black.opacity(scheme == .dark ? 0 : 0.08), radius: 6, x: 0, y: 3)
+            .rotationEffect(.degrees(rotation))
     }
 
     private func subtitle(course: Course, meeting: Meeting) -> String {
@@ -171,11 +183,65 @@ struct CourseDetailView: View {
         return parts.joined(separator: " · ")
     }
 
+    private func bigFact(course: Course) -> some View {
+        guard let occ = nextOccurrence(course: course) else {
+            return AnyView(EmptyView())
+        }
+        let cal = Calendar.current
+        let dayWord = cal.isDateInToday(occ.start) ? "今天" : (cal.isDateInTomorrow(occ.start) ? "明天" : ScheduleCopy.weekdayName(occ.weekday))
+        return AnyView(
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("下一次上课 · \(dayWord)")
+                        .font(.system(size: 12.5, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Theme.secondary)
+                    Text(ScheduleCopy.hhmm(occ.start, calendar: cal))
+                        .font(.system(size: 44, weight: .heavy, design: .rounded))
+                        .foregroundStyle(Theme.ink)
+                    Text("\(ScheduleCopy.periodSpan(occ.startPeriod, occ.endPeriod)) · \(occ.location)")
+                        .font(.system(size: 13.5, weight: .medium, design: .rounded))
+                        .foregroundStyle(Theme.secondary)
+                }
+                Spacer(minLength: 0)
+                progressRing()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+        )
+    }
+
+    private func progressRing() -> some View {
+        let total = max(model.document.semester.totalWeeks, 1)
+        let raw = SemesterCalendar.weekIndex(for: Date(), semester: model.document.semester, calendar: Calendar.current) ?? model.weekIndex
+        let current = min(max(raw, 1), total)
+        return VStack(spacing: 4) {
+            ZStack {
+                Circle().stroke(Theme.line, lineWidth: 6)
+                Circle()
+                    .trim(from: 0, to: CGFloat(current) / CGFloat(total))
+                    .stroke(Theme.accent, style: StrokeStyle(lineWidth: 6, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                VStack(spacing: 0) {
+                    Text("\(current)")
+                        .font(.system(size: 18, weight: .heavy, design: .rounded))
+                        .foregroundStyle(Theme.ink)
+                    Text("周")
+                        .font(.system(size: 8.5, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Theme.secondary)
+                }
+            }
+            .frame(width: 56, height: 56)
+            Text("学期进度")
+                .font(.system(size: 10, weight: .medium, design: .rounded))
+                .foregroundStyle(Theme.secondary)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
     private func weekStrip(course: Course, focused: Meeting) -> some View {
         let bg = Theme.courseBackground(course.colorID, scheme: scheme)
         let ink = Theme.courseInk(course.colorID, scheme: scheme)
-        let today = (Calendar.current.component(.weekday, from: Date()) + 5) % 7 + 1
-        return HStack(spacing: 6) {
+        return HStack(spacing: 7) {
             ForEach(1...7, id: \.self) { day in
                 let dayMeeting = course.meetings.filter { $0.weekday == day }.sorted { $0.startPeriod < $1.startPeriod }.first
                 let isActive = dayMeeting != nil
@@ -186,28 +252,26 @@ struct CourseDetailView: View {
                         Haptics.selection()
                     }
                 } label: {
-                    VStack(spacing: 1) {
+                    VStack(spacing: 2) {
                         Text(ScheduleCopy.weekdayShort(day))
-                            .font(.system(size: 12, weight: .semibold))
-                        Text(dayMeeting.map { "\($0.startPeriod)–\($0.endPeriod)" } ?? " ")
-                            .font(.system(size: 9))
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                        Text(dayMeeting.map { "\($0.startPeriod)–\($0.endPeriod)" } ?? "·")
+                            .font(.system(size: 9.5, weight: .semibold, design: .rounded))
                     }
-                    .foregroundStyle(isActive ? ink : Theme.secondary.opacity(0.55))
+                    .foregroundStyle(isActive ? ink : Theme.secondary.opacity(0.6))
                     .frame(maxWidth: .infinity)
-                    .frame(height: 42)
+                    .frame(height: 54)
                     .background(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(isActive
-                                ? AnyShapeStyle(LinearGradient(colors: [bg, bg.opacity(0.72)], startPoint: .top, endPoint: .bottom))
-                                : AnyShapeStyle(Theme.elevated.opacity(0.5)))
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(isActive ? bg : Theme.elevated)
                     )
                     .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .stroke(isFocused ? ink : (day == today ? Theme.secondary : Color.clear), lineWidth: isFocused ? 1.5 : 0.75)
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(isFocused ? ink : Color.clear, lineWidth: 2)
                     )
-                    .shadow(color: isActive ? bg.opacity(0.3) : .clear, radius: 6, x: 0, y: 3)
+                    .shadow(color: .black.opacity(scheme == .dark ? 0 : 0.05), radius: 8, x: 0, y: 4)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PressScaleStyle())
                 .disabled(!isActive)
             }
         }
@@ -226,88 +290,40 @@ struct CourseDetailView: View {
         return best
     }
 
-    private func nextBanner(_ occ: Occurrence, course: Course) -> some View {
-        let bg = Theme.courseBackground(course.colorID, scheme: scheme)
-        let ink = Theme.courseInk(course.colorID, scheme: scheme)
-        return HStack(spacing: 12) {
-            Image(systemName: "bell.badge.fill")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(ink)
-                .frame(width: 36, height: 36)
-                .background(Circle().fill(bg))
-            VStack(alignment: .leading, spacing: 2) {
-                Text("下一次上课")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.secondary)
-                Text("\(ScheduleCopy.upcomingFootnote(from: Date(), to: occ.start, calendar: Calendar.current)) · \(occ.location)")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Theme.ink)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(bg.opacity(scheme == .dark ? 0.26 : 0.13))
-        )
-        .accessibilityElement(children: .combine)
-    }
-
     private var hairline: some View {
         Rectangle().fill(Theme.line).frame(height: 0.5)
     }
 
-    private func infoCard(course: Course) -> some View {
-        VStack(spacing: 0) {
-            infoRow(
-                icon: "mappin.and.ellipse",
-                label: "上课地点",
-                primary: course.location,
-                secondary: course.note,
-                course: course
-            )
-            hairline.padding(.leading, 58)
-            infoRow(
-                icon: "person.fill",
-                label: "任课教师",
-                primary: course.teacher.isEmpty ? "未填写" : course.teacher,
-                secondary: course.department,
-                course: course
-            )
-        }
-        .padding(.vertical, 4)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Theme.elevated)
-        )
-    }
-
-    private func infoRow(icon: String, label: String, primary: String, secondary: String, course: Course) -> some View {
+    private func infoSticker(icon: String, label: String, primary: String, secondary: String, course: Course) -> some View {
         let bg = Theme.courseBackground(course.colorID, scheme: scheme)
         let ink = Theme.courseInk(course.colorID, scheme: scheme)
-        return HStack(alignment: .top, spacing: 12) {
+        return HStack(spacing: 13) {
             Image(systemName: icon)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: 17, weight: .bold))
                 .foregroundStyle(ink)
-                .frame(width: 34, height: 34)
+                .frame(width: 46, height: 46)
                 .background(Circle().fill(bg))
             VStack(alignment: .leading, spacing: 2) {
                 Text(label)
-                    .font(.system(size: 11))
+                    .font(.system(size: 11.5, weight: .semibold, design: .rounded))
                     .foregroundStyle(Theme.secondary)
                 Text(primary)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
                     .foregroundStyle(Theme.ink)
                 if !secondary.isEmpty {
                     Text(secondary)
-                        .font(.system(size: 12.5))
+                        .font(.system(size: 12.5, design: .rounded))
                         .foregroundStyle(Theme.secondary)
                 }
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(Theme.elevated)
+        )
+        .shadow(color: .black.opacity(scheme == .dark ? 0 : 0.06), radius: 14, x: 0, y: 6)
         .accessibilityElement(children: .combine)
     }
 
@@ -319,30 +335,30 @@ struct CourseDetailView: View {
         return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
                 Text("课程安排")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.secondary)
+                    .font(.system(size: 13.5, weight: .bold, design: .rounded))
+                    .foregroundStyle(Theme.ink)
                 Spacer()
                 Text(ScheduleCopy.weekList(course.weeks))
-                    .font(.system(size: 12))
+                    .font(.system(size: 12, design: .rounded))
                     .foregroundStyle(Theme.secondary)
             }
             ForEach(Array(meetings.enumerated()), id: \.element.id) { index, meeting in
                 if index > 0 {
-                    hairline.padding(.leading, 46)
+                    hairline.padding(.leading, 48)
                 }
                 scheduleRow(meeting: meeting, focused: meeting.id == focusedID, course: course)
             }
             Text(model.document.semester.name)
-                .font(.system(size: 11.5))
+                .font(.system(size: 11.5, design: .rounded))
                 .foregroundStyle(Theme.secondary)
                 .padding(.top, 4)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(Theme.elevated)
         )
+        .shadow(color: .black.opacity(scheme == .dark ? 0 : 0.06), radius: 14, x: 0, y: 6)
     }
 
     private func scheduleRow(meeting: Meeting, focused: Bool, course: Course) -> some View {
@@ -350,34 +366,34 @@ struct CourseDetailView: View {
         let ink = Theme.courseInk(course.colorID, scheme: scheme)
         return HStack(spacing: 12) {
             Text(ScheduleCopy.weekdayShort(meeting.weekday))
-                .font(.system(size: 13, weight: .bold))
+                .font(.system(size: 13, weight: .bold, design: .rounded))
                 .foregroundStyle(ink)
-                .frame(width: 32, height: 32)
+                .frame(width: 36, height: 36)
                 .background(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(LinearGradient(colors: [bg, bg.opacity(0.7)], startPoint: .top, endPoint: .bottom))
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(bg)
                 )
             VStack(alignment: .leading, spacing: 1) {
                 if let clocks = ScheduleCopy.clocks(for: meeting, semester: model.document.semester) {
                     Text(ScheduleCopy.timeRange(clocks.start, clocks.end))
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
                         .foregroundStyle(Theme.ink)
                 }
                 Text(ScheduleCopy.periodSpan(meeting.startPeriod, meeting.endPeriod))
-                    .font(.system(size: 11.5))
+                    .font(.system(size: 11.5, design: .rounded))
                     .foregroundStyle(Theme.secondary)
             }
             Spacer(minLength: 0)
             if focused {
                 Text("当前")
-                    .font(.system(size: 10.5, weight: .semibold))
+                    .font(.system(size: 10.5, weight: .bold, design: .rounded))
                     .foregroundStyle(ink)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
                     .background(Capsule(style: .continuous).fill(bg))
             }
             Text(parityText(meeting: meeting))
-                .font(.system(size: 12))
+                .font(.system(size: 12, design: .rounded))
                 .foregroundStyle(Theme.secondary)
         }
         .padding(.vertical, 9)
@@ -414,11 +430,12 @@ struct CourseDetailView: View {
             .labelsHidden()
             .tint(Theme.accent)
         }
-        .padding(14)
+        .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(Theme.elevated)
         )
+        .shadow(color: .black.opacity(scheme == .dark ? 0 : 0.06), radius: 14, x: 0, y: 6)
         .accessibilityElement(children: .combine)
     }
 
@@ -431,5 +448,21 @@ struct CourseDetailView: View {
             return "\(base) · 开启时会向系统请求权限"
         }
         return base
+    }
+}
+
+private struct PressScaleStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.93 : 1)
+            .animation(.spring(response: 0.32, dampingFraction: 0.55), value: configuration.isPressed)
+    }
+}
+
+private extension View {
+    func staggerIn(index: Int, on: Bool) -> some View {
+        opacity(on ? 1 : 0)
+            .offset(y: on ? 0 : 16)
+            .animation(.spring(response: 0.5, dampingFraction: 0.85).delay(Double(index) * 0.05), value: on)
     }
 }
