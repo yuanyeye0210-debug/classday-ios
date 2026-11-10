@@ -13,7 +13,7 @@ struct ClassdayApp: App {
             RootView()
                 .environment(model)
                 .environment(\.locale, Locale(identifier: "zh_CN"))
-                .modifier(ChromeInstaller())
+                .modifier(ChromeInstaller(model: model))
                 .onOpenURL { url in
                     if url.host == "timetable",
                        let token = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "d" })?.value,
@@ -38,7 +38,10 @@ struct ClassdayApp: App {
 }
 
 private struct ChromeInstaller: ViewModifier {
-    @Environment(AppModel.self) private var model
+    // Passed in directly, not via @Environment: a modifier cannot see
+    // environment values injected onto its own content, and reading a
+    // missing @Environment object traps on the first graph update.
+    var model: AppModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
