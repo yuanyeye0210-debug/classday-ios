@@ -27,6 +27,12 @@
 	<string>把课表写入系统日历，并在改课或取消后更新这些事件。</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>从相册选择课表照片，识别后由你确认再导入。</string>
+	<key>NSCameraUsageDescription</key>
+	<string>拍摄课表照片，识别后由你确认再导入。</string>
+	<key>NSMotionUsageDescription</key>
+	<string>玻璃主题用设备倾斜做轻微视差。可以在系统设置里关闭。</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>把教室导航到地图时使用你保存的位置。不在后台定位。</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>UILaunchScreen</key>

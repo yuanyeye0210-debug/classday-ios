@@ -304,6 +304,33 @@ public enum AppGroupResolver {
     }
 }
 
+public enum SignedEntitlements {
+    private static let iCloudKeys = [
+        "com.apple.developer.icloud-services",
+        "com.apple.developer.icloud-container-identifiers",
+        "com.apple.developer.ubiquity-kvstore-identifier",
+    ]
+
+    /// True only when a provisioning profile's Entitlements actually grant iCloud.
+    /// A missing profile (unsigned simulator build, free Sideloadly profile) is false.
+    public static func allowsICloud(_ data: Data) -> Bool {
+        guard let plist = ProvisionProfile.plistData(from: data),
+              let root = try? PropertyListSerialization.propertyList(from: plist, format: nil) as? [String: Any] else {
+            return false
+        }
+        let entitlements = root["Entitlements"] as? [String: Any] ?? [:]
+        return iCloudKeys.contains { entitlements[$0] != nil }
+    }
+
+    public static func installedProfileAllowsICloud(bundle: Bundle = .main) -> Bool {
+        guard let url = bundle.url(forResource: "embedded", withExtension: "mobileprovision"),
+              let data = try? Data(contentsOf: url) else {
+            return false
+        }
+        return allowsICloud(data)
+    }
+}
+
 public enum InfoPlistReader {
     public static func bundleIdentifier(in data: Data) -> String? {
         guard let root = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else {

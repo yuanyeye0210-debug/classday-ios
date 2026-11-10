@@ -5,12 +5,12 @@ import ClassdayCore
 @main
 struct ClassdayApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @State private var model = AppModel()
+    @State private var model = AppRuntime.model
 
     var body: some Scene {
         WindowGroup {
             RootView()
-                .environment(model)
+                .supplyingAppModel(model)
                 .environment(\.locale, Locale(identifier: "zh_CN"))
                 .modifier(ChromeInstaller())
                 .onOpenURL { url in
@@ -32,7 +32,7 @@ struct ClassdayApp: App {
 }
 
 private struct ChromeInstaller: ViewModifier {
-    @Environment(AppModel.self) private var model
+    @Environment(\.appModel) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
@@ -42,6 +42,7 @@ private struct ChromeInstaller: ViewModifier {
             lowPower: model.lowPower
         )
         content
+            .supplyingAppModel(model)
             .environment(\.classdayChrome, chrome)
             .tint(Color(chrome.theme.accent.palette))
             .preferredColorScheme(chrome.theme.prefersDark ? .dark : .light)
@@ -50,7 +51,29 @@ private struct ChromeInstaller: ViewModifier {
             }
             .onAppear {
                 applyScreenshotTheme()
+                Task { await exerciseIfRequested() }
             }
+    }
+
+    private func exerciseIfRequested() async {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard arguments.contains("--exercise") else { return }
+        model.tab = .timetable
+        try? await Task.sleep(nanoseconds: 500_000_000)
+        for tab in [AppTab.timetable, .agenda, .settings] {
+            model.tab = tab
+            try? await Task.sleep(nanoseconds: 350_000_000)
+        }
+        model.tab = .timetable
+        for theme in ClassdayThemes.all {
+            model.setAppearance(AppearanceChoice(themeID: theme.id, performance: .balanced))
+            try? await Task.sleep(nanoseconds: 350_000_000)
+        }
+        let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        let url = folder.appendingPathComponent("exercise-ok.txt")
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try? Data("ok\n".utf8).write(to: url)
     }
 
     private func applyScreenshotTheme() {

@@ -3,21 +3,25 @@ import UniformTypeIdentifiers
 import ClassdayCore
 
 struct RootView: View {
-    @Environment(AppModel.self) private var model
+    @Environment(\.appModel) private var model
 
     var body: some View {
         @Bindable var model = model
         TabView(selection: $model.tab) {
             TimetableRoot()
+                .supplyingAppModel(model)
                 .tabItem { Label("课表", systemImage: "square.grid.2x2") }
                 .tag(AppTab.timetable)
             AgendaView()
+                .supplyingAppModel(model)
                 .tabItem { Label("日程", systemImage: "calendar") }
                 .tag(AppTab.agenda)
             SettingsView()
+                .supplyingAppModel(model)
                 .tabItem { Label("我的", systemImage: "person") }
                 .tag(AppTab.settings)
         }
+        .supplyingAppModel(model)
         .overlay(alignment: .top) {
             if let banner = model.banner {
                 Text(banner)
@@ -116,7 +120,7 @@ struct RootView: View {
 }
 
 struct TimetableRoot: View {
-    @Environment(AppModel.self) private var model
+    @Environment(\.appModel) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.horizontalSizeClass) private var widthClass
     @Namespace private var zoom
@@ -163,6 +167,7 @@ struct TimetableRoot: View {
             .padding(.top, 8)
             if let presented = model.presented {
                 CourseDetailView(presentation: presented, namespace: zoom)
+                    .supplyingAppModel(model)
                     .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.96)))
                     .zIndex(2)
             }
@@ -177,6 +182,7 @@ struct TimetableRoot: View {
         .animation(motion, value: model.presented?.id)
         .sheet(item: $model.editor) { route in
             CourseEditorView(route: route, document: model.document, selectedDay: model.selectedDay, calendar: model.calendar)
+                .supplyingAppModel(model)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
                 .presentationCornerRadius(28)

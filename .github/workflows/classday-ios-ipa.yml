@@ -7,6 +7,7 @@ on:
     branches:
       - cursor/shared-app-group-92bb
       - cursor/classday-2-themes-92bb
+      - cursor/fix-launch-crash-92bb
       - main
 
 permissions:
@@ -68,7 +69,6 @@ jobs:
           cp "$RUNNER_TEMP/xcodebuild-iphoneos.log" dist/xcodebuild-iphoneos.log
 
       - name: Simulator compile smoke
-        continue-on-error: true
         run: |
           set -o pipefail
           xcodebuild \
@@ -83,28 +83,58 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             build | tee dist/xcodebuild-simulator.log
 
-      - name: Theme screenshots
-        continue-on-error: true
+      - name: Simulator launch without iCloud
         run: |
           set -euo pipefail
           mkdir -p dist/screenshots
           APP="$(find "$RUNNER_TEMP/DerivedDataSim/Build/Products" -type d -name 'Classday.app' -path '*iphonesimulator*' | head -n 1)"
           test -n "$APP"
-          xcrun simctl list devices available | head -n 40
-          DEVICE="$(xcrun simctl list devices available | sed -n 's/.*iPhone 16 (\(.*\)) (Shutdown)/\1/p' | head -n 1)"
-          if [[ -z "$DEVICE" ]]; then
-            DEVICE="$(xcrun simctl list devices available | sed -n 's/.*iPhone \(.*\) (Shutdown)/\1/p' | head -n 1)"
-          fi
-          test -n "$DEVICE"
+          test ! -f "$APP/embedded.mobileprovision"
+          python3 - << 'PY'
+          import json, subprocess
+          raw = subprocess.check_output(["xcrun", "simctl", "list", "devices", "available", "-j"])
+          devices = json.loads(raw)["devices"]
+          chosen = None
+          for runtime, items in devices.items():
+              if "iOS" not in runtime:
+                  continue
+              for item in items:
+                  if item.get("isAvailable") and "iPhone" in item.get("name", ""):
+                      chosen = item["udid"]
+                      break
+              if chosen:
+                  break
+          if not chosen:
+              raise SystemExit("no iPhone simulator")
+          open("/tmp/classday-sim-udid", "w").write(chosen)
+          PY
+          DEVICE="$(cat /tmp/classday-sim-udid)"
           xcrun simctl boot "$DEVICE" || true
           xcrun simctl bootstatus "$DEVICE" -b
           xcrun simctl install "$DEVICE" "$APP"
-          for theme in neon glass hud aurora mech orbit cube; do
-            xcrun simctl terminate "$DEVICE" com.classday.app || true
-            xcrun simctl launch "$DEVICE" com.classday.app --theme "$theme"
-            sleep 4
-            xcrun simctl io "$DEVICE" screenshot "dist/screenshots/${theme}.png"
+          xcrun simctl terminate "$DEVICE" com.classday.app || true
+          xcrun simctl launch --console "$DEVICE" com.classday.app --exercise > dist/launch.log 2>&1 &
+          CONSOLE=$!
+          sleep 3
+          xcrun simctl io "$DEVICE" screenshot dist/screenshots/launch.png
+          DATA="$(xcrun simctl get_app_container "$DEVICE" com.classday.app data)"
+          OK=""
+          for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            if [[ -f "$DATA/Library/Application Support/exercise-ok.txt" ]]; then
+              OK=1
+              break
+            fi
+            if ! kill -0 "$CONSOLE" 2>/dev/null; then
+              echo "app process exited before the exercise finished"
+              cat dist/launch.log || true
+              exit 1
+            fi
+            sleep 2
           done
+          test -n "$OK"
+          xcrun simctl io "$DEVICE" screenshot dist/screenshots/after-themes.png
+          kill "$CONSOLE" || true
+          echo "simulator launch survived every tab and theme"
 
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4

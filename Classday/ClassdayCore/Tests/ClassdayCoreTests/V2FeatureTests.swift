@@ -4,6 +4,24 @@ import ClassdayCore
 final class V2FeatureTests: XCTestCase {
     private let calendar = TestSupport.calendar()
 
+    func testICloudEntitlementIsAbsentUnlessTheProfileGrantsIt() {
+        XCTAssertFalse(SignedEntitlements.allowsICloud(Data("not a profile".utf8)))
+        let plain = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <plist version="1.0"><dict>
+        <key>Entitlements</key><dict>
+        <key>com.apple.security.application-groups</key>
+        <array><string>group.com.classday.shared</string></array>
+        </dict></dict></plist>
+        """
+        XCTAssertFalse(SignedEntitlements.allowsICloud(Data(plain.utf8)))
+        let granted = plain.replacingOccurrences(
+            of: "</dict></dict></plist>",
+            with: "<key>com.apple.developer.icloud-services</key><array><string>CloudKit</string></array></dict></dict></plist>"
+        )
+        XCTAssertTrue(SignedEntitlements.allowsICloud(Data(granted.utf8)))
+    }
+
     func testSevenThemesAndSaverDowngrade() {
         XCTAssertEqual(ClassdayThemes.all.count, 7)
         XCTAssertEqual(Set(ClassdayThemes.all.map(\.id)).count, 7)

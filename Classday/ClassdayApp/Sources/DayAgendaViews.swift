@@ -3,7 +3,7 @@ import ClassdayCore
 
 struct DayTimetableView: View {
     var namespace: Namespace.ID
-    @Environment(AppModel.self) private var model
+    @Environment(\.appModel) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var scheme
 
@@ -102,7 +102,7 @@ struct DayTimetableView: View {
 }
 
 struct AgendaView: View {
-    @Environment(AppModel.self) private var model
+    @Environment(\.appModel) private var model
 
     var body: some View {
         let groups = agendaGroups()

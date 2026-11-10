@@ -78,6 +78,12 @@ The app and the widget each parse their own `embedded.mobileprovision` and the o
 
 我的 keeps the warning when no shared group opened. The text includes any group ids the profiles did contain. The widgets then show **读不到课表**.
 
+## Launch on a free Apple ID
+
+2.0.0 could quit on the first frame. iOS 18 and later build each tab in an environment that does not always inherit `@Environment(AppModel.self)`, and that lookup traps. 2.0.1 keeps one `AppModel` as the default environment value and also passes it into every tab and sheet.
+
+`CKContainer.default()` traps when the profile has no iCloud entitlement. The app reads `embedded.mobileprovision` first and does not create a container unless that profile grants iCloud. CloudKit is weak-linked so a free-account install does not initialize it at startup. Shaders are used only when `default.metallib` actually contains the stitchable function.
+
 ## What 2.0.0 does without a paid account
 
 The default IPA is still the iPhone app plus `ClassdayWidget.appex`. There is no Apple Watch target and no complication, so a free account is not asked for a third App ID. iPad landscape is the same target with a wider layout, not a second app.

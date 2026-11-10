@@ -111,7 +111,7 @@ struct CourseBlockView: View {
 
 struct WeekTimetableView: View {
     var namespace: Namespace.ID
-    @Environment(AppModel.self) private var model
+    @Environment(\.appModel) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ScaledMetric(relativeTo: .caption) private var rowHeight: CGFloat = 46
 
