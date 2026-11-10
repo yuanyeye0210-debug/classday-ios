@@ -19,6 +19,12 @@ public enum DemoData {
         public static let physicsThursday = UUID(uuidString: "20000000-0000-0000-0000-000000000008")!
         public static let linearTuesday = UUID(uuidString: "20000000-0000-0000-0000-000000000009")!
         public static let peTuesday = UUID(uuidString: "20000000-0000-0000-0000-00000000000A")!
+        public static let examCalculus = UUID(uuidString: "30000000-0000-0000-0000-000000000001")!
+        public static let examPhysics = UUID(uuidString: "30000000-0000-0000-0000-000000000002")!
+        public static let examEnglish = UUID(uuidString: "30000000-0000-0000-0000-000000000003")!
+        public static let examProgramming = UUID(uuidString: "30000000-0000-0000-0000-000000000004")!
+        public static let homeworkCalculus = UUID(uuidString: "40000000-0000-0000-0000-000000000001")!
+        public static let homeworkProgramming = UUID(uuidString: "40000000-0000-0000-0000-000000000002")!
     }
 
     public static func makeDocument() -> StoreDocument {
@@ -28,14 +34,14 @@ public enum DemoData {
             semester: makeSemester(),
             courses: makeCourses(),
             exams: [
-                ExamEvent(courseName: "高等数学", location: "教学楼 A · 301", startISO: "2026-12-22T09:00", endISO: "2026-12-22T11:00", note: "期末考试"),
-                ExamEvent(courseName: "大学物理", location: "教学楼 A · 206", startISO: "2026-12-24T14:00", endISO: "2026-12-24T16:00", note: "期末考试"),
-                ExamEvent(courseName: "大学英语", location: "教学楼 B · 205", startISO: "2026-12-29T10:10", endISO: "2026-12-29T12:10", note: "期末考试"),
-                ExamEvent(courseName: "程序设计", location: "机房 2", startISO: "2027-01-05T14:00", endISO: "2027-01-05T16:00", note: "期末考试")
+                ExamEvent(id: ID.examCalculus, courseName: "高等数学", location: "教学楼 A · 301", startISO: "2026-12-22T09:00", endISO: "2026-12-22T11:00", note: "期末考试"),
+                ExamEvent(id: ID.examPhysics, courseName: "大学物理", location: "教学楼 A · 206", startISO: "2026-12-24T14:00", endISO: "2026-12-24T16:00", note: "期末考试"),
+                ExamEvent(id: ID.examEnglish, courseName: "大学英语", location: "教学楼 B · 205", startISO: "2026-12-29T10:10", endISO: "2026-12-29T12:10", note: "期末考试"),
+                ExamEvent(id: ID.examProgramming, courseName: "程序设计", location: "机房 2", startISO: "2027-01-05T14:00", endISO: "2027-01-05T16:00", note: "期末考试")
             ],
             homework: [
-                HomeworkTask(courseName: "高等数学", title: "第三章习题", dueISO: "2026-11-11T23:59"),
-                HomeworkTask(courseName: "程序设计", title: "实验报告", dueISO: "2026-11-13T23:59")
+                HomeworkTask(id: ID.homeworkCalculus, courseName: "高等数学", title: "第三章习题", dueISO: "2026-11-11T23:59"),
+                HomeworkTask(id: ID.homeworkProgramming, courseName: "程序设计", title: "实验报告", dueISO: "2026-11-13T23:59")
             ]
         )
     }
