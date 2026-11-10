@@ -64,6 +64,13 @@ private struct ChromeInstaller: ViewModifier {
 
     private func applyScreenshotTheme() {
         let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--detail"),
+           let course = model.document.courses.first,
+           let meeting = course.meetings.first {
+            // CI screenshot hook: open the first course's detail page so the
+            // run produces a preview of it alongside the theme shots.
+            model.present(courseID: course.id, meetingID: meeting.id)
+        }
         guard let index = arguments.firstIndex(of: "--theme"), index + 1 < arguments.count else { return }
         model.setAppearance(AppearanceChoice(themeID: arguments[index + 1], performance: .balanced))
     }
