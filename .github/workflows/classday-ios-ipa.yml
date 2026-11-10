@@ -90,9 +90,11 @@ jobs:
           mkdir -p dist/screenshots
           APP="$(find "$RUNNER_TEMP/DerivedDataSim/Build/Products" -type d -name 'Classday.app' -path '*iphonesimulator*' | head -n 1)"
           test -n "$APP"
-          xcrun simctl list devices available | head -n 40
-          DEVICE="$(xcrun simctl list devices available | grep 'iPhone 15 Pro (' | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}' | head -n 1)"
-          if [ -z "$DEVICE" ]; then DEVICE="$(xcrun simctl list devices available | grep 'iPhone' | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}' | head -n 1)"; fi
+          xcrun simctl list devices available | head -n 40 || true
+          RUNTIME="$(xcrun simctl list runtimes available | grep -oE 'com.apple.CoreSimulator.SimRuntime.iOS-[0-9-]+' | tail -n 1 || true)"
+          if [ -n "$RUNTIME" ]; then xcrun simctl create "iPhone 15 Pro" "com.apple.CoreSimulator.SimDeviceType.iPhone-15-Pro" "$RUNTIME" > /dev/null 2>&1 || true; fi
+          DEVICE="$(xcrun simctl list devices available | grep 'iPhone 15 Pro (' | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}' | head -n 1 || true)"
+          if [ -z "$DEVICE" ]; then DEVICE="$(xcrun simctl list devices available | grep 'iPhone' | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}' | head -n 1 || true)"; fi
           test -n "$DEVICE"
           xcrun simctl boot "$DEVICE" || true
           xcrun simctl bootstatus "$DEVICE" -b
