@@ -107,6 +107,17 @@ def main() -> None:
 
     for path in APP_SOURCES:
         add_source(path, "app", app_build_files, app_file_refs)
+    metal_children: list[str] = []
+    for path in sorted((ROOT / "ClassdayShaders.metal",)):
+        if path.is_file():
+            ref, declaration = file_ref(path, "sourcecode.metal")
+            build = xid(f"build:metal:{path.as_posix()}")
+            objects.append(declaration)
+            objects.append(
+                f"\t\t{build} /* {path.name} in Sources */ = {{isa = PBXBuildFile; fileRef = {ref} /* {path.name} */; }};"
+            )
+            app_build_files.append(f"\t\t\t\t{build} /* {path.name} in Sources */,")
+            metal_children.append(f"{ref} /* {path.name} */")
     for path in WIDGET_SOURCES:
         add_source(path, "widget", widget_build_files, widget_file_refs)
 
@@ -240,6 +251,7 @@ def main() -> None:
                 f"{app_group} /* ClassdayApp */",
                 f"{widget_group} /* ClassdayWidget */",
                 f"{config_group} /* Config */",
+                *metal_children,
                 f"{products_group} /* Products */",
             ],
         )
@@ -284,7 +296,7 @@ def main() -> None:
         "SKIP_INSTALL": "NO",
         "SWIFT_EMIT_LOC_STRINGS": "YES",
         "SWIFT_VERSION": "5.0",
-        "TARGETED_DEVICE_FAMILY": "1",
+        "TARGETED_DEVICE_FAMILY": "1,2",
     }
     app_settings = {
         **common_target,

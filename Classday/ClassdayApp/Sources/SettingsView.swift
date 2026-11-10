@@ -37,6 +37,18 @@ struct SettingsView: View {
                 Text("我的")
                     .font(.system(size: 34, weight: .bold))
                     .foregroundStyle(Theme.ink)
+                Button {
+                    model.showThemeGallery = true
+                } label: {
+                    Label("主题 · \(model.document.appearance.theme.name)", systemImage: "paintpalette")
+                        .font(.system(size: 17, weight: .semibold))
+                }
+                Button {
+                    model.showStudyDesk = true
+                } label: {
+                    Label("考试、作业、导入和分享", systemImage: "square.and.arrow.down")
+                        .font(.system(size: 17, weight: .semibold))
+                }
                 if let appGroupNotice = model.appGroupNotice {
                     notice(appGroupNotice)
                 }
@@ -156,6 +168,8 @@ struct SettingsView: View {
         .onChange(of: model.document.semester) { _, newValue in
             semester = newValue
         }
+        .sheet(isPresented: $model.showThemeGallery) { ThemeGalleryView() }
+        .sheet(isPresented: $model.showStudyDesk) { StudyDeskView() }
         .fileExporter(
             isPresented: $exporting,
             document: exportDocument,

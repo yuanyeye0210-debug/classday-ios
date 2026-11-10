@@ -78,6 +78,32 @@ The app and the widget each parse their own `embedded.mobileprovision` and the o
 
 我的 keeps the warning when no shared group opened. The text includes any group ids the profiles did contain. The widgets then show **读不到课表**.
 
+## What 2.0.0 does without a paid account
+
+The default IPA is still the iPhone app plus `ClassdayWidget.appex`. There is no Apple Watch target and no complication, so a free account is not asked for a third App ID. iPad landscape is the same target with a wider layout, not a second app.
+
+These stay inside the two App IDs:
+
+- Widgets, including the large week board, the fan stack, and lock-screen accessories.
+- Interactive widget buttons and Shortcuts (`已到教室`, `推迟 10 分钟`, `下一节在哪上课`). They write the shared App Group.
+- Live Activities and the Dynamic Island, updated locally. Remote push updates are not requested.
+- The Control Center control is compiled for iOS 18 and hidden on iOS 17.
+- Fénix login uses `ASWebAuthenticationSession`. You register the app yourself. See below.
+- Calendar import, iCal subscribe, photo recognition, QR share, and Maps directions.
+
+These degrade, with a Chinese explanation in 学习:
+
+- **iCloud / CloudKit.** The IPA does not declare the iCloud entitlement, because a free Apple ID profile usually rejects it and Sideloadly would drop or fail the install. 尝试 iCloud reports that and keeps the timetable on the phone.
+- **Live Activity push.** The countdown is updated while the app is running. A push token for updates after the app is suspended needs a paid account. That entitlement is not in this IPA.
+- **System calendar.** The first sync asks for calendar access. If you deny it, the timetable stays inside 课间.
+
+### Fénix
+
+1. Open [Fénix](https://fenix.tecnico.ulisboa.pt/) → Personal → Manage Applications.
+2. Create an application. Set the redirect URI to `classday://fenix`.
+3. Copy the client id and secret into 我的 → 考试、作业、导入和分享.
+4. Tap 用 Fénix 登录并导入. Classes come from `/api/fenix/v1/person/calendar/classes` and exams from `/evaluations`.
+
 ## Changing the preferred group id
 
 Change both entitlements files, both `ALTAppGroups` arrays, and `AppGroup.identifier` together. The portal record has to match the preferred id. A free-account resign may still grant a different id; the resolver picks that up without another source edit.

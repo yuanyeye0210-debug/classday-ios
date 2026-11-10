@@ -121,13 +121,15 @@ public enum WidgetProjection {
             at: date,
             courses: document.courses,
             semester: document.semester,
-            calendar: calendar
+            calendar: calendar,
+            context: document.scheduleContext
         )
         let next = ScheduleEngine.nextOccurrence(
             after: date,
             courses: document.courses,
             semester: document.semester,
-            calendar: calendar
+            calendar: calendar,
+            context: document.scheduleContext
         )
         return WidgetRenderState(
             small: smallState(current: current, next: next, now: date, document: document, calendar: calendar),
@@ -176,7 +178,8 @@ public enum WidgetProjection {
                     inWeek: week,
                     courses: document.courses,
                     semester: document.semester,
-                    calendar: calendar
+                    calendar: calendar,
+                    context: document.scheduleContext
                 )
                 for item in items {
                     if item.start > now && item.start <= horizonEnd { boundaries.append(item.start) }
@@ -267,7 +270,8 @@ public enum WidgetProjection {
             on: date,
             courses: document.courses,
             semester: document.semester,
-            calendar: calendar
+            calendar: calendar,
+            context: document.scheduleContext
         )
         if today.isEmpty {
             return MediumWidgetState(
@@ -343,5 +347,33 @@ public enum WidgetProjection {
         }
         guard first <= last else { return nil }
         return first...min(last, semester.totalWeeks)
+    }
+}
+
+public enum FanDeck {
+    public static let defaultsKey = "classday.fan.index"
+
+    public static func page(at date: Date, document: StoreDocument, calendar: Calendar, index: Int) -> (chips: [WidgetChip], index: Int, count: Int) {
+        let today = ScheduleEngine.occurrences(
+            on: date,
+            courses: document.courses,
+            semester: document.semester,
+            calendar: calendar,
+            context: document.scheduleContext
+        ).sorted { $0.start < $1.start }
+        let chips = today.map { item in
+            WidgetChip(
+                id: item.id,
+                timeText: ScheduleCopy.hhmm(item.start, calendar: calendar),
+                name: item.name,
+                locationText: item.locationShort,
+                colorID: item.colorID,
+                url: ClassdayLink.course(item.courseID, meeting: item.meetingID)
+            )
+        }
+        guard !chips.isEmpty else { return ([], 0, 0) }
+        let wrapped = ((index % chips.count) + chips.count) % chips.count
+        let rotated = Array(chips[wrapped...] + chips[..<wrapped])
+        return (Array(rotated.prefix(WidgetProjection.visibleChipLimit)), wrapped, chips.count)
     }
 }

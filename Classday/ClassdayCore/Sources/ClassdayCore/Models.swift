@@ -221,12 +221,70 @@ public struct StoreDocument: Codable, Equatable, Hashable, Sendable {
     public var origin: DataOrigin
     public var semester: Semester
     public var courses: [Course]
+    public var weekRules: [MeetingWeekRule]
+    public var overrides: [OccurrenceOverride]
+    public var exams: [ExamEvent]
+    public var homework: [HomeworkTask]
+    public var rooms: [RoomPin]
+    public var library: [StoredTimetable]
+    public var activeTimetableID: UUID
+    public var appearance: AppearanceChoice
+    public var subscribedICSURL: String
 
-    public init(schemaVersion: Int, origin: DataOrigin, semester: Semester, courses: [Course]) {
+    public init(
+        schemaVersion: Int,
+        origin: DataOrigin,
+        semester: Semester,
+        courses: [Course],
+        weekRules: [MeetingWeekRule] = [],
+        overrides: [OccurrenceOverride] = [],
+        exams: [ExamEvent] = [],
+        homework: [HomeworkTask] = [],
+        rooms: [RoomPin] = [],
+        library: [StoredTimetable] = [],
+        activeTimetableID: UUID = TimetableLibrary.implicitID,
+        appearance: AppearanceChoice = .standard,
+        subscribedICSURL: String = ""
+    ) {
         self.schemaVersion = schemaVersion
         self.origin = origin
         self.semester = semester
         self.courses = courses
+        self.weekRules = weekRules
+        self.overrides = overrides
+        self.exams = exams
+        self.homework = homework
+        self.rooms = rooms
+        self.library = library
+        self.activeTimetableID = activeTimetableID
+        self.appearance = appearance
+        self.subscribedICSURL = subscribedICSURL
+    }
+
+    public var scheduleContext: ScheduleContext {
+        ScheduleContext(weekRules: weekRules, overrides: overrides)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion, origin, semester, courses, weekRules, overrides, exams, homework, rooms, library
+        case activeTimetableID, appearance, subscribedICSURL
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        origin = try container.decode(DataOrigin.self, forKey: .origin)
+        semester = try container.decode(Semester.self, forKey: .semester)
+        courses = try container.decode([Course].self, forKey: .courses)
+        weekRules = try container.decodeIfPresent([MeetingWeekRule].self, forKey: .weekRules) ?? []
+        overrides = try container.decodeIfPresent([OccurrenceOverride].self, forKey: .overrides) ?? []
+        exams = try container.decodeIfPresent([ExamEvent].self, forKey: .exams) ?? []
+        homework = try container.decodeIfPresent([HomeworkTask].self, forKey: .homework) ?? []
+        rooms = try container.decodeIfPresent([RoomPin].self, forKey: .rooms) ?? []
+        library = try container.decodeIfPresent([StoredTimetable].self, forKey: .library) ?? []
+        activeTimetableID = try container.decodeIfPresent(UUID.self, forKey: .activeTimetableID) ?? TimetableLibrary.implicitID
+        appearance = try container.decodeIfPresent(AppearanceChoice.self, forKey: .appearance) ?? .standard
+        subscribedICSURL = try container.decodeIfPresent(String.self, forKey: .subscribedICSURL) ?? ""
     }
 }
 
