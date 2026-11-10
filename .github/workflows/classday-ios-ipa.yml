@@ -91,10 +91,7 @@ jobs:
           APP="$(find "$RUNNER_TEMP/DerivedDataSim/Build/Products" -type d -name 'Classday.app' -path '*iphonesimulator*' | head -n 1)"
           test -n "$APP"
           xcrun simctl list devices available | head -n 40
-          DEVICE="$(xcrun simctl list devices available | sed -n 's/.*iPhone 16 (\(.*\)) (Shutdown)/\1/p' | head -n 1)"
-          if [[ -z "$DEVICE" ]]; then
-            DEVICE="$(xcrun simctl list devices available | sed -n 's/.*iPhone \(.*\) (Shutdown)/\1/p' | head -n 1)"
-          fi
+          DEVICE="$(xcrun simctl list devices available | grep 'iPhone' | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}' | head -n 1)"
           test -n "$DEVICE"
           xcrun simctl boot "$DEVICE" || true
           xcrun simctl bootstatus "$DEVICE" -b
@@ -105,6 +102,10 @@ jobs:
             sleep 4
             xcrun simctl io "$DEVICE" screenshot "dist/screenshots/${theme}.png"
           done
+          xcrun simctl terminate "$DEVICE" com.classday.app || true
+          xcrun simctl launch "$DEVICE" com.classday.app --theme neon --detail
+          sleep 4
+          xcrun simctl io "$DEVICE" screenshot "dist/screenshots/detail-neon.png"
 
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
