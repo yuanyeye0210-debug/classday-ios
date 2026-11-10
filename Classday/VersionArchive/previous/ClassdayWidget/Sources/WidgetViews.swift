@@ -47,7 +47,7 @@ struct SmallNextClassView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text(state.phase == .inProgress ? "本节" : "下一节")
+                    Text(phaseTitle)
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(WidgetTheme.secondary(scheme))
                     Spacer()
@@ -97,6 +97,14 @@ struct SmallNextClassView: View {
         .containerBackground(for: .widget) { WidgetBackground() }
         .widgetURL(state.url)
         .accessibilityElement(children: .combine)
+    }
+
+    private var phaseTitle: String {
+        switch state.phase {
+        case .inProgress: return "本节"
+        case .upcoming: return "下一节"
+        case .empty: return "课表"
+        }
     }
 }
 

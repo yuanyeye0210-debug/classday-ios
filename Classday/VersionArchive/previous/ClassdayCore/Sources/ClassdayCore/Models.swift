@@ -1,11 +1,5 @@
 import Foundation
 
-/// Shared identifiers. The App Group string must match both entitlements files.
-public enum AppGroup {
-    public static let identifier = "group.com.classday.shared"
-    public static let storeFileName = "classday-store.json"
-}
-
 public enum WidgetID {
     public static let nextClass = "NextClassWidget"
     public static let todayCourses = "TodayCoursesWidget"
@@ -318,15 +312,3 @@ public enum StoreLocator {
     }
 }
 
-#if os(iOS) || os(macOS) || os(watchOS) || os(visionOS)
-public enum AppGroupContainer {
-    public static func storeURL(fileManager: FileManager = .default) -> URL? {
-        guard let container = fileManager.containerURL(
-            forSecurityApplicationGroupIdentifier: AppGroup.identifier
-        ) else {
-            return nil
-        }
-        return container.appendingPathComponent(AppGroup.storeFileName)
-    }
-}
-#endif

@@ -94,8 +94,12 @@ final class WidgetNotificationTests: XCTestCase {
         let quiet = WidgetProjection.timelinePlan(now: now, document: empty, calendar: calendar)
         XCTAssertGreaterThanOrEqual(quiet.refreshAfter.timeIntervalSince(now), WidgetProjection.minimumRefreshInterval)
         let missing = WidgetProjection.missingStoreState(at: now, calendar: calendar)
-        XCTAssertEqual(missing.small.footnote, "同步后显示下一节课")
-        XCTAssertEqual(missing.medium.emptyTitle, "还没有课表")
+        XCTAssertEqual(missing.small.phase, .empty)
+        XCTAssertEqual(missing.small.name, "读不到课表")
+        XCTAssertEqual(missing.small.footnote, "打开课间同步，或保留小组件后重装")
+        XCTAssertEqual(missing.medium.emptyTitle, "读不到课表")
+        XCTAssertTrue(missing.medium.emptyMessage.contains("Sideloadly"))
+        XCTAssertTrue(missing.medium.emptyMessage.contains("小组件"))
     }
 
     func testNotificationPlanLeadTimeOrderAndCap() {

@@ -37,8 +37,8 @@ struct SettingsView: View {
                 Text("我的")
                     .font(.system(size: 34, weight: .bold))
                     .foregroundStyle(Theme.ink)
-                if !model.appGroupAvailable {
-                    notice("未能访问 App Group「\(AppGroup.identifier)」。课程仍保存在本机，但桌面小组件读不到。请在签名里为 App 和小组件打开同一个 App Group。")
+                if let appGroupNotice = model.appGroupNotice {
+                    notice(appGroupNotice)
                 }
                 if let loadError = model.loadError {
                     notice(loadError)

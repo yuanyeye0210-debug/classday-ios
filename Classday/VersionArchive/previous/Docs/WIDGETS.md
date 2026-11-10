@@ -15,7 +15,7 @@ Kinds are `WidgetID` in ClassdayCore. The app calls `WidgetCenter.reloadTimeline
 
 WidgetKit still decides whether a reload request runs. A burst of edits can be coalesced. The on-disk JSON is the source of truth the next time a timeline is built.
 
-If the App Group file is missing, the widget says to open 课间. The gallery placeholder uses the demo timetable at 2 November 2026 07:40 so the add-widget sheet is not blank. That placeholder is sample data, not a live capture.
+The app and the widget resolve one App Group at runtime (`AppGroupResolver`). The preferred id is `group.com.classday.shared`. A free-account resign often grants a different id; both targets read `embedded.mobileprovision` and use the first id that both profiles contain and that the process can actually open. If that file is missing, the widget shows 读不到课表 and tells you to open 课间 or reinstall with the widget extension kept. The gallery placeholder uses the demo timetable at 2 November 2026 07:40 so the add-widget sheet is not blank. That placeholder is sample data, not a live capture.
 
 ## Deep links
 

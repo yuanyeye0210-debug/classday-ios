@@ -15,6 +15,10 @@
 			</array>
 		</dict>
 	</array>
+	<key>ALTAppGroups</key>
+	<array>
+		<string>group.com.classday.shared</string>
+	</array>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>UILaunchScreen</key>
