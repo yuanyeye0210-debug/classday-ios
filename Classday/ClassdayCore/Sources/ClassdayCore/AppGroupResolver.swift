@@ -192,7 +192,9 @@ public enum AppGroupBundleLayout {
     /// The running bundle is either `Classday.app` or `Classday.app/PlugIns/ClassdayWidget.appex`.
     /// Both targets walk to the same two profiles so the candidate list does not depend on who is asking.
     public static func locate(bundleURL: URL, fileManager: FileManager = .default) -> AppGroupBundleFiles {
-        let bundle = bundleURL.standardizedFileURL
+        // macOS temporary directories are /var → /private/var. Directory listings resolve the
+        // symlink and the URL we were given often does not, so both entry points must canonicalize.
+        let bundle = canonical(bundleURL)
         let app: URL?
         let widget: URL?
         if bundle.pathExtension.lowercased() == "appex" {
@@ -230,10 +232,14 @@ public enum AppGroupBundleLayout {
         }
         appexes.sort { $0.lastPathComponent < $1.lastPathComponent }
         if let named = appexes.first(where: { $0.lastPathComponent == "ClassdayWidget.appex" }) {
-            return named
+            return canonical(named)
         }
-        return appexes.first
+        return appexes.first.map(canonical)
     }
+}
+
+private func canonical(_ url: URL) -> URL {
+    url.resolvingSymlinksInPath().standardizedFileURL
 }
 
 public struct AppGroupResolution: Equatable, Sendable {
