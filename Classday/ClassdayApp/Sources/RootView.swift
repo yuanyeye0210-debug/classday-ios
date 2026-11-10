@@ -756,6 +756,10 @@ struct CoursesView: View {
                         .foregroundStyle(Theme.secondary)
                     Spacer()
                 }
+                if let average = model.weightedScoreAverage, let gpa = model.gpaAverage {
+                    gradesSummaryCard(average: average, gpa: gpa)
+                        .padding(.top, 14)
+                }
                 if model.document.courses.isEmpty {
                     Text("还没有课程，从「今日」页右上角 + 添加。")
                         .font(.system(size: 14, design: .rounded))
@@ -799,6 +803,22 @@ struct CoursesView: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)
+                if let grade = course.grade {
+                    VStack(spacing: 0) {
+                        Text(CourseDetailView.numberText(grade))
+                            .font(.system(size: 21, weight: .heavy, design: .rounded))
+                            .foregroundStyle(Theme.courseInk(course.colorID, scheme: scheme))
+                        Text("分")
+                            .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                            .foregroundStyle(Theme.secondary)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Theme.courseBackground(course.colorID, scheme: scheme))
+                    )
+                }
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("下一次")
                         .font(.system(size: 10.5, weight: .medium, design: .rounded))
@@ -829,6 +849,39 @@ struct CoursesView: View {
             }
         }
         return best
+    }
+
+    private func gradesSummaryCard(average: Double, gpa: Double) -> some View {
+        HStack(spacing: 0) {
+            gradeStat(value: String(format: "%.1f", average), label: "加权均分")
+            gradeDivider
+            gradeStat(value: String(format: "%.2f", gpa), label: "GPA")
+            gradeDivider
+            gradeStat(value: CourseDetailView.numberText(model.earnedCredits), label: "已获学分")
+        }
+        .padding(.vertical, 16)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(Theme.ink)
+        )
+    }
+
+    private func gradeStat(value: String, label: String) -> some View {
+        VStack(spacing: 3) {
+            Text(value)
+                .font(.system(size: 24, weight: .heavy, design: .rounded))
+                .foregroundStyle(Theme.background)
+            Text(label)
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundStyle(Theme.background.opacity(0.65))
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var gradeDivider: some View {
+        Rectangle()
+            .fill(Theme.background.opacity(0.18))
+            .frame(width: 1, height: 34)
     }
 }
 

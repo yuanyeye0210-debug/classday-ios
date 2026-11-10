@@ -9,6 +9,7 @@ struct CourseDetailView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var focusedMeetingID: UUID?
     @State private var appeared = false
+    @State private var showGradeEditor = false
 
     var body: some View {
         let course = model.course(presentation.courseID)
@@ -93,8 +94,11 @@ struct CourseDetailView: View {
                         scheduleCard(course: course, focusedID: meeting.id)
                             .staggerIn(index: 5, on: appeared)
                             .padding(.top, 10)
-                        reminderCard(course)
+                        gradeCard(course)
                             .staggerIn(index: 6, on: appeared)
+                            .padding(.top, 10)
+                        reminderCard(course)
+                            .staggerIn(index: 7, on: appeared)
                             .padding(.top, 10)
                         PrimaryButton(title: "编辑课程") {
                             model.editor = .edit(course.id)
@@ -114,6 +118,54 @@ struct CourseDetailView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.background.ignoresSafeArea())
+        .sheet(isPresented: $showGradeEditor) {
+            GradeEditorView(courseID: presentation.courseID)
+        }
+    }
+
+    private func gradeCard(_ course: Course) -> some View {
+        let bar = Theme.courseBackground(course.colorID, scheme: scheme)
+        let ink = Theme.courseInk(course.colorID, scheme: scheme)
+        return HStack(spacing: 13) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(bar)
+                Image(systemName: "chart.bar.fill")
+                    .font(.system(size: 19))
+                    .foregroundStyle(ink)
+            }
+            .frame(width: 44, height: 44)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("成绩")
+                    .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                    .foregroundStyle(Theme.secondary)
+                if let grade = course.grade {
+                    Text("\(Self.numberText(grade)) 分 · 绩点 \(String(format: "%.1f", AppModel.gradePoint(for: grade))) · \(Self.creditsText(course.credits))")
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .foregroundStyle(Theme.ink)
+                } else {
+                    Text("还没录入 · \(Self.creditsText(course.credits))")
+                        .font(.system(size: 14, design: .rounded))
+                        .foregroundStyle(Theme.secondary)
+                }
+            }
+            Spacer(minLength: 0)
+            Button(course.grade == nil ? "录入" : "修改") { showGradeEditor = true }
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundStyle(ink)
+                .padding(.horizontal, 13)
+                .padding(.vertical, 7)
+                .background(Capsule(style: .continuous).fill(bar))
+        }
+        .journalCard()
+    }
+
+    static func numberText(_ value: Double) -> String {
+        value == value.rounded() ? String(Int(value)) : String(format: "%g", value)
+    }
+
+    static func creditsText(_ credits: Double) -> String {
+        credits > 0 ? "\(numberText(credits)) 学分" : "未填学分"
     }
 
     private func visualHero(course: Course, meeting: Meeting) -> some View {
@@ -464,5 +516,70 @@ private extension View {
         opacity(on ? 1 : 0)
             .offset(y: on ? 0 : 16)
             .animation(.spring(response: 0.5, dampingFraction: 0.85).delay(Double(index) * 0.05), value: on)
+    }
+}
+
+struct GradeEditorView: View {
+    var courseID: UUID
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    @State private var gradeText: String = ""
+    @State private var loaded = false
+
+    var body: some View {
+        let course = model.course(courseID)
+        NavigationStack {
+            Form {
+                Section("成绩（0–100）") {
+                    TextField("如 92", text: $gradeText)
+                        .keyboardType(.decimalPad)
+                    if let value = parsed, let course {
+                        LabeledContent("绩点") {
+                            Text(String(format: "%.1f", AppModel.gradePoint(for: value)))
+                        }
+                        LabeledContent("学分") {
+                            Text(CourseDetailView.creditsText(course.credits))
+                        }
+                    }
+                }
+                if course?.grade != nil {
+                    Section {
+                        Button("清除成绩", role: .destructive) {
+                            model.setCourseGrade(courseID, grade: nil)
+                            dismiss()
+                        }
+                    }
+                }
+            }
+            .navigationTitle(course?.name ?? "成绩")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("保存") {
+                        if let value = parsed {
+                            model.setCourseGrade(courseID, grade: value)
+                        }
+                        dismiss()
+                    }
+                    .disabled(parsed == nil)
+                }
+            }
+            .onAppear {
+                if !loaded {
+                    loaded = true
+                    if let grade = course?.grade {
+                        gradeText = CourseDetailView.numberText(grade)
+                    }
+                }
+            }
+        }
+    }
+
+    private var parsed: Double? {
+        guard let value = Double(gradeText), (0...100).contains(value) else { return nil }
+        return value
     }
 }

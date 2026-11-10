@@ -80,7 +80,9 @@ public enum StoreCodec {
                     if $0.startPeriod != $1.startPeriod { return $0.startPeriod < $1.startPeriod }
                     return $0.id.uuidString < $1.id.uuidString
                 },
-                reminderLeadMinutes: course.reminderLeadMinutes
+                reminderLeadMinutes: course.reminderLeadMinutes,
+                credits: course.credits,
+                grade: course.grade
             )
         }
         return StoreDocument(

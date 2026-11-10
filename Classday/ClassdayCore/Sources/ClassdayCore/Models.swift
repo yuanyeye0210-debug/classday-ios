@@ -161,6 +161,8 @@ public struct Course: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var weeks: [Int]
     public var meetings: [Meeting]
     public var reminderLeadMinutes: Int?
+    public var credits: Double
+    public var grade: Double?
 
     public init(
         id: UUID,
@@ -173,7 +175,9 @@ public struct Course: Codable, Equatable, Hashable, Identifiable, Sendable {
         kind: String = "必修课",
         weeks: [Int],
         meetings: [Meeting],
-        reminderLeadMinutes: Int? = nil
+        reminderLeadMinutes: Int? = nil,
+        credits: Double = 0,
+        grade: Double? = nil
     ) {
         self.id = id
         self.name = name
@@ -186,6 +190,34 @@ public struct Course: Codable, Equatable, Hashable, Identifiable, Sendable {
         self.weeks = Array(Set(weeks)).sorted()
         self.meetings = meetings
         self.reminderLeadMinutes = reminderLeadMinutes
+        self.credits = credits
+        self.grade = grade
+    }
+}
+
+extension Course {
+    private enum CodingKeys: String, CodingKey {
+        case id, name, teacher, location, department, note, colorID, kind, weeks, meetings, reminderLeadMinutes, credits, grade
+    }
+
+    /// 手写解码：credits / grade 是后加字段，旧数据没有这两个键时给默认值，不能让老课表解码失败。
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            id: try container.decode(UUID.self, forKey: .id),
+            name: try container.decode(String.self, forKey: .name),
+            teacher: try container.decode(String.self, forKey: .teacher),
+            location: try container.decode(String.self, forKey: .location),
+            department: try container.decodeIfPresent(String.self, forKey: .department) ?? "",
+            note: try container.decodeIfPresent(String.self, forKey: .note) ?? "",
+            colorID: try container.decode(String.self, forKey: .colorID),
+            kind: try container.decodeIfPresent(String.self, forKey: .kind) ?? "必修课",
+            weeks: try container.decode([Int].self, forKey: .weeks),
+            meetings: try container.decode([Meeting].self, forKey: .meetings),
+            reminderLeadMinutes: try container.decodeIfPresent(Int.self, forKey: .reminderLeadMinutes),
+            credits: try container.decodeIfPresent(Double.self, forKey: .credits) ?? 0,
+            grade: try container.decodeIfPresent(Double.self, forKey: .grade)
+        )
     }
 }
 

@@ -91,7 +91,8 @@ public enum DemoData {
                     Meeting(id: ID.calculusMonday, weekday: 1, startPeriod: 1, endPeriod: 2),
                     Meeting(id: ID.calculusWednesday, weekday: 3, startPeriod: 3, endPeriod: 4),
                 ],
-                reminderLeadMinutes: 10
+                reminderLeadMinutes: 10,
+                credits: 4
             ),
             Course(
                 id: ID.english,
@@ -105,7 +106,8 @@ public enum DemoData {
                 meetings: [
                     Meeting(id: ID.englishMonday, weekday: 1, startPeriod: 3, endPeriod: 4),
                     Meeting(id: ID.englishThursday, weekday: 4, startPeriod: 1, endPeriod: 2),
-                ]
+                ],
+                credits: 2
             ),
             Course(
                 id: ID.programming,
@@ -119,7 +121,8 @@ public enum DemoData {
                 meetings: [
                     Meeting(id: ID.programmingMonday, weekday: 1, startPeriod: 5, endPeriod: 6),
                     Meeting(id: ID.programmingFriday, weekday: 5, startPeriod: 5, endPeriod: 6),
-                ]
+                ],
+                credits: 3
             ),
             Course(
                 id: ID.physics,
@@ -133,7 +136,9 @@ public enum DemoData {
                 meetings: [
                     Meeting(id: ID.physicsTuesday, weekday: 2, startPeriod: 1, endPeriod: 2),
                     Meeting(id: ID.physicsThursday, weekday: 4, startPeriod: 3, endPeriod: 4),
-                ]
+                ],
+                credits: 3,
+                grade: 92
             ),
             Course(
                 id: ID.linear,
@@ -146,7 +151,9 @@ public enum DemoData {
                 weeks: weeks,
                 meetings: [
                     Meeting(id: ID.linearTuesday, weekday: 2, startPeriod: 5, endPeriod: 6),
-                ]
+                ],
+                credits: 3,
+                grade: 85
             ),
             Course(
                 id: ID.pe,
@@ -159,7 +166,8 @@ public enum DemoData {
                 weeks: weeks,
                 meetings: [
                     Meeting(id: ID.peTuesday, weekday: 2, startPeriod: 7, endPeriod: 8),
-                ]
+                ],
+                credits: 1
             ),
         ]
     }

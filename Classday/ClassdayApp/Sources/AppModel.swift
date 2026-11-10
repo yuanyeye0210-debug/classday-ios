@@ -651,6 +651,62 @@ final class AppModel {
         persist(markUserEdited: true)
     }
 
+    func setCourseGrade(_ courseID: UUID, grade: Double?) {
+        guard let index = document.courses.firstIndex(where: { $0.id == courseID }) else { return }
+        document.courses[index].grade = grade
+        persist(markUserEdited: true)
+    }
+
+    var gradedCourses: [Course] {
+        document.courses.filter { $0.grade != nil }
+    }
+
+    /// 学分加权（没填学分的按 1 计权重）
+    var weightedScoreAverage: Double? {
+        let graded = gradedCourses
+        guard !graded.isEmpty else { return nil }
+        var totalWeight = 0.0
+        var total = 0.0
+        for course in graded {
+            let weight = course.credits > 0 ? course.credits : 1
+            total += (course.grade ?? 0) * weight
+            totalWeight += weight
+        }
+        return totalWeight > 0 ? total / totalWeight : nil
+    }
+
+    var gpaAverage: Double? {
+        let graded = gradedCourses
+        guard !graded.isEmpty else { return nil }
+        var totalWeight = 0.0
+        var total = 0.0
+        for course in graded {
+            let weight = course.credits > 0 ? course.credits : 1
+            total += AppModel.gradePoint(for: course.grade ?? 0) * weight
+            totalWeight += weight
+        }
+        return totalWeight > 0 ? total / totalWeight : nil
+    }
+
+    var earnedCredits: Double {
+        gradedCourses.reduce(0) { $0 + $1.credits }
+    }
+
+    static func gradePoint(for score: Double) -> Double {
+        switch score {
+        case 90...: return 4.0
+        case 85...: return 3.7
+        case 82...: return 3.3
+        case 78...: return 3.0
+        case 75...: return 2.7
+        case 72...: return 2.3
+        case 68...: return 2.0
+        case 64...: return 1.5
+        case 60...: return 1.0
+        default: return 0
+        }
+    }
+
     func events(on date: Date) -> [PersonalEvent] {
         document.personalEvents
             .compactMap { event in CivilStamp.date(from: event.startISO, calendar: calendar).map { (event, $0) } }
