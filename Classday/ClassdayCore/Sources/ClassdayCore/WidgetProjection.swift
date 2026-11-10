@@ -140,9 +140,9 @@ public enum WidgetProjection {
             phase: .empty,
             badge: "未同步",
             timeText: "—",
-            name: "打开课间",
+            name: "读不到课表",
             locationText: "",
-            footnote: "同步后显示下一节课",
+            footnote: "打开课间同步，或保留小组件后重装",
             colorID: "blue",
             progress: nil,
             url: nil
@@ -154,8 +154,8 @@ public enum WidgetProjection {
             footerLeft: "课间",
             footerRight: "尚未同步",
             isEmpty: true,
-            emptyTitle: "还没有课表",
-            emptyMessage: "打开课间后会显示在这里"
+            emptyTitle: "读不到课表",
+            emptyMessage: "打开课间同步。仍空白就在 Sideloadly 里保留小组件后重装"
         )
         return WidgetRenderState(small: small, medium: medium)
     }

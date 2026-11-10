@@ -6,40 +6,40 @@
 	objectVersion = 56;
 	objects = {
 
-		22A8380CA65FB818ED65C8DB /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
-		684FFA5766CDFF9F45C1B05E /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22A8380CA65FB818ED65C8DB /* AppDelegate.swift */; };
-		06940C9122CE344F159A3357 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
-		B944D861D96421D998473EC0 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06940C9122CE344F159A3357 /* AppModel.swift */; };
-		0C1F46D0167783C7EF7AEB35 /* ClassdayApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClassdayApp.swift; sourceTree = "<group>"; };
-		9EE03AFA0C7A102A76F3A99B /* ClassdayApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C1F46D0167783C7EF7AEB35 /* ClassdayApp.swift */; };
-		79D01EE2F53F588D7377C709 /* CourseDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CourseDetailView.swift; sourceTree = "<group>"; };
-		7B50B1F1EB3A8F4303D36064 /* CourseDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79D01EE2F53F588D7377C709 /* CourseDetailView.swift */; };
-		300BDEF0888C17B2E78D4BE9 /* CourseEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CourseEditorView.swift; sourceTree = "<group>"; };
-		1A64BDCF024093649E4B54AF /* CourseEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300BDEF0888C17B2E78D4BE9 /* CourseEditorView.swift */; };
-		05385CA001F5D0CE7559A3D9 /* DayAgendaViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayAgendaViews.swift; sourceTree = "<group>"; };
-		0385D30B1837B1A458E42A9F /* DayAgendaViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05385CA001F5D0CE7559A3D9 /* DayAgendaViews.swift */; };
-		05F751286605AB9FBA51E10C /* ReminderScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderScheduler.swift; sourceTree = "<group>"; };
-		DD439564E6B72E4E87345FCB /* ReminderScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05F751286605AB9FBA51E10C /* ReminderScheduler.swift */; };
-		0D966E8A60477C3F85FA0226 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
-		02476335F908C1EBB9CA4F33 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D966E8A60477C3F85FA0226 /* RootView.swift */; };
-		D25B7B931905AFC609FC553B /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
-		D239CFFA391D9E7AD1AF971E /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D25B7B931905AFC609FC553B /* SettingsView.swift */; };
-		214762F0D14180F9A7D89190 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
-		C2D4E6E0CBA35E744B1BC9F3 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 214762F0D14180F9A7D89190 /* Theme.swift */; };
-		EA216C81931F0AD6552FE3A5 /* WeekTimetableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeekTimetableView.swift; sourceTree = "<group>"; };
-		07392C99664FA25E552732D5 /* WeekTimetableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA216C81931F0AD6552FE3A5 /* WeekTimetableView.swift */; };
-		6214B91141A875CC4B71A2D3 /* WidgetReloader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetReloader.swift; sourceTree = "<group>"; };
-		61C1F7305FBCFD5412BCA803 /* WidgetReloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6214B91141A875CC4B71A2D3 /* WidgetReloader.swift */; };
-		BDFB483EF229EACAC45BB02C /* ClassdayWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClassdayWidgetBundle.swift; sourceTree = "<group>"; };
-		33C8AD8FC368AF60F0C7A115 /* ClassdayWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDFB483EF229EACAC45BB02C /* ClassdayWidgetBundle.swift */; };
-		D4C08EAB6ECC32BE4E594DCB /* WidgetViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetViews.swift; sourceTree = "<group>"; };
-		3243D99DD414248191F91C23 /* WidgetViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4C08EAB6ECC32BE4E594DCB /* WidgetViews.swift */; };
-		8AC78F76596F1739F131D440 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		FB90684E69A6C96ED866993E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8AC78F76596F1739F131D440 /* Assets.xcassets */; };
-		360E468717B487147CDACB11 /* Classday-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Classday-Info.plist; sourceTree = "<group>"; };
-		6A1F4A2649711BE0D98D71CD /* Classday.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Classday.entitlements; sourceTree = "<group>"; };
-		5190E876E724F0F74868B085 /* ClassdayWidget-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = ClassdayWidget-Info.plist; sourceTree = "<group>"; };
-		465D216DF35A1F7966FFD646 /* ClassdayWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ClassdayWidget.entitlements; sourceTree = "<group>"; };
+		D1F8D30D21E344E9B420A3B9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		8C15763163D2948F463F3A30 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1F8D30D21E344E9B420A3B9 /* AppDelegate.swift */; };
+		86E9CF08A2F3BA04AFB1075E /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		3B7BA45D02B1EB65E3D6E549 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86E9CF08A2F3BA04AFB1075E /* AppModel.swift */; };
+		CEF53400CCFAAC54F2A9DDC6 /* ClassdayApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClassdayApp.swift; sourceTree = "<group>"; };
+		306C24454FCBAA4AB837947D /* ClassdayApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEF53400CCFAAC54F2A9DDC6 /* ClassdayApp.swift */; };
+		EE35BA953DBF469C8D5BC892 /* CourseDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CourseDetailView.swift; sourceTree = "<group>"; };
+		79080EB847F66D2BE76A257D /* CourseDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE35BA953DBF469C8D5BC892 /* CourseDetailView.swift */; };
+		7830DDE445292850679C098C /* CourseEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CourseEditorView.swift; sourceTree = "<group>"; };
+		64BB28E17ACDC81106062C84 /* CourseEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7830DDE445292850679C098C /* CourseEditorView.swift */; };
+		CF70A81065DA477D09C850A4 /* DayAgendaViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayAgendaViews.swift; sourceTree = "<group>"; };
+		161EB7F67C97BC15A6E92817 /* DayAgendaViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF70A81065DA477D09C850A4 /* DayAgendaViews.swift */; };
+		DC90F8B4EEBE5F5EAEE4F9C1 /* ReminderScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderScheduler.swift; sourceTree = "<group>"; };
+		17AD6A210B806455313732E1 /* ReminderScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC90F8B4EEBE5F5EAEE4F9C1 /* ReminderScheduler.swift */; };
+		D376DE14109CCEA5852ED22C /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		5D97A7BE3AFA00C81F134D4C /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D376DE14109CCEA5852ED22C /* RootView.swift */; };
+		86D5D62184444E83513DA3CB /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		733F2FB3538C58B594B698D4 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86D5D62184444E83513DA3CB /* SettingsView.swift */; };
+		2D8424D94FA3A2667CD17AD5 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		E87DC8F736EB083A4A567171 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D8424D94FA3A2667CD17AD5 /* Theme.swift */; };
+		B61FB45E5AE9433BD8745CBB /* WeekTimetableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeekTimetableView.swift; sourceTree = "<group>"; };
+		E16F0E70A6FED7E71CC334D0 /* WeekTimetableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B61FB45E5AE9433BD8745CBB /* WeekTimetableView.swift */; };
+		CE98D3759A65266B46E1437D /* WidgetReloader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetReloader.swift; sourceTree = "<group>"; };
+		087F048AC70F5F569FC21C26 /* WidgetReloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE98D3759A65266B46E1437D /* WidgetReloader.swift */; };
+		F6F48253C9657D5D61BE3AB7 /* ClassdayWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClassdayWidgetBundle.swift; sourceTree = "<group>"; };
+		D79093BBE9BA8532016D9535 /* ClassdayWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6F48253C9657D5D61BE3AB7 /* ClassdayWidgetBundle.swift */; };
+		12A85E7F16624237DE1D1AF6 /* WidgetViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetViews.swift; sourceTree = "<group>"; };
+		101210D2B0770EC0E7D1FB1D /* WidgetViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12A85E7F16624237DE1D1AF6 /* WidgetViews.swift */; };
+		8E5DF11AD37DA63072365373 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		FB90684E69A6C96ED866993E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8E5DF11AD37DA63072365373 /* Assets.xcassets */; };
+		F214DA87BD86EC2ACCA033C2 /* Classday-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Classday-Info.plist; sourceTree = "<group>"; };
+		2FDE1C8B81AFF7684CF9A46F /* Classday.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Classday.entitlements; sourceTree = "<group>"; };
+		319D4794F860E4AD87ED6EFF /* ClassdayWidget-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = ClassdayWidget-Info.plist; sourceTree = "<group>"; };
+		45FADA922FA25EB21D85474D /* ClassdayWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ClassdayWidget.entitlements; sourceTree = "<group>"; };
 		B6CDB6E5D160E013280D3C68 /* Classday.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Classday.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4C47665D1BA4105DF9684DC4 /* ClassdayWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ClassdayWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		5457AB9FB521F7F7EF0268A3 /* ClassdayWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 4C47665D1BA4105DF9684DC4 /* ClassdayWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -49,18 +49,18 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				684FFA5766CDFF9F45C1B05E /* AppDelegate.swift in Sources */,
-				B944D861D96421D998473EC0 /* AppModel.swift in Sources */,
-				9EE03AFA0C7A102A76F3A99B /* ClassdayApp.swift in Sources */,
-				7B50B1F1EB3A8F4303D36064 /* CourseDetailView.swift in Sources */,
-				1A64BDCF024093649E4B54AF /* CourseEditorView.swift in Sources */,
-				0385D30B1837B1A458E42A9F /* DayAgendaViews.swift in Sources */,
-				DD439564E6B72E4E87345FCB /* ReminderScheduler.swift in Sources */,
-				02476335F908C1EBB9CA4F33 /* RootView.swift in Sources */,
-				D239CFFA391D9E7AD1AF971E /* SettingsView.swift in Sources */,
-				C2D4E6E0CBA35E744B1BC9F3 /* Theme.swift in Sources */,
-				07392C99664FA25E552732D5 /* WeekTimetableView.swift in Sources */,
-				61C1F7305FBCFD5412BCA803 /* WidgetReloader.swift in Sources */,
+				8C15763163D2948F463F3A30 /* AppDelegate.swift in Sources */,
+				3B7BA45D02B1EB65E3D6E549 /* AppModel.swift in Sources */,
+				306C24454FCBAA4AB837947D /* ClassdayApp.swift in Sources */,
+				79080EB847F66D2BE76A257D /* CourseDetailView.swift in Sources */,
+				64BB28E17ACDC81106062C84 /* CourseEditorView.swift in Sources */,
+				161EB7F67C97BC15A6E92817 /* DayAgendaViews.swift in Sources */,
+				17AD6A210B806455313732E1 /* ReminderScheduler.swift in Sources */,
+				5D97A7BE3AFA00C81F134D4C /* RootView.swift in Sources */,
+				733F2FB3538C58B594B698D4 /* SettingsView.swift in Sources */,
+				E87DC8F736EB083A4A567171 /* Theme.swift in Sources */,
+				E16F0E70A6FED7E71CC334D0 /* WeekTimetableView.swift in Sources */,
+				087F048AC70F5F569FC21C26 /* WidgetReloader.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -68,8 +68,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				33C8AD8FC368AF60F0C7A115 /* ClassdayWidgetBundle.swift in Sources */,
-				3243D99DD414248191F91C23 /* WidgetViews.swift in Sources */,
+				D79093BBE9BA8532016D9535 /* ClassdayWidgetBundle.swift in Sources */,
+				101210D2B0770EC0E7D1FB1D /* WidgetViews.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -119,18 +119,18 @@
 		BD99A940F929E55DA9D81AE3 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
-				22A8380CA65FB818ED65C8DB /* AppDelegate.swift */,
-				06940C9122CE344F159A3357 /* AppModel.swift */,
-				0C1F46D0167783C7EF7AEB35 /* ClassdayApp.swift */,
-				79D01EE2F53F588D7377C709 /* CourseDetailView.swift */,
-				300BDEF0888C17B2E78D4BE9 /* CourseEditorView.swift */,
-				05385CA001F5D0CE7559A3D9 /* DayAgendaViews.swift */,
-				05F751286605AB9FBA51E10C /* ReminderScheduler.swift */,
-				0D966E8A60477C3F85FA0226 /* RootView.swift */,
-				D25B7B931905AFC609FC553B /* SettingsView.swift */,
-				214762F0D14180F9A7D89190 /* Theme.swift */,
-				EA216C81931F0AD6552FE3A5 /* WeekTimetableView.swift */,
-				6214B91141A875CC4B71A2D3 /* WidgetReloader.swift */,
+				D1F8D30D21E344E9B420A3B9 /* AppDelegate.swift */,
+				86E9CF08A2F3BA04AFB1075E /* AppModel.swift */,
+				CEF53400CCFAAC54F2A9DDC6 /* ClassdayApp.swift */,
+				EE35BA953DBF469C8D5BC892 /* CourseDetailView.swift */,
+				7830DDE445292850679C098C /* CourseEditorView.swift */,
+				CF70A81065DA477D09C850A4 /* DayAgendaViews.swift */,
+				DC90F8B4EEBE5F5EAEE4F9C1 /* ReminderScheduler.swift */,
+				D376DE14109CCEA5852ED22C /* RootView.swift */,
+				86D5D62184444E83513DA3CB /* SettingsView.swift */,
+				2D8424D94FA3A2667CD17AD5 /* Theme.swift */,
+				B61FB45E5AE9433BD8745CBB /* WeekTimetableView.swift */,
+				CE98D3759A65266B46E1437D /* WidgetReloader.swift */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -138,8 +138,8 @@
 		B83CDE3F7FE0CB57E77B0D44 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
-				BDFB483EF229EACAC45BB02C /* ClassdayWidgetBundle.swift */,
-				D4C08EAB6ECC32BE4E594DCB /* WidgetViews.swift */,
+				F6F48253C9657D5D61BE3AB7 /* ClassdayWidgetBundle.swift */,
+				12A85E7F16624237DE1D1AF6 /* WidgetViews.swift */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -148,7 +148,7 @@
 			isa = PBXGroup;
 			children = (
 				BD99A940F929E55DA9D81AE3 /* Sources */,
-				8AC78F76596F1739F131D440 /* Assets.xcassets */,
+				8E5DF11AD37DA63072365373 /* Assets.xcassets */,
 			);
 			path = ClassdayApp;
 			sourceTree = "<group>";
@@ -164,10 +164,10 @@
 		D35BDCF6803CCB1A9C4483A8 /* Config */ = {
 			isa = PBXGroup;
 			children = (
-				360E468717B487147CDACB11 /* Classday-Info.plist */,
-				6A1F4A2649711BE0D98D71CD /* Classday.entitlements */,
-				5190E876E724F0F74868B085 /* ClassdayWidget-Info.plist */,
-				465D216DF35A1F7966FFD646 /* ClassdayWidget.entitlements */,
+				F214DA87BD86EC2ACCA033C2 /* Classday-Info.plist */,
+				2FDE1C8B81AFF7684CF9A46F /* Classday.entitlements */,
+				319D4794F860E4AD87ED6EFF /* ClassdayWidget-Info.plist */,
+				45FADA922FA25EB21D85474D /* ClassdayWidget.entitlements */,
 			);
 			path = Config;
 			sourceTree = "<group>";
@@ -255,7 +255,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.0.1;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -280,7 +280,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.0.1;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -305,7 +305,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.0.1;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -328,7 +328,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.0.1;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;

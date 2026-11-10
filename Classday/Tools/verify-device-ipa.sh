@@ -58,6 +58,10 @@ plutil -extract CFBundleIdentifier raw "$APP/Info.plist"
 plutil -extract CFBundleIdentifier raw "$APPEX/Info.plist"
 plutil -extract CFBundleURLTypes.0.CFBundleURLSchemes.0 raw "$APP/Info.plist" | grep -qx classday
 plutil -extract NSExtension.NSExtensionPointIdentifier raw "$APPEX/Info.plist" | grep -qx com.apple.widgetkit-extension
+plutil -extract ALTAppGroups.0 raw "$APP/Info.plist" | grep -qx 'group.com.classday.shared'
+plutil -extract ALTAppGroups.0 raw "$APPEX/Info.plist" | grep -qx 'group.com.classday.shared'
+grep -q 'group.com.classday.shared' "$APP/archived-expanded-entitlements.xcent"
+grep -q 'group.com.classday.shared' "$APPEX/archived-expanded-entitlements.xcent"
 
 echo "== signature =="
 set +e

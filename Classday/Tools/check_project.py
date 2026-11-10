@@ -37,8 +37,16 @@ def main() -> int:
     for name in ("Classday.entitlements", "ClassdayWidget.entitlements"):
         text = read(ROOT / "Config" / name)
         check("group.com.classday.shared" in text, f"{name} missing app group")
+    resolver = read(ROOT / "ClassdayCore" / "Sources" / "ClassdayCore" / "AppGroupResolver.swift")
+    check('identifier = "group.com.classday.shared"' in resolver, "AppGroup identifier drifted")
+    check("embedded.mobileprovision" in resolver, "resolver does not read the provisioning profile")
+    check("forSecurityApplicationGroupIdentifier" in resolver, "resolver does not probe the group container")
+    check("UserDefaults" in resolver, "resolver does not probe UserDefaults")
+    check("Remove Extensions" in resolver, "Sideloadly warning lost Remove Extensions")
+    for name in ("Classday-Info.plist", "ClassdayWidget-Info.plist"):
+        plist = read(ROOT / "Config" / name)
+        check("ALTAppGroups" in plist and "group.com.classday.shared" in plist, f"{name} missing ALTAppGroups")
     model = read(ROOT / "ClassdayCore" / "Sources" / "ClassdayCore" / "Models.swift")
-    check('identifier = "group.com.classday.shared"' in model, "AppGroup identifier drifted")
     check("NextClassWidget" in model and "TodayCoursesWidget" in model, "widget kind constants missing")
     check("WidgetID.nextClass" in read(ROOT / "ClassdayWidget" / "Sources" / "ClassdayWidgetBundle.swift"), "widget kind not used")
     check("WidgetID.todayCourses" in read(ROOT / "ClassdayWidget" / "Sources" / "ClassdayWidgetBundle.swift"), "today widget kind not used")

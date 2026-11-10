@@ -5,7 +5,8 @@ name: classday-ios-ipa
 on:
   push:
     branches:
-      - cursor/classday-v1-ea6a
+      - cursor/shared-app-group-92bb
+      - main
 
 permissions:
   contents: read
@@ -53,11 +54,16 @@ jobs:
           APP="$(find "$RUNNER_TEMP/DerivedData/Build/Products" -type d -name 'Classday.app' -path '*iphoneos*' | head -n 1)"
           test -n "$APP"
           test -d "$APP/PlugIns/ClassdayWidget.appex"
+          # The Mach-O stays unsigned. Resign tools that look for this Xcode filename
+          # still see the App Group the entitlements declare.
+          cp Classday/Config/Classday.entitlements "$APP/archived-expanded-entitlements.xcent"
+          cp Classday/Config/ClassdayWidget.entitlements "$APP/PlugIns/ClassdayWidget.appex/archived-expanded-entitlements.xcent"
+          VERSION="$(tr -d '[:space:]' < Classday/VERSION)"
           mkdir -p dist/Payload
           cp -R "$APP" dist/Payload/Classday.app
-          (cd dist && zip -r -y Classday-v1.ipa Payload)
-          bash Classday/Tools/verify-device-ipa.sh dist/Classday-v1.ipa | tee dist/verify.txt
-          shasum -a 256 dist/Classday-v1.ipa | tee dist/SHA256SUMS
+          (cd dist && zip -r -y "Classday-v${VERSION}.ipa" Payload)
+          bash Classday/Tools/verify-device-ipa.sh "dist/Classday-v${VERSION}.ipa" | tee dist/verify.txt
+          shasum -a 256 "dist/Classday-v${VERSION}.ipa" | tee dist/SHA256SUMS
           cp "$RUNNER_TEMP/xcodebuild-iphoneos.log" dist/xcodebuild-iphoneos.log
 
       - name: Simulator compile smoke
@@ -79,9 +85,9 @@ jobs:
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: Classday-v1-ipa
+          name: Classday-v1.0.1-ipa
           path: |
-            dist/Classday-v1.ipa
+            dist/Classday-v*.ipa
             dist/verify.txt
             dist/SHA256SUMS
             dist/xcodebuild-iphoneos.log

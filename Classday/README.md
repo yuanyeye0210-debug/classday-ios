@@ -25,14 +25,14 @@ python3 Tools/generate_xcodeproj.py
 
 ## Signing
 
-See [Docs/SIGNING.md](Docs/SIGNING.md). Both targets need your team, and both need the App Group `group.com.classday.shared`. Until that group exists, the app keeps the timetable in Application Support and says so in 我的. Widgets cannot see that fallback.
+See [Docs/SIGNING.md](Docs/SIGNING.md). Both targets declare the App Group `group.com.classday.shared`. A free Apple ID resign may grant a different id under your team. The app and the widget pick that granted id together. Until a shared group can be opened, the timetable stays in Application Support, 我的 explains the Sideloadly setting, and the widgets show 读不到课表.
 
 Bundle IDs in the project:
 
 - App: `com.classday.app`
 - Widget: `com.classday.app.widget`
 
-Change them together with the entitlements and `AppGroup.identifier` in `ClassdayCore` if your developer account needs different identifiers.
+The entitlements and `AppGroup.identifier` stay on `group.com.classday.shared`. You do not have to edit that string when Sideloadly rewrites the group for a free Apple ID.
 
 ## Run on iPhone
 
@@ -90,7 +90,7 @@ The command archives the last commit into `VersionArchive/previous`, then writes
 - No school login, roster sync, grades, or attendance.
 - Portrait iPhone. iPad is not a separate target.
 - Chinese interface only.
-- Widgets need a signed App Group. WidgetKit may still delay a reload; the timeline covers the next 36 hours of class boundaries.
+- Widgets need a shared App Group in the profile Sideloadly or Xcode installs. The id in that profile may differ from `group.com.classday.shared`. WidgetKit may still delay a reload; the timeline covers the next 36 hours of class boundaries.
 - Reminders are local notifications, capped at 60.
 - Drag-and-drop rescheduling is on the week grid. The day list uses 调整时间.
 - Overlap is based on period numbers, not on clock times that a custom period table might make overlap.

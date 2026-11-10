@@ -80,6 +80,7 @@ final class AppModel {
     var undo: UndoReschedule?
     var banner: String?
     var appGroupAvailable: Bool
+    var appGroupNotice: String?
     var loadError: String?
     var notificationStatusText = "未请求"
     var showImporter = false
@@ -99,10 +100,14 @@ final class AppModel {
         let calendar = ClassdayCalendar.make()
         self.calendar = calendar
         let fallback = StoreLocator.applicationSupportURL()
+        let group = AppGroupContainer.resolution()
         let groupURL = AppGroupContainer.storeURL()
         let resolved = (try? StoreLocator.resolve(groupURL: groupURL, fallbackURL: fallback)) ?? fallback
         storeURL = resolved
-        appGroupAvailable = groupURL != nil
+        appGroupAvailable = group.identifier != nil
+        appGroupNotice = group.identifier == nil
+            ? AppGroupSupport.unavailableNotice(profileGroups: group.profileGroups)
+            : nil
         undoTask = nil
 
         let fileManager = FileManager.default
@@ -147,6 +152,7 @@ final class AppModel {
         self.document = document
         self.storeURL = storeURL
         self.appGroupAvailable = appGroupAvailable
+        self.appGroupNotice = appGroupAvailable ? nil : AppGroupSupport.unavailableNotice(profileGroups: [])
         let calendar = ClassdayCalendar.make()
         self.calendar = calendar
         weekIndex = SemesterCalendar.weekIndex(for: now, semester: document.semester, calendar: calendar) ?? 1
