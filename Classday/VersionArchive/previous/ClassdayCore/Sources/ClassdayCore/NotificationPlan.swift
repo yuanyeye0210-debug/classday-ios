@@ -47,7 +47,8 @@ public enum NotificationPlan {
                 inWeek: week,
                 courses: document.courses,
                 semester: document.semester,
-                calendar: calendar
+                calendar: calendar,
+                context: document.scheduleContext
             ).sorted { $0.start < $1.start }
             for item in items {
                 let lead = item.reminderLeadMinutes ?? document.semester.defaultReminderMinutes

@@ -95,5 +95,12 @@ struct ClassdayWidgetBundle: WidgetBundle {
     var body: some Widget {
         NextClassWidget()
         TodayCoursesWidget()
+        FanStackWidget()
+        WeekBoardWidget()
+        LockNextWidget()
+        NextClassActivityWidget()
+        if #available(iOS 18.0, *) {
+            NextClassControl()
+        }
     }
 }

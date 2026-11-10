@@ -91,6 +91,10 @@ final class AppModel {
     var confirmClear = false
     var confirmReset = false
     var weekSlideForward = true
+    var preferSpecialLayout = true
+    var lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+    var showThemeGallery = false
+    var showStudyDesk = false
 
     let calendar: Calendar
     private let storeURL: URL
@@ -169,12 +173,13 @@ final class AppModel {
             inWeek: week ?? weekIndex,
             courses: document.courses,
             semester: document.semester,
-            calendar: calendar
+            calendar: calendar,
+            context: document.scheduleContext
         )
     }
 
     func occurrences(on date: Date) -> [Occurrence] {
-        ScheduleEngine.occurrences(on: date, courses: document.courses, semester: document.semester, calendar: calendar)
+        ScheduleEngine.occurrences(on: date, courses: document.courses, semester: document.semester, calendar: calendar, context: document.scheduleContext)
     }
 
     func shiftWeek(by delta: Int) {
@@ -496,6 +501,102 @@ final class AppModel {
         selectedDay = calendar.startOfDay(for: now)
     }
 
+    func setAppearance(_ choice: AppearanceChoice) {
+        document.appearance = choice
+        preferSpecialLayout = choice.theme.usesOrbit || choice.theme.usesCube
+        Haptics.play(choice.theme.haptic)
+        persist(markUserEdited: false)
+    }
+
+    func setPerformance(_ tier: PerformanceTier) {
+        document.appearance.performance = tier
+        persist(markUserEdited: false)
+    }
+
+    func cancelThisWeek(_ occurrence: Occurrence) {
+        document = TimetableLibrary.overriding(document, with: OccurrenceOverride(
+            courseID: occurrence.courseID, meetingID: occurrence.meetingID, week: occurrence.weekIndex, kind: .cancelled
+        ))
+        banner = "已取消本周这一节，其他周不变"
+        persist(markUserEdited: true)
+    }
+
+    func delayThisWeek(_ occurrence: Occurrence, minutes: Int = 10) {
+        document = TimetableLibrary.overriding(document, with: OccurrenceOverride(
+            courseID: occurrence.courseID, meetingID: occurrence.meetingID, week: occurrence.weekIndex, kind: .delayed, delayMinutes: minutes
+        ))
+        banner = "本周这一节推迟 \(minutes) 分钟"
+        persist(markUserEdited: true)
+    }
+
+    func setParity(meetingID: UUID, parity: WeekParity) {
+        document = TimetableLibrary.settingParity(document, meetingID: meetingID, parity: parity)
+        banner = parity == .any ? "改回每周都上" : "改为\(parity.title)"
+        persist(markUserEdited: true)
+    }
+
+    func duplicateTimetable(named name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        document = TimetableLibrary.storingCurrent(document, as: trimmed)
+        banner = "已另存「\(trimmed)」"
+        persist(markUserEdited: true)
+    }
+
+    func switchTimetable(to id: UUID) {
+        guard let next = TimetableLibrary.switching(document, to: id) else {
+            banner = "没有这张课表"
+            return
+        }
+        document = next
+        realignWeek()
+        persist(markUserEdited: true)
+    }
+
+    func addHomework(title: String, courseName: String, due: Date) {
+        document.homework.append(HomeworkTask(
+            courseName: courseName,
+            title: title,
+            dueISO: CivilStamp.string(from: due, calendar: calendar)
+        ))
+        persist(markUserEdited: true)
+    }
+
+    func toggleHomework(_ id: UUID) {
+        guard let index = document.homework.firstIndex(where: { $0.id == id }) else { return }
+        document.homework[index].done.toggle()
+        persist(markUserEdited: true)
+    }
+
+    func importCalendar(_ imported: ImportedCalendar, subscribeURL: String? = nil) {
+        document.courses.append(contentsOf: imported.courses)
+        document.exams.append(contentsOf: imported.exams)
+        document.homework.append(contentsOf: imported.homework)
+        if let subscribeURL { document.subscribedICSURL = subscribeURL }
+        banner = "导入了 \(imported.courses.count) 门课、\(imported.exams.count) 场考试"
+        persist(markUserEdited: true)
+    }
+
+    func applySharedTimetable(_ payload: ShareCodec.Payload) {
+        document.semester = payload.semester
+        document.courses = payload.courses
+        document.weekRules = payload.weekRules
+        document.overrides = payload.overrides
+        document.exams = payload.exams
+        document.homework = payload.homework
+        banner = "已导入分享的课表"
+        realignWeek()
+        persist(markUserEdited: true)
+    }
+
+    func rememberRoom(_ name: String, latitude: Double?, longitude: Double?) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        document.rooms.removeAll { $0.name == trimmed }
+        document.rooms.append(RoomPin(name: trimmed, latitude: latitude, longitude: longitude))
+        persist(markUserEdited: false)
+    }
+
     private func persist(markUserEdited: Bool) {
         if markUserEdited {
             document.origin = .user
@@ -508,6 +609,8 @@ final class AppModel {
             return
         }
         WidgetReloader.reload()
+        NextClassActivity.sync(document: document, calendar: calendar)
+        CalendarSync.sync(document, calendar: calendar)
         Task { [weak self] in
             await self?.refreshReminders()
         }

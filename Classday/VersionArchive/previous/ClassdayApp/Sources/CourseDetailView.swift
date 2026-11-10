@@ -31,6 +31,19 @@ struct CourseDetailView: View {
                     Button("调整时间") {
                         model.editor = .reschedule(courseID: presentation.courseID, meetingID: presentation.meetingID)
                     }
+                    if let occurrence = model.occurrences().first(where: { $0.meetingID == presentation.meetingID && $0.weekIndex == model.weekIndex }) {
+                        Button("仅本周取消") { model.cancelThisWeek(occurrence) }
+                        Button("本周推迟 10 分钟") { model.delayThisWeek(occurrence) }
+                    }
+                    Button("单周") { model.setParity(meetingID: presentation.meetingID, parity: .odd) }
+                    Button("双周") { model.setParity(meetingID: presentation.meetingID, parity: .even) }
+                    Button("每周") { model.setParity(meetingID: presentation.meetingID, parity: .any) }
+                    if let course {
+                        Button("导航到教室") {
+                            let pin = model.document.rooms.first { $0.name == course.location }
+                            RoomNavigator.open(location: course.location, pin: pin)
+                        }
+                    }
                     Button("删除课程", role: .destructive) { model.confirmDeleteCourseID = presentation.courseID }
                 } label: {
                     Image(systemName: "ellipsis")
