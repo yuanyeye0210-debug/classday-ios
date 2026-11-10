@@ -157,7 +157,12 @@ struct CourseDetailView: View {
                 .padding(.vertical, 7)
                 .background(Capsule(style: .continuous).fill(bar))
         }
-        .journalCard()
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(Theme.elevated)
+        )
+        .shadow(color: .black.opacity(scheme == .dark ? 0 : 0.05), radius: 10, x: 0, y: 4)
     }
 
     static func numberText(_ value: Double) -> String {
