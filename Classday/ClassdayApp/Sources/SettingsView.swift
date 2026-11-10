@@ -49,9 +49,6 @@ struct SettingsView: View {
                     Label("考试、作业、导入和分享", systemImage: "square.and.arrow.down")
                         .font(.system(size: 17, weight: .semibold))
                 }
-                if let appGroupNotice = model.appGroupNotice {
-                    notice(appGroupNotice)
-                }
                 if let loadError = model.loadError {
                     notice(loadError)
                 }

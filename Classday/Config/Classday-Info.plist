@@ -18,6 +18,7 @@
 	<key>ALTAppGroups</key>
 	<array>
 		<string>group.com.classday.shared</string>
+		<string>group.com.classday.heptara.shared</string>
 	</array>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
