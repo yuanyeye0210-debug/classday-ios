@@ -191,7 +191,7 @@ public enum StoreCodec {
             }
         }
 
-        for conflict in ScheduleEngine.conflicts(among: document.courses) {
+        for conflict in ScheduleEngine.conflicts(among: document.courses, context: document.scheduleContext) {
             warnings.append(ScheduleCopy.conflictMessage(conflict))
         }
         return StoreValidationReport(errors: errors, warnings: warnings)

@@ -249,7 +249,7 @@ public enum ScheduleEngine {
         return nil
     }
 
-    public static func conflicts(among courses: [Course]) -> [MeetingConflict] {
+    public static func conflicts(among courses: [Course], context: ScheduleContext = .empty) -> [MeetingConflict] {
         struct Item {
             var course: Course
             var meeting: Meeting
@@ -268,7 +268,11 @@ public enum ScheduleEngine {
                     left.meeting.startPeriod, left.meeting.endPeriod,
                     right.meeting.startPeriod, right.meeting.endPeriod
                 ) else { continue }
-                let weeks = Array(Set(left.course.weeks).intersection(right.course.weeks)).sorted()
+                let leftParity = context.parity(for: left.meeting.id)
+                let rightParity = context.parity(for: right.meeting.id)
+                let weeks = Array(Set(left.course.weeks).intersection(right.course.weeks))
+                    .filter { leftParity.contains(week: $0) && rightParity.contains(week: $0) }
+                    .sorted()
                 guard !weeks.isEmpty else { continue }
                 result.append(
                     MeetingConflict(
@@ -299,7 +303,8 @@ public enum ScheduleEngine {
         weekday: Int,
         startPeriod: Int,
         courses: [Course],
-        semester: Semester
+        semester: Semester,
+        context: ScheduleContext = .empty
     ) -> MoveValidation {
         guard let courseIndex = courses.firstIndex(where: { $0.id == courseID }) else {
             return .missing
@@ -325,7 +330,7 @@ public enum ScheduleEngine {
         }
         var updated = courses
         updated[courseIndex] = moved
-        let involved = conflicts(among: updated).filter {
+        let involved = conflicts(among: updated, context: context).filter {
             $0.meetingID == meetingID || $0.otherMeetingID == meetingID
         }
         if involved.isEmpty {

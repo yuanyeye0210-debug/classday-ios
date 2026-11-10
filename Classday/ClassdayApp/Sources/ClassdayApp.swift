@@ -5,6 +5,7 @@ import ClassdayCore
 @main
 struct ClassdayApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @Environment(\.scenePhase) private var scenePhase
     @State private var model = AppModel()
 
     var body: some Scene {
@@ -17,9 +18,14 @@ struct ClassdayApp: App {
                     if url.host == "timetable",
                        let token = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "d" })?.value,
                        let payload = ShareCodec.decode(token) {
-                        model.applySharedTimetable(payload)
+                        model.stageSharedTimetable(payload)
                     } else {
                         model.open(url: url)
+                    }
+                }
+                .onChange(of: scenePhase) { _, phase in
+                    if phase == .active {
+                        model.reloadFromDiskIfChanged()
                     }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .classdayOpenCourse)) { note in

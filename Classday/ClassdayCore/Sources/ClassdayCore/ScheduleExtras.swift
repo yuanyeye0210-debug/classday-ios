@@ -214,7 +214,7 @@ public enum TimetableLibrary {
     /// Keeps the current timetable in the library under its id, then loads `id`.
     public static func switching(_ document: StoreDocument, to id: UUID) -> StoreDocument? {
         guard document.activeTimetableID != id else { return document }
-        guard let target = document.library.first(where: { $0.id == id }) ?? (document.activeTimetableID == id ? snapshot(of: document, id: id, name: document.semester.shortName) : nil) else {
+        guard let target = document.library.first(where: { $0.id == id }) else {
             return nil
         }
         var library = document.library.filter { $0.id != document.activeTimetableID && $0.id != id }
@@ -290,7 +290,7 @@ public struct ImportedCalendar: Equatable, Sendable {
 }
 
 public enum ICSImporter {
-    public static func parse(_ text: String, calendar: Calendar = ClassdayCalendar.make()) -> ImportedCalendar {
+    public static func parse(_ text: String, calendar: Calendar = ClassdayCalendar.make(), totalWeeks: Int = 16) -> ImportedCalendar {
         let events = unfold(text).split(separator: "BEGIN:VEVENT").dropFirst().map { block -> [String: String] in
             var fields: [String: String] = [:]
             for line in block.split(whereSeparator: \.isNewline) {
@@ -312,6 +312,10 @@ public enum ICSImporter {
             let start = event["DTSTART"].flatMap { parseICSDate($0, calendar: calendar) }
             let end = event["DTEND"].flatMap { parseICSDate($0, calendar: calendar) }
             let kind = classify(summary)
+            if let rawStart = event["DTSTART"], rawStart.filter({ $0.isNumber }).count == 8 {
+                warnings.append("跳过全天事件「\(summary)」")
+                continue
+            }
             if kind == .exam, let start {
                 exams.append(ExamEvent(
                     courseName: summary,
@@ -344,17 +348,19 @@ public enum ICSImporter {
                 teacher: "",
                 location: location,
                 colorID: CourseColors.all[Int(stableUUID(key).uuid.0) % CourseColors.all.count].id,
-                weeks: Array(1...16),
+                weeks: Array(1...max(1, totalWeeks)),
                 meetings: []
             )
-            let meetingKey = "\(key)|\(weekday)|\(startClock.hhmm)"
-            if !course.meetings.contains(where: { $0.id == stableUUID(meetingKey) }) {
-                course.meetings.append(Meeting(
-                    id: stableUUID(meetingKey),
-                    weekday: weekday,
-                    startPeriod: periodGuess(startClock),
-                    endPeriod: max(periodGuess(startClock), periodGuess(endClock.totalMinutes == startClock.totalMinutes ? endClock : ClockTime(hour: endClock.hour, minute: max(0, endClock.minute - 1))))
-                ))
+            for meetingWeekday in rruleWeekdays(event["RRULE"]) ?? [weekday] {
+                let meetingKey = "\(key)|\(meetingWeekday)|\(startClock.hhmm)|\(endClock.hhmm)"
+                if !course.meetings.contains(where: { $0.id == stableUUID(meetingKey) }) {
+                    course.meetings.append(Meeting(
+                        id: stableUUID(meetingKey),
+                        weekday: meetingWeekday,
+                        startPeriod: periodGuess(startClock),
+                        endPeriod: max(periodGuess(startClock), periodGuess(endClock.totalMinutes == startClock.totalMinutes ? endClock : ClockTime(hour: endClock.hour, minute: max(0, endClock.minute - 1))))
+                    ))
+                }
             }
             courses[key] = course
             _ = endClock
@@ -378,6 +384,17 @@ public enum ICSImporter {
             return .homework
         }
         return .course
+    }
+
+    /// Weekdays named by an RRULE BYDAY list (FREQ=WEEKLY only); nil when the rule names none.
+    private static func rruleWeekdays(_ rrule: String?) -> [Int]? {
+        guard let rrule, rrule.uppercased().contains("FREQ=WEEKLY"),
+              let byday = rrule.split(separator: ";").first(where: { $0.uppercased().hasPrefix("BYDAY=") }) else { return nil }
+        let map = ["MO": 1, "TU": 2, "WE": 3, "TH": 4, "FR": 5, "SA": 6, "SU": 7]
+        let days = byday.dropFirst(6).split(separator: ",").compactMap { token -> Int? in
+            map[String(token.filter { $0.isLetter }).uppercased()]
+        }
+        return days.isEmpty ? nil : Array(Set(days)).sorted()
     }
 
     private static func unfold(_ text: String) -> String {
@@ -452,7 +469,7 @@ public struct FenixEvaluation: Equatable, Sendable {
 }
 
 public enum FenixCalendar {
-    public static func courses(from classes: [FenixClass], calendar: Calendar = ClassdayCalendar.make()) -> [Course] {
+    public static func courses(from classes: [FenixClass], calendar: Calendar = ClassdayCalendar.make(), totalWeeks: Int = 16) -> [Course] {
         var grouped: [String: Course] = [:]
         for item in classes where item.end > item.start {
             let key = "\(item.courseName)|\(item.location)"
@@ -462,13 +479,15 @@ public enum FenixCalendar {
                 teacher: "",
                 location: item.location,
                 colorID: "blue",
-                weeks: Array(1...16),
+                weeks: Array(1...max(1, totalWeeks)),
                 meetings: []
             )
             let weekday = SemesterCalendar.isoWeekday(item.start, calendar: calendar)
             let startPeriod = periodIndex(item.start, calendar: calendar)
             let endPeriod = max(startPeriod, periodIndex(item.end.addingTimeInterval(-60), calendar: calendar))
-            course.meetings.append(Meeting(id: UUID(), weekday: weekday, startPeriod: startPeriod, endPeriod: endPeriod))
+            if !course.meetings.contains(where: { $0.weekday == weekday && $0.startPeriod == startPeriod && $0.endPeriod == endPeriod }) {
+                course.meetings.append(Meeting(id: UUID(), weekday: weekday, startPeriod: startPeriod, endPeriod: endPeriod))
+            }
             grouped[key] = course
         }
         return grouped.values.sorted { $0.name < $1.name }
@@ -542,21 +561,22 @@ public enum FenixCalendar {
 
     private static func iso(_ raw: String?) -> Date? {
         guard let raw, !raw.isEmpty else { return nil }
-        let digits = raw.filter(\.isNumber)
-        guard digits.count >= 8 else { return nil }
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? calendar.timeZone
-        var components = DateComponents()
-        components.calendar = calendar
-        components.timeZone = calendar.timeZone
-        components.year = Int(digits.prefix(4))
-        components.month = Int(digits.dropFirst(4).prefix(2))
-        components.day = Int(digits.dropFirst(6).prefix(2))
-        if digits.count >= 12 {
-            components.hour = Int(digits.dropFirst(8).prefix(2))
-            components.minute = Int(digits.dropFirst(10).prefix(2))
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isoFraction = ISO8601DateFormatter()
+        isoFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = isoFraction.date(from: trimmed) { return date }
+        let isoPlain = ISO8601DateFormatter()
+        isoPlain.formatOptions = [.withInternetDateTime]
+        if let date = isoPlain.date(from: trimmed) { return date }
+        // Naive timestamps carry no offset: read them as local wall time, not GMT.
+        let local = DateFormatter()
+        local.locale = Locale(identifier: "en_US_POSIX")
+        local.timeZone = .current
+        for format in ["yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm", "dd-MM-yyyy HH:mm:ss", "dd-MM-yyyy HH:mm", "dd-MM-yyyy"] {
+            local.dateFormat = format
+            if let date = local.date(from: trimmed) { return date }
         }
-        return calendar.date(from: components)
+        return nil
     }
 }
 

@@ -324,9 +324,9 @@ struct CourseEditorView: View {
                 meetings: [Meeting(id: UUID(), weekday: weekday, startPeriod: 1, endPeriod: 2)]
             )
         case .edit(let id):
-            return document.courses.first { $0.id == id } ?? DemoData.makeCourses()[0]
+            return document.courses.first { $0.id == id } ?? initialCourse(route: .newCourse, document: document, selectedDay: selectedDay, calendar: calendar)
         case .reschedule(let courseID, _):
-            return document.courses.first { $0.id == courseID } ?? DemoData.makeCourses()[0]
+            return document.courses.first { $0.id == courseID } ?? initialCourse(route: .newCourse, document: document, selectedDay: selectedDay, calendar: calendar)
         }
     }
 }

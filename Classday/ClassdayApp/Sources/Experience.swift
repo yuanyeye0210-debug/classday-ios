@@ -434,9 +434,19 @@ struct StudyDeskView: View {
                     TimetableQR(text: ShareCodec.url(for: model.document).absoluteString)
                 }
                 Section("同步") {
+                    Toggle("自动同步到系统日历", isOn: Binding(
+                        get: { CalendarSync.isEnabled },
+                        set: { enabled in
+                            CalendarSync.isEnabled = enabled
+                            if enabled { CalendarSync.sync(model.document, calendar: model.calendar) }
+                        }
+                    ))
                     Text(CalendarSync.status)
                     Text(CloudMirror.status)
-                    Button("立即写入系统日历") { CalendarSync.sync(model.document, calendar: model.calendar) }
+                    Button("立即写入系统日历") {
+                        CalendarSync.isEnabled = true
+                        CalendarSync.sync(model.document, calendar: model.calendar)
+                    }
                     Button("尝试 iCloud") { Task { await CloudMirror.push(model.document) } }
                 }
             }
@@ -453,7 +463,7 @@ struct StudyDeskView: View {
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
             let text = String(data: data, encoding: .utf8) ?? ""
-            model.importCalendar(ICSImporter.parse(text, calendar: model.calendar), subscribeURL: icsURL)
+            model.importCalendar(ICSImporter.parse(text, calendar: model.calendar, totalWeeks: model.document.semester.totalWeeks), subscribeURL: icsURL)
         } catch {
             model.banner = "没有下载到日历"
         }
@@ -467,7 +477,7 @@ struct StudyDeskView: View {
             model.stageImport(data)
         } else {
             let text = String(data: data, encoding: .utf8) ?? ""
-            model.importCalendar(ICSImporter.parse(text, calendar: model.calendar))
+            model.importCalendar(ICSImporter.parse(text, calendar: model.calendar, totalWeeks: model.document.semester.totalWeeks))
         }
     }
 }

@@ -121,7 +121,6 @@ struct SettingsView: View {
                         Task {
                             _ = await ReminderScheduler.shared.requestAuthorization()
                             await model.refreshNotificationStatus()
-                            _ = model.updateSemester(semester)
                         }
                     }
                     if model.notificationStatusText == "已拒绝" {

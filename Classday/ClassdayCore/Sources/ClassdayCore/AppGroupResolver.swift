@@ -368,10 +368,7 @@ public enum AppGroupAccess {
     }
 
     private static func containerURL(for identifier: String, fileManager: FileManager) -> URL? {
-        if let url = fileManager.containerURL(forSecurityApplicationGroupIdentifier: identifier) {
-            return url
-        }
-        return fileManager.containerURL(forSecurityApplicationGroupIdentifier: identifier)
+        fileManager.containerURL(forSecurityApplicationGroupIdentifier: identifier)
     }
 }
 

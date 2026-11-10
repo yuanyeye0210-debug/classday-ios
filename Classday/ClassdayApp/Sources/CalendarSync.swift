@@ -3,7 +3,19 @@ import Foundation
 import ClassdayCore
 
 enum CalendarSync {
-    static var status = "系统日历还没有同步。打开后，改课会更新或删掉对应事件。"
+    private static let statusLock = NSLock()
+    private static var _status = "系统日历还没有同步。打开后，改课会更新或删掉对应事件。"
+    static var status: String {
+        get { statusLock.withLock { _status } }
+        set { statusLock.withLock { _status = newValue } }
+    }
+
+    private static let enabledKey = "classday.calendarSyncEnabled"
+    static var isEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: enabledKey) }
+        set { UserDefaults.standard.set(newValue, forKey: enabledKey) }
+    }
+
     private static let store = EKEventStore()
     private static let marker = "classday-event"
 
@@ -19,10 +31,16 @@ enum CalendarSync {
             return
         }
         let now = Date()
-        guard let end = calendar.date(byAdding: .day, value: 120, to: now) else { return }
-        let predicate = store.predicateForEvents(withStart: now.addingTimeInterval(-86_400), end: end, calendars: [ek])
+        // Lookup window must cover everything the creation loop can create:
+        // the whole semester, not a fixed 120 days from today.
+        let firstWeek = SemesterCalendar.dates(inWeek: 1, semester: document.semester, calendar: calendar)
+        let lastWeek = SemesterCalendar.dates(inWeek: document.semester.totalWeeks, semester: document.semester, calendar: calendar)
+        let windowStart = firstWeek.first?.addingTimeInterval(-86_400) ?? now.addingTimeInterval(-86_400)
+        let windowEnd = lastWeek.last?.addingTimeInterval(2 * 86_400) ?? calendar.date(byAdding: .day, value: 120, to: now) ?? now
+        let predicate = store.predicateForEvents(withStart: windowStart, end: windowEnd, calendars: [ek])
         let existing = store.events(matching: predicate).filter { $0.notes?.contains(marker) == true }
         var seen = Set<String>()
+        var failures = 0
         for week in 1...document.semester.totalWeeks {
             let items = ScheduleEngine.occurrences(
                 inWeek: week,
@@ -42,15 +60,25 @@ enum CalendarSync {
                 event.endDate = item.end
                 event.notes = "\(key)\n\(item.teacher)"
                 event.url = ClassdayLink.course(item.courseID, meeting: item.meetingID)
-                try? store.save(event, span: .thisEvent)
+                do {
+                    try store.save(event, span: .thisEvent)
+                } catch {
+                    failures += 1
+                }
             }
         }
         for event in existing {
             let key = event.notes?.split(separator: "\n").first.map(String.init) ?? ""
             if key.hasPrefix(marker), !seen.contains(key) {
-                try? store.remove(event, span: .thisEvent)
+                do {
+                    try store.remove(event, span: .thisEvent)
+                } catch {
+                    failures += 1
+                }
             }
         }
-        status = "已写入系统日历。取消或推迟某一周后会跟着更新。"
+        status = failures == 0
+            ? "已写入系统日历。取消或推迟某一周后会跟着更新。"
+            : "已同步，但有 \(failures) 个事件写入失败，稍后保存课表时会再试。"
     }
 }

@@ -70,6 +70,15 @@ struct RootView: View {
         } message: {
             Text(model.importErrors ?? "")
         }
+        .confirmationDialog("导入分享的课表？", isPresented: Binding(
+            get: { model.pendingShare != nil },
+            set: { if !$0 { model.cancelSharedTimetable() } }
+        )) {
+            Button("替换当前课表") { model.commitSharedTimetable() }
+            Button("取消", role: .cancel) { model.cancelSharedTimetable() }
+        } message: {
+            Text("会用分享的课表替换当前课表。当前课表会先自动存一份到课表库里，之后可以切回来。")
+        }
         .confirmationDialog("这份课表有时间重叠", isPresented: Binding(
             get: { model.stagedImport != nil },
             set: { if !$0 { model.stagedImport = nil; model.importWarnings = [] } }

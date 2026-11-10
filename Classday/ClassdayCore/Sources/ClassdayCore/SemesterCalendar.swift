@@ -62,7 +62,7 @@ public enum SemesterCalendar {
     }
 
     public static func dates(inWeek week: Int, semester: Semester, calendar: Calendar) -> [Date] {
-        guard week >= 1, let startMonday = semesterMonday(semester, calendar: calendar) else { return [] }
+        guard week >= 1, week <= semester.totalWeeks, let startMonday = semesterMonday(semester, calendar: calendar) else { return [] }
         guard let monday = calendar.date(byAdding: .day, value: (week - 1) * 7, to: startMonday) else {
             return []
         }

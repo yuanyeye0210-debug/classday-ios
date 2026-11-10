@@ -99,6 +99,7 @@ final class AppModel {
     let calendar: Calendar
     private let storeURL: URL
     private var undoTask: Task<Void, Never>?
+    private var storeFileModified: Date?
 
     init() {
         let calendar = ClassdayCalendar.make()
@@ -122,8 +123,14 @@ final class AppModel {
             do {
                 loaded = try StoreFile.load(from: resolved)
             } catch {
+                // Preserve the unreadable file before any later save can
+                // overwrite it with the demo fallback.
+                let stamp = Int(Date().timeIntervalSince1970)
+                let backup = resolved.deletingLastPathComponent()
+                    .appendingPathComponent("classday-store-corrupt-\(stamp).json")
+                try? fileManager.copyItem(at: resolved, to: backup)
                 loaded = DemoData.makeDocument()
-                initialError = "课表文件无法读取，原文件还在，没有被覆盖。"
+                initialError = "课表文件无法读取，已另存一份损坏文件备份，没有直接覆盖。"
             }
         } else {
             loaded = DemoData.makeDocument()
@@ -131,6 +138,7 @@ final class AppModel {
         }
         document = loaded
         loadError = initialError
+        storeFileModified = Self.modificationDate(of: resolved)
 
         let now = Date()
         if let week = SemesterCalendar.weekIndex(for: now, semester: loaded.semester, calendar: calendar) {
@@ -159,6 +167,7 @@ final class AppModel {
         self.appGroupNotice = appGroupAvailable ? nil : AppGroupSupport.unavailableNotice(profileGroups: [])
         let calendar = ClassdayCalendar.make()
         self.calendar = calendar
+        storeFileModified = Self.modificationDate(of: storeURL)
         weekIndex = SemesterCalendar.weekIndex(for: now, semester: document.semester, calendar: calendar) ?? 1
         selectedDay = calendar.startOfDay(for: now)
     }
@@ -265,7 +274,7 @@ final class AppModel {
         let normalized = StoreCodec.normalized(next)
         let report = StoreCodec.validate(normalized, calendar: calendar)
         if let error = report.errors.first { return error }
-        if let conflict = ScheduleEngine.conflicts(among: normalized.courses).first(where: {
+        if let conflict = ScheduleEngine.conflicts(among: normalized.courses, context: normalized.scheduleContext).first(where: {
             $0.courseID == course.id || $0.otherCourseID == course.id
         }) {
             return ScheduleCopy.conflictMessage(conflict)
@@ -400,7 +409,8 @@ final class AppModel {
             weekday: drag.proposedWeekday,
             startPeriod: drag.proposedStart,
             courses: document.courses,
-            semester: document.semester
+            semester: document.semester,
+            context: document.scheduleContext
         )
     }
 
@@ -418,7 +428,8 @@ final class AppModel {
             weekday: drag.proposedWeekday,
             startPeriod: drag.proposedStart,
             courses: document.courses,
-            semester: document.semester
+            semester: document.semester,
+            context: document.scheduleContext
         )
         switch validation {
         case .ok(let courses):
@@ -478,12 +489,41 @@ final class AppModel {
         notificationStatusText = await ReminderScheduler.shared.statusText()
     }
 
+    private static func modificationDate(of url: URL) -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
+    }
+
+    /// The widget extension can rewrite the shared store (e.g. "推迟 10 分钟").
+    /// When the app comes back to the foreground, adopt the on-disk version
+    /// instead of silently overwriting it on the next save.
+    func reloadFromDiskIfChanged() {
+        guard let modified = Self.modificationDate(of: storeURL),
+              modified != storeFileModified,
+              let reloaded = try? StoreFile.load(from: storeURL),
+              reloaded != document else { return }
+        document = reloaded
+        storeFileModified = modified
+        presented = nil
+        undo = nil
+        drag = nil
+        realignWeek()
+        banner = "已载入小组件里的修改"
+        WidgetReloader.reload()
+        NextClassActivity.sync(document: document, calendar: calendar)
+        if CalendarSync.isEnabled {
+            CalendarSync.sync(document, calendar: calendar)
+        }
+        Task { [weak self] in
+            await self?.refreshReminders()
+        }
+    }
+
     func course(_ id: UUID) -> Course? {
         document.courses.first { $0.id == id }
     }
 
     func conflicts() -> [MeetingConflict] {
-        ScheduleEngine.conflicts(among: document.courses)
+        ScheduleEngine.conflicts(among: document.courses, context: document.scheduleContext)
     }
 
     private func replace(with incoming: StoreDocument) {
@@ -568,23 +608,78 @@ final class AppModel {
         persist(markUserEdited: true)
     }
 
+    private static func courseSignature(_ course: Course) -> String {
+        let meetings = course.meetings
+            .map { "\($0.weekday):\($0.startPeriod)-\($0.endPeriod)" }
+            .sorted()
+            .joined(separator: ",")
+        return "\(course.name)|\(course.location)|\(meetings)"
+    }
+
     func importCalendar(_ imported: ImportedCalendar, subscribeURL: String? = nil) {
-        document.courses.append(contentsOf: imported.courses)
-        document.exams.append(contentsOf: imported.exams)
-        document.homework.append(contentsOf: imported.homework)
+        var knownIDs = Set(document.courses.map(\.id))
+        var knownSignatures = Set(document.courses.map(Self.courseSignature))
+        var newCourses: [Course] = []
+        for course in imported.courses {
+            let signature = Self.courseSignature(course)
+            guard !knownIDs.contains(course.id), !knownSignatures.contains(signature) else { continue }
+            knownIDs.insert(course.id)
+            knownSignatures.insert(signature)
+            newCourses.append(course)
+        }
+        var knownExams = Set(document.exams.map { "\($0.courseName)|\($0.startISO)|\($0.location)" })
+        var newExams: [ExamEvent] = []
+        for exam in imported.exams {
+            let key = "\(exam.courseName)|\(exam.startISO)|\(exam.location)"
+            guard !knownExams.contains(key) else { continue }
+            knownExams.insert(key)
+            newExams.append(exam)
+        }
+        var knownHomework = Set(document.homework.map { "\($0.courseName)|\($0.title)|\($0.dueISO)" })
+        var newHomework: [HomeworkTask] = []
+        for task in imported.homework {
+            let key = "\(task.courseName)|\(task.title)|\(task.dueISO)"
+            guard !knownHomework.contains(key) else { continue }
+            knownHomework.insert(key)
+            newHomework.append(task)
+        }
+        document.courses.append(contentsOf: newCourses)
+        document.exams.append(contentsOf: newExams)
+        document.homework.append(contentsOf: newHomework)
         if let subscribeURL { document.subscribedICSURL = subscribeURL }
-        banner = "导入了 \(imported.courses.count) 门课、\(imported.exams.count) 场考试"
+        let skipped = imported.courses.count - newCourses.count
+        banner = skipped > 0
+            ? "导入了 \(newCourses.count) 门课、\(newExams.count) 场考试，跳过 \(skipped) 门重复课程"
+            : "导入了 \(newCourses.count) 门课、\(newExams.count) 场考试"
         persist(markUserEdited: true)
     }
 
+    var pendingShare: ShareCodec.Payload?
+
+    func stageSharedTimetable(_ payload: ShareCodec.Payload) {
+        pendingShare = payload
+    }
+
+    func commitSharedTimetable() {
+        guard let payload = pendingShare else { return }
+        pendingShare = nil
+        applySharedTimetable(payload)
+    }
+
+    func cancelSharedTimetable() {
+        pendingShare = nil
+    }
+
     func applySharedTimetable(_ payload: ShareCodec.Payload) {
+        // Keep the current timetable recoverable in the library first.
+        document = TimetableLibrary.storingCurrent(document, as: "导入前备份")
         document.semester = payload.semester
         document.courses = payload.courses
         document.weekRules = payload.weekRules
         document.overrides = payload.overrides
         document.exams = payload.exams
         document.homework = payload.homework
-        banner = "已导入分享的课表"
+        banner = "已导入分享的课表，原课表已存入课表库"
         realignWeek()
         persist(markUserEdited: true)
     }
@@ -604,13 +699,16 @@ final class AppModel {
         do {
             try StoreFile.save(document, to: storeURL)
             loadError = nil
+            storeFileModified = Self.modificationDate(of: storeURL)
         } catch {
             banner = "未能保存课表"
             return
         }
         WidgetReloader.reload()
         NextClassActivity.sync(document: document, calendar: calendar)
-        CalendarSync.sync(document, calendar: calendar)
+        if CalendarSync.isEnabled {
+            CalendarSync.sync(document, calendar: calendar)
+        }
         Task { [weak self] in
             await self?.refreshReminders()
         }
