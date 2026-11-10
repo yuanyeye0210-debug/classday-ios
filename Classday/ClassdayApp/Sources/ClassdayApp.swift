@@ -71,6 +71,13 @@ private struct ChromeInstaller: ViewModifier {
             // run produces a preview of it alongside the theme shots.
             model.present(courseID: course.id, meetingID: meeting.id)
         }
+        // CI screenshot hooks for the rebuilt frame's other pages.
+        if arguments.contains("--week") {
+            model.tab = .week
+        }
+        if arguments.contains("--courses") {
+            model.tab = .courses
+        }
         guard let index = arguments.firstIndex(of: "--theme"), index + 1 < arguments.count else { return }
         model.setAppearance(AppearanceChoice(themeID: arguments[index + 1], performance: .balanced))
     }

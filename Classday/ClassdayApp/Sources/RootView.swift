@@ -4,19 +4,46 @@ import ClassdayCore
 
 struct RootView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var zoom
 
     var body: some View {
         @Bindable var model = model
-        TabView(selection: $model.tab) {
-            TimetableRoot()
-                .tabItem { Label("课表", systemImage: "square.grid.2x2") }
-                .tag(AppTab.timetable)
-            AgendaView()
-                .tabItem { Label("日程", systemImage: "calendar") }
-                .tag(AppTab.agenda)
-            SettingsView()
-                .tabItem { Label("我的", systemImage: "person") }
-                .tag(AppTab.settings)
+        ZStack {
+            TabView(selection: $model.tab) {
+                TodayView()
+                    .tabItem { Label("今日", systemImage: "sun.max") }
+                    .tag(AppTab.today)
+                WeekJournalView()
+                    .tabItem { Label("周览", systemImage: "calendar") }
+                    .tag(AppTab.week)
+                CoursesView()
+                    .tabItem { Label("课程", systemImage: "books.vertical") }
+                    .tag(AppTab.courses)
+                SettingsView()
+                    .tabItem { Label("我的", systemImage: "person") }
+                    .tag(AppTab.settings)
+            }
+            if let presented = model.presented {
+                CourseDetailView(presentation: presented, namespace: zoom)
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.96)))
+                    .zIndex(2)
+            }
+        }
+        .background {
+            ThemeBackground()
+            if model.document.appearance.theme.specialLayout == "glass" {
+                ThemeBackground().modifier(MotionParallax())
+            }
+        }
+        .toolbar(model.presented == nil ? .visible : .hidden, for: .tabBar)
+        .animation(reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.86), value: model.presented?.id)
+        .sheet(item: $model.editor) { route in
+            CourseEditorView(route: route, document: model.document, selectedDay: model.selectedDay, calendar: model.calendar)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+                .presentationCornerRadius(28)
+                .presentationBackground { EditorSheetBackground() }
         }
         .overlay(alignment: .top) {
             if let banner = model.banner {
@@ -70,15 +97,6 @@ struct RootView: View {
         } message: {
             Text(model.importErrors ?? "")
         }
-        .confirmationDialog("导入分享的课表？", isPresented: Binding(
-            get: { model.pendingShare != nil },
-            set: { if !$0 { model.cancelSharedTimetable() } }
-        )) {
-            Button("替换当前课表") { model.commitSharedTimetable() }
-            Button("取消", role: .cancel) { model.cancelSharedTimetable() }
-        } message: {
-            Text("会用分享的课表替换当前课表。当前课表会先自动存一份到课表库里，之后可以切回来。")
-        }
         .confirmationDialog("这份课表有时间重叠", isPresented: Binding(
             get: { model.stagedImport != nil },
             set: { if !$0 { model.stagedImport = nil; model.importWarnings = [] } }
@@ -87,6 +105,15 @@ struct RootView: View {
             Button("取消", role: .cancel) {}
         } message: {
             Text(model.importWarnings.prefix(3).joined(separator: "\n"))
+        }
+        .confirmationDialog("导入分享的课表？", isPresented: Binding(
+            get: { model.pendingShare != nil },
+            set: { if !$0 { model.cancelSharedTimetable() } }
+        )) {
+            Button("替换当前课表") { model.commitSharedTimetable() }
+            Button("取消", role: .cancel) { model.cancelSharedTimetable() }
+        } message: {
+            Text("会用分享的课表替换当前课表。当前课表会先自动存一份到课表库里，之后可以切回来。")
         }
         .confirmationDialog("删除这门课？", isPresented: Binding(
             get: { model.confirmDeleteCourseID != nil },
@@ -124,224 +151,428 @@ struct RootView: View {
     }
 }
 
-struct TimetableRoot: View {
-    @Environment(AppModel.self) private var model
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.horizontalSizeClass) private var widthClass
-    @Namespace private var zoom
+struct JournalPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .animation(.spring(response: 0.32, dampingFraction: 0.55), value: configuration.isPressed)
+    }
+}
+
+struct CourseGlyphTile: View {
+    var name: String
+    var colorID: String
+    var size: CGFloat = 56
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        @Bindable var model = model
-        ZStack {
-            VStack(spacing: 12) {
-                if widthClass == .regular {
-                    Text("横屏课表")
-                        .font(.caption)
-                        .foregroundStyle(Theme.secondary)
+        Text(String(name.prefix(1)))
+            .font(.system(size: size * 0.44, weight: .heavy, design: .rounded))
+            .foregroundStyle(Theme.courseInk(colorID, scheme: scheme))
+            .frame(width: size, height: size)
+            .background(
+                RoundedRectangle(cornerRadius: size * 0.32, style: .continuous)
+                    .fill(Theme.courseBackground(colorID, scheme: scheme))
+            )
+    }
+}
+
+struct TodayView: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 60)) { tick in
+            content(now: tick.date)
+        }
+        .toolbar(model.presented == nil ? .visible : .hidden, for: .tabBar)
+    }
+
+    private func content(now: Date) -> some View {
+        let todays = model.occurrences(on: now).sorted { $0.start < $1.start }
+        let next = todays.first { $0.end > now }
+        let doneCount = todays.filter { $0.end <= now }.count
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                header(now: now)
+                if model.document.courses.isEmpty {
+                    emptyAllCard
+                        .padding(.top, 18)
+                } else if let next {
+                    nextHero(occ: next, now: now)
+                        .padding(.top, 18)
+                    progressRow(done: doneCount, total: todays.count)
+                        .padding(.top, 14)
+                } else if todays.isEmpty {
+                    restDayCard(now: now)
+                        .padding(.top, 18)
+                } else {
+                    allDoneCard(now: now)
+                        .padding(.top, 18)
                 }
-                header
-                modeBar
-                statusBanner
+                if !todays.isEmpty {
+                    Text("今天的课")
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .foregroundStyle(Theme.ink)
+                        .padding(.top, 22)
+                        .padding(.bottom, 10)
+                    timeline(items: todays, now: now)
+                }
                 if let loadError = model.loadError {
                     Text(loadError)
                         .font(.footnote)
                         .foregroundStyle(Theme.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 20)
+                        .padding(.top, 12)
                 }
-                Group {
-                    if model.document.appearance.theme.usesOrbit && model.preferSpecialLayout {
-                        OrbitWeekView()
-                    } else if model.document.appearance.theme.usesCube && model.preferSpecialLayout {
-                        CubeWeekView()
-                    } else if model.mode == .week {
-                        WeekTimetableView(namespace: zoom)
-                    } else {
-                        DayTimetableView(namespace: zoom)
-                    }
-                }
-                .gesture(
-                    MagnificationGesture().onEnded { scale in
-                        if scale < 0.9 { model.mode = .day; model.preferSpecialLayout = false }
-                        if scale > 1.1 { model.mode = .week }
-                    }
-                )
-                .animation(motion, value: model.weekIndex)
-                summary
             }
-            .padding(.top, 8)
-            if let presented = model.presented {
-                CourseDetailView(presentation: presented, namespace: zoom)
-                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.96)))
-                    .zIndex(2)
-            }
+            .padding(.horizontal, 20)
+            .padding(.top, 10)
+            .padding(.bottom, 28)
         }
-        .background {
-            ThemeBackground()
-            if model.document.appearance.theme.specialLayout == "glass" {
-                ThemeBackground().modifier(MotionParallax())
-            }
-        }
-        .toolbar(model.presented == nil ? Visibility.visible : Visibility.hidden, for: .tabBar)
-        .animation(motion, value: model.presented?.id)
-        .sheet(item: $model.editor) { route in
-            CourseEditorView(route: route, document: model.document, selectedDay: model.selectedDay, calendar: model.calendar)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
-                .presentationCornerRadius(28)
-                .presentationBackground { EditorSheetBackground() }
-        }
-        .sensoryFeedback(.selection, trigger: model.weekIndex)
+        .scrollIndicators(.hidden)
     }
 
-    private var motion: Animation? {
-        reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.86)
-    }
-
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("课曜")
-                    .font(.system(size: 34, weight: .bold))
+    private func header(now: Date) -> some View {
+        let cal = model.calendar
+        let title = "\(cal.component(.month, from: now))月\(cal.component(.day, from: now))日 · \(ScheduleCopy.weekdayName(SemesterCalendar.isoWeekday(now, calendar: cal)))"
+        return HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 27, weight: .heavy, design: .rounded))
                     .foregroundStyle(Theme.ink)
-                Spacer()
-                Menu {
-                    Button("新建课程", systemImage: "plus") { model.beginNewCourse() }
-                    Button("导入 JSON", systemImage: "square.and.arrow.down") { model.showImporter = true }
-                } label: {
-                    Text("导入 +")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(Theme.accentInk)
-                }
-                .accessibilityLabel("导入或新建课程")
-            }
-            HStack(spacing: 8) {
-                Text(model.document.semester.shortName)
-                    .font(.system(size: 14))
-                    .foregroundStyle(Theme.secondary)
-                if model.document.origin == .demo {
-                    Text("演示数据")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Theme.accentInk)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(Capsule().fill(Theme.hero))
-                        .accessibilityLabel("当前是演示数据")
-                }
-            }
-            HStack(alignment: .center, spacing: 12) {
-                Text("第 \(model.weekIndex) 周")
-                    .font(.system(size: 28, weight: .bold))
-                    .foregroundStyle(Theme.ink)
-                Spacer()
                 HStack(spacing: 8) {
-                    Button { changeWeek(-1) } label: { Image(systemName: "chevron.left") }
-                        .disabled(model.weekIndex <= 1)
-                    Text(SemesterCalendar.weekRangeLabel(week: model.weekIndex, semester: model.document.semester, calendar: model.calendar))
-                        .font(.system(size: 15, weight: .medium))
+                    Text(model.document.semester.shortName)
+                        .font(.system(size: 13))
                         .foregroundStyle(Theme.secondary)
-                        .monospacedDigit()
-                    Button { changeWeek(1) } label: { Image(systemName: "chevron.right") }
-                        .disabled(model.weekIndex >= model.document.semester.totalWeeks)
+                    if model.document.origin == .demo {
+                        Text("演示数据")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Theme.accentInk)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Capsule().fill(Theme.hero))
+                    }
                 }
-                .foregroundStyle(Theme.accentInk)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("第 \(model.weekIndex) 周，\(SemesterCalendar.weekRangeLabel(week: model.weekIndex, semester: model.document.semester, calendar: model.calendar))")
-                .accessibilityAdjustableAction { direction in
-                    changeWeek(direction == .increment ? 1 : -1)
-                }
             }
-        }
-        .padding(.horizontal, 20)
-    }
-
-    private var modeBar: some View {
-        HStack(spacing: 4) {
-            ForEach(TimetableMode.allCases) { mode in
-                Button {
-                    model.mode = mode
-                } label: {
-                    Text(mode.title)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(model.mode == mode ? Theme.ink : Theme.secondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(model.mode == mode ? Theme.card : Color.clear)
-                                .shadow(color: model.mode == mode ? .black.opacity(0.04) : .clear, radius: 4, y: 1)
-                        )
-                }
-                .buttonStyle(PressButtonStyle())
-                .accessibilityAddTraits(model.mode == mode ? .isSelected : [])
-            }
-            Button { returnToToday() } label: {
-                Text("回本周")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Theme.accentInk)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-            }
-            .buttonStyle(PressButtonStyle())
-            .accessibilityHint("回到今天所在的周")
-        }
-        .padding(4)
-        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.segment))
-        .padding(.horizontal, 20)
-    }
-
-    private var statusBanner: some View {
-        TimelineView(.periodic(from: .now, by: 30)) { tick in
-            let schedule = model.document.scheduleContext
-            let current = ScheduleEngine.currentOccurrence(
-                at: tick.date,
-                courses: model.document.courses,
-                semester: model.document.semester,
-                calendar: model.calendar,
-                context: schedule
-            )
-            let next = ScheduleEngine.nextOccurrence(
-                after: tick.date,
-                courses: model.document.courses,
-                semester: model.document.semester,
-                calendar: model.calendar,
-                context: schedule
-            )
-            if let text = ScheduleCopy.statusBanner(current: current, next: next, now: tick.date, calendar: model.calendar) {
-                Text(text)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Theme.accentInk)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 20)
-                    .accessibilityLabel(text)
-            }
-        }
-    }
-
-    private var summary: some View {
-        let summary = ScheduleCopy.weekSummary(occurrences: model.occurrences())
-        return HStack {
-            Text(summary.headline)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(Theme.ink)
             Spacer()
-            Text(summary.aside)
-                .font(.system(size: 13))
-                .foregroundStyle(Theme.secondary)
+            Menu {
+                Button("新建课程", systemImage: "plus") { model.beginNewCourse() }
+                Button("导入 JSON", systemImage: "square.and.arrow.down") { model.showImporter = true }
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(Theme.accentInk)
+                    .frame(width: 40, height: 40)
+                    .background(Circle().fill(Theme.elevated))
+            }
+            .accessibilityLabel("新建或导入课程")
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
+    }
+
+    private func nextHero(occ: Occurrence, now: Date) -> some View {
+        let bg = Theme.courseBackground(occ.colorID, scheme: scheme)
+        let ink = Theme.courseInk(occ.colorID, scheme: scheme)
+        let ongoing = occ.start <= now && occ.end > now
+        return Button {
+            model.present(courseID: occ.courseID, meetingID: occ.meetingID)
+        } label: {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 8) {
+                    Text(ongoing ? "正在上课" : "下一节课")
+                        .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                        .foregroundStyle(ink)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 4)
+                        .background(Capsule(style: .continuous).fill(ink.opacity(0.16)))
+                    Spacer()
+                    Text(ScheduleCopy.upcomingFootnote(from: now, to: occ.start, calendar: model.calendar))
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(ink.opacity(0.75))
+                }
+                HStack(alignment: .center, spacing: 14) {
+                    CourseGlyphTile(name: occ.name, colorID: occ.colorID, size: 58)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(occ.name)
+                            .font(.system(size: 21, weight: .heavy, design: .rounded))
+                            .foregroundStyle(ink)
+                            .lineLimit(1)
+                        Text("\(occ.location) · \(ScheduleCopy.periodSpan(occ.startPeriod, occ.endPeriod))")
+                            .font(.system(size: 12.5, weight: .medium, design: .rounded))
+                            .foregroundStyle(ink.opacity(0.75))
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                    Text(ScheduleCopy.hhmm(occ.start, calendar: model.calendar))
+                        .font(.system(size: 32, weight: .heavy, design: .rounded))
+                        .foregroundStyle(ink)
+                }
+                .padding(.top, 14)
+            }
+            .padding(18)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                ZStack(alignment: .topTrailing) {
+                    LinearGradient(colors: [bg, bg.opacity(0.6)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    Circle()
+                        .fill(Color.white.opacity(scheme == .dark ? 0.05 : 0.35))
+                        .frame(width: 120, height: 120)
+                        .offset(x: 40, y: -55)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .shadow(color: bg.opacity(0.3), radius: 14, x: 0, y: 8)
+        }
+        .buttonStyle(JournalPressStyle())
+        .accessibilityLabel("\(occ.name)，\(ScheduleCopy.hhmm(occ.start, calendar: model.calendar))，\(occ.location)")
+    }
+
+    private func progressRow(done: Int, total: Int) -> some View {
+        HStack(spacing: 10) {
+            ZStack {
+                Circle().stroke(Theme.line, lineWidth: 5)
+                Circle()
+                    .trim(from: 0, to: total > 0 ? CGFloat(done) / CGFloat(total) : 0)
+                    .stroke(Theme.accent, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                Image(systemName: "checkmark")
+                    .font(.system(size: 10, weight: .heavy))
+                    .foregroundStyle(done == total && total > 0 ? Theme.accentInk : Theme.secondary)
+            }
+            .frame(width: 34, height: 34)
+            Text(done >= total ? "今天的课都上完了" : "今天已上 \(done) 节 · 还剩 \(total - done) 节")
+                .font(.system(size: 13.5, weight: .semibold, design: .rounded))
+                .foregroundStyle(Theme.ink)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
         .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Theme.elevated))
-        .padding(.horizontal, 20)
-        .padding(.bottom, 8)
         .accessibilityElement(children: .combine)
     }
 
-    private func changeWeek(_ delta: Int) {
-        withAnimation(motion) { model.shiftWeek(by: delta) }
+    private func timeline(items: [Occurrence], now: Date) -> some View {
+        VStack(spacing: 8) {
+            ForEach(Array(items.enumerated()), id: \.element.id) { _, occ in
+                timelineRow(occ: occ, now: now)
+            }
+        }
     }
 
-    private func returnToToday() {
-        withAnimation(motion) { model.returnToCurrentWeek() }
+    private func timelineRow(occ: Occurrence, now: Date) -> some View {
+        let past = occ.end <= now
+        let ongoing = occ.start <= now && occ.end > now
+        let bg = Theme.courseBackground(occ.colorID, scheme: scheme)
+        let ink = Theme.courseInk(occ.colorID, scheme: scheme)
+        return Button {
+            model.present(courseID: occ.courseID, meetingID: occ.meetingID)
+        } label: {
+            HStack(spacing: 12) {
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(ScheduleCopy.hhmm(occ.start, calendar: model.calendar))
+                        .font(.system(size: 13.5, weight: .bold, design: .rounded))
+                        .foregroundStyle(past ? Theme.secondary : Theme.ink)
+                    Text(ScheduleCopy.hhmm(occ.end, calendar: model.calendar))
+                        .font(.system(size: 11, design: .rounded))
+                        .foregroundStyle(Theme.secondary)
+                }
+                .frame(width: 46)
+                Capsule()
+                    .fill(past ? Theme.line : bg)
+                    .frame(width: 5)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(occ.name)
+                        .font(.system(size: 15.5, weight: .bold, design: .rounded))
+                        .foregroundStyle(past ? Theme.secondary : Theme.ink)
+                        .lineLimit(1)
+                    Text("\(occ.location) · \(ScheduleCopy.periodSpan(occ.startPeriod, occ.endPeriod))")
+                        .font(.system(size: 12, design: .rounded))
+                        .foregroundStyle(Theme.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                if ongoing {
+                    Text("进行中")
+                        .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                        .foregroundStyle(ink)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Capsule(style: .continuous).fill(bg))
+                } else if past {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(Theme.secondary.opacity(0.6))
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(past ? Theme.elevated.opacity(0.6) : Theme.elevated)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(ongoing ? bg : Color.clear, lineWidth: 1.5)
+            )
+        }
+        .buttonStyle(JournalPressStyle())
+    }
+
+    private func tomorrowLine(now: Date) -> String? {
+        guard let next = ScheduleEngine.nextOccurrence(
+            after: now,
+            courses: model.document.courses,
+            semester: model.document.semester,
+            calendar: model.calendar,
+            context: model.document.scheduleContext
+        ) else { return nil }
+        return "接下来：\(next.name) · \(ScheduleCopy.upcomingFootnote(from: now, to: next.start, calendar: model.calendar))"
+    }
+
+    private var emptyAllCard: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 30, weight: .bold))
+                .foregroundStyle(Theme.accentInk)
+            Text("还没有课程")
+                .font(.system(size: 19, weight: .heavy, design: .rounded))
+                .foregroundStyle(Theme.ink)
+            Text("点右上角 + 新建，或者导入一份课表 JSON 开始。")
+                .font(.system(size: 13.5, design: .rounded))
+                .foregroundStyle(Theme.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 30)
+        .padding(.horizontal, 18)
+        .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(Theme.elevated))
+    }
+
+    private func restDayCard(now: Date) -> some View {
+        softMessageCard(
+            icon: "sun.max.fill",
+            title: "今天没有课",
+            message: tomorrowLine(now: now) ?? "这一周的课都结束了，好好休息。"
+        )
+    }
+
+    private func allDoneCard(now: Date) -> some View {
+        softMessageCard(
+            icon: "checkmark.seal.fill",
+            title: "今天的课上完了",
+            message: tomorrowLine(now: now) ?? "好好休息，明天见。"
+        )
+    }
+
+    private func softMessageCard(icon: String, title: String, message: String) -> some View {
+        VStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 30, weight: .bold))
+                .foregroundStyle(Theme.accentInk)
+            Text(title)
+                .font(.system(size: 19, weight: .heavy, design: .rounded))
+                .foregroundStyle(Theme.ink)
+            Text(message)
+                .font(.system(size: 13.5, design: .rounded))
+                .foregroundStyle(Theme.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 30)
+        .padding(.horizontal, 18)
+        .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(Theme.elevated))
+        .accessibilityElement(children: .combine)
+    }
+}
+
+struct CoursesView: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text("全部课程")
+                        .font(.system(size: 27, weight: .heavy, design: .rounded))
+                        .foregroundStyle(Theme.ink)
+                    Text("\(model.document.courses.count) 门")
+                        .font(.system(size: 13.5, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Theme.secondary)
+                    Spacer()
+                }
+                if model.document.courses.isEmpty {
+                    Text("还没有课程，从「今日」页右上角 + 添加。")
+                        .font(.system(size: 14, design: .rounded))
+                        .foregroundStyle(Theme.secondary)
+                        .padding(.top, 24)
+                } else {
+                    VStack(spacing: 10) {
+                        ForEach(model.document.courses.sorted { $0.name < $1.name }, id: \.id) { course in
+                            courseCard(course)
+                        }
+                    }
+                    .padding(.top, 16)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 10)
+            .padding(.bottom, 28)
+        }
+        .scrollIndicators(.hidden)
+        .toolbar(model.presented == nil ? .visible : .hidden, for: .tabBar)
+    }
+
+    private func courseCard(_ course: Course) -> some View {
+        let next = nextOccurrence(course: course)
+        return Button {
+            let meetingID = next?.meetingID ?? course.meetings.first?.id
+            if let meetingID {
+                model.present(courseID: course.id, meetingID: meetingID)
+            }
+        } label: {
+            HStack(spacing: 13) {
+                CourseGlyphTile(name: course.name, colorID: course.colorID, size: 54)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(course.name)
+                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                        .foregroundStyle(Theme.ink)
+                        .lineLimit(1)
+                    Text(course.teacher.isEmpty ? course.location : "\(course.teacher) · \(course.location)")
+                        .font(.system(size: 12.5, design: .rounded))
+                        .foregroundStyle(Theme.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("下一次")
+                        .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                        .foregroundStyle(Theme.secondary)
+                    Text(next.map { ScheduleCopy.upcomingFootnote(from: Date(), to: $0.start, calendar: model.calendar) } ?? "已结束")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundStyle(Theme.accentInk)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Theme.secondary.opacity(0.6))
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Theme.elevated))
+            .shadow(color: .black.opacity(scheme == .dark ? 0 : 0.05), radius: 10, x: 0, y: 4)
+        }
+        .buttonStyle(JournalPressStyle())
+    }
+
+    private func nextOccurrence(course: Course) -> Occurrence? {
+        let now = Date()
+        var best: Occurrence?
+        for week in 1...model.document.semester.totalWeeks {
+            for occ in model.occurrences(inWeek: week) where occ.courseID == course.id && occ.start > now {
+                if best == nil || occ.start < best!.start {
+                    best = occ
+                }
+            }
+        }
+        return best
     }
 }

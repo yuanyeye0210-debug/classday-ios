@@ -310,3 +310,191 @@ struct WeekTimetableView: View {
             }
     }
 }
+
+struct WeekJournalView: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var motion: Animation? {
+        reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.86)
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                header
+                ForEach(1...7, id: \.self) { weekday in
+                    dayCard(weekday: weekday)
+                        .padding(.top, 10)
+                }
+                summaryCard
+                    .padding(.top, 14)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 10)
+            .padding(.bottom, 28)
+        }
+        .scrollIndicators(.hidden)
+        .toolbar(model.presented == nil ? .visible : .hidden, for: .tabBar)
+        .sensoryFeedback(.selection, trigger: model.weekIndex)
+    }
+
+    private var header: some View {
+        let currentWeek = SemesterCalendar.weekIndex(for: Date(), semester: model.document.semester, calendar: model.calendar) ?? model.weekIndex
+        return HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("第 \(model.weekIndex) 周")
+                    .font(.system(size: 27, weight: .heavy, design: .rounded))
+                    .foregroundStyle(Theme.ink)
+                Text(SemesterCalendar.weekRangeLabel(week: model.weekIndex, semester: model.document.semester, calendar: model.calendar))
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(Theme.secondary)
+            }
+            Spacer()
+            HStack(spacing: 8) {
+                if model.weekIndex != currentWeek {
+                    Button {
+                        withAnimation(motion) { model.returnToCurrentWeek() }
+                    } label: {
+                        Text("回本周")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundStyle(Theme.accentInk)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 9)
+                            .background(Capsule(style: .continuous).fill(Theme.elevated))
+                    }
+                    .buttonStyle(JournalPressStyle())
+                }
+                Button {
+                    withAnimation(motion) { model.shiftWeek(by: -1) }
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(Theme.accentInk)
+                        .frame(width: 38, height: 38)
+                        .background(Circle().fill(Theme.elevated))
+                }
+                .buttonStyle(JournalPressStyle())
+                .disabled(model.weekIndex <= 1)
+                Button {
+                    withAnimation(motion) { model.shiftWeek(by: 1) }
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(Theme.accentInk)
+                        .frame(width: 38, height: 38)
+                        .background(Circle().fill(Theme.elevated))
+                }
+                .buttonStyle(JournalPressStyle())
+                .disabled(model.weekIndex >= model.document.semester.totalWeeks)
+            }
+        }
+        .gesture(
+            DragGesture(minimumDistance: 30)
+                .onEnded { value in
+                    if value.translation.width < -70 {
+                        withAnimation(motion) { model.shiftWeek(by: 1) }
+                    } else if value.translation.width > 70 {
+                        withAnimation(motion) { model.shiftWeek(by: -1) }
+                    }
+                }
+        )
+        .accessibilityElement(children: .contain)
+    }
+
+    private func dayCard(weekday: Int) -> some View {
+        let dates = SemesterCalendar.dates(inWeek: model.weekIndex, semester: model.document.semester, calendar: model.calendar)
+        let date = weekday - 1 < dates.count ? dates[weekday - 1] : Date()
+        let isToday = model.calendar.isDateInToday(date)
+        let items = model.occurrences().filter { $0.weekday == weekday }.sorted { $0.start < $1.start }
+        return HStack(alignment: .top, spacing: 14) {
+            VStack(spacing: 2) {
+                Text("\(model.calendar.component(.day, from: date))")
+                    .font(.system(size: 23, weight: .heavy, design: .rounded))
+                    .foregroundStyle(isToday ? Theme.accentInk : Theme.ink)
+                Text(ScheduleCopy.weekdayShort(weekday))
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Theme.secondary)
+                if isToday {
+                    Text("今天")
+                        .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule(style: .continuous).fill(Theme.accent))
+                }
+            }
+            .frame(width: 42)
+            VStack(alignment: .leading, spacing: 8) {
+                if items.isEmpty {
+                    Text("无课")
+                        .font(.system(size: 13.5, design: .rounded))
+                        .foregroundStyle(Theme.secondary.opacity(0.7))
+                        .padding(.vertical, 6)
+                } else {
+                    ForEach(items, id: \.id) { occ in
+                        miniRow(occ: occ)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Theme.elevated))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(isToday ? Theme.accent.opacity(0.55) : Color.clear, lineWidth: 1.5)
+        )
+        .shadow(color: .black.opacity(scheme == .dark ? 0 : 0.05), radius: 10, x: 0, y: 4)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func miniRow(occ: Occurrence) -> some View {
+        let bg = Theme.courseBackground(occ.colorID, scheme: scheme)
+        return Button {
+            model.present(courseID: occ.courseID, meetingID: occ.meetingID)
+        } label: {
+            HStack(spacing: 10) {
+                Capsule()
+                    .fill(bg)
+                    .frame(width: 5, height: 34)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(occ.name)
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .foregroundStyle(Theme.ink)
+                        .lineLimit(1)
+                    Text("\(ScheduleCopy.hhmm(occ.start, calendar: model.calendar))–\(ScheduleCopy.hhmm(occ.end, calendar: model.calendar)) · \(occ.location)")
+                        .font(.system(size: 12, design: .rounded))
+                        .foregroundStyle(Theme.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Theme.secondary.opacity(0.5))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(bg.opacity(scheme == .dark ? 0.25 : 0.35)))
+        }
+        .buttonStyle(JournalPressStyle())
+    }
+
+    private var summaryCard: some View {
+        let summary = ScheduleCopy.weekSummary(occurrences: model.occurrences())
+        return HStack {
+            Text(summary.headline)
+                .font(.system(size: 15.5, weight: .bold, design: .rounded))
+                .foregroundStyle(Theme.ink)
+            Spacer()
+            Text(summary.aside)
+                .font(.system(size: 12.5, design: .rounded))
+                .foregroundStyle(Theme.secondary)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Theme.elevated))
+        .accessibilityElement(children: .combine)
+    }
+}

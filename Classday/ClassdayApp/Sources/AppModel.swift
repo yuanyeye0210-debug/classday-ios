@@ -17,6 +17,9 @@ enum TimetableMode: String, CaseIterable, Identifiable {
 }
 
 enum AppTab: Hashable {
+    case today
+    case week
+    case courses
     case timetable
     case agenda
     case settings
@@ -73,7 +76,7 @@ final class AppModel {
     var weekIndex: Int
     var selectedDay: Date
     var mode: TimetableMode = .week
-    var tab: AppTab = .timetable
+    var tab: AppTab = .today
     var presented: CoursePresentation?
     var editor: EditorRoute?
     var drag: DragSession?
