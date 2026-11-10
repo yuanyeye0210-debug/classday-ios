@@ -37,8 +37,20 @@ struct SettingsView: View {
                 Text("我的")
                     .font(.system(size: 34, weight: .bold))
                     .foregroundStyle(Theme.ink)
-                if !model.appGroupAvailable {
-                    notice("未能访问 App Group「\(AppGroup.identifier)」。课程仍保存在本机，但桌面小组件读不到。请在签名里为 App 和小组件打开同一个 App Group。")
+                Button {
+                    model.showThemeGallery = true
+                } label: {
+                    Label("主题 · \(model.document.appearance.theme.name)", systemImage: "paintpalette")
+                        .font(.system(size: 17, weight: .semibold))
+                }
+                Button {
+                    model.showStudyDesk = true
+                } label: {
+                    Label("考试、作业、导入和分享", systemImage: "square.and.arrow.down")
+                        .font(.system(size: 17, weight: .semibold))
+                }
+                if let appGroupNotice = model.appGroupNotice {
+                    notice(appGroupNotice)
                 }
                 if let loadError = model.loadError {
                     notice(loadError)
@@ -115,7 +127,7 @@ struct SettingsView: View {
                     if model.notificationStatusText == "已拒绝" {
                         Button("打开系统设置") { openSettings() }
                     }
-                    Text("开启某门课的提醒时才会向系统请求权限。允许后，课间会在本地安排最多 \(NotificationPlan.pendingLimit) 条即将上课的通知。")
+                    Text("开启某门课的提醒时才会向系统请求权限。允许后，课曜会在本地安排最多 \(NotificationPlan.pendingLimit) 条即将上课的通知。")
                         .font(.footnote)
                         .foregroundStyle(Theme.secondary)
                 }
@@ -134,7 +146,7 @@ struct SettingsView: View {
                         .foregroundStyle(Theme.secondary)
                 }
                 section("关于") {
-                    Text("课间 / Classday")
+                    Text("课曜 / Heptara")
                         .font(.system(size: 17, weight: .semibold))
                     Text("版本 \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0")")
                         .foregroundStyle(Theme.secondary)
@@ -156,11 +168,13 @@ struct SettingsView: View {
         .onChange(of: model.document.semester) { _, newValue in
             semester = newValue
         }
+        .sheet(isPresented: $model.showThemeGallery) { ThemeGalleryView() }
+        .sheet(isPresented: $model.showStudyDesk) { StudyDeskView() }
         .fileExporter(
             isPresented: $exporting,
             document: exportDocument,
             contentType: .json,
-            defaultFilename: "课间课表.json"
+            defaultFilename: "课曜课表.json"
         ) { result in
             if case .failure = result { model.banner = "导出没有完成" }
         }

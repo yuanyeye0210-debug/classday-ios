@@ -107,6 +107,17 @@ def main() -> None:
 
     for path in APP_SOURCES:
         add_source(path, "app", app_build_files, app_file_refs)
+    metal_children: list[str] = []
+    for path in sorted((ROOT / "ClassdayShaders.metal",)):
+        if path.is_file():
+            ref, declaration = file_ref(path, "sourcecode.metal")
+            build = xid(f"build:metal:{path.as_posix()}")
+            objects.append(declaration)
+            objects.append(
+                f"\t\t{build} /* {path.name} in Sources */ = {{isa = PBXBuildFile; fileRef = {ref} /* {path.name} */; }};"
+            )
+            app_build_files.append(f"\t\t\t\t{build} /* {path.name} in Sources */,")
+            metal_children.append(f"{ref} /* {path.name} */")
     for path in WIDGET_SOURCES:
         add_source(path, "widget", widget_build_files, widget_file_refs)
 
@@ -174,8 +185,56 @@ def main() -> None:
     objects.append(phase(widget_sources_phase, "PBXSourcesBuildPhase", "Sources", widget_build_files))
     objects.append(phase(app_frameworks_phase, "PBXFrameworksBuildPhase", "Frameworks", [f"\t\t\t\t{link_app} /* ClassdayCore in Frameworks */,"]))
     objects.append(phase(widget_frameworks_phase, "PBXFrameworksBuildPhase", "Frameworks", [f"\t\t\t\t{link_widget} /* ClassdayCore in Frameworks */,"]))
-    objects.append(phase(app_resources_phase, "PBXResourcesBuildPhase", "Resources", [f"\t\t\t\t{assets_build} /* Assets.xcassets in Resources */,"]))
-    objects.append(phase(widget_resources_phase, "PBXResourcesBuildPhase", "Resources", []))
+    en_strings = xid("ref:infoplist:en")
+    zh_strings = xid("ref:infoplist:zh-Hans")
+    strings_variant = xid("variant:infoplist")
+    objects.append(
+        f"\t\t{en_strings} /* en */ = {{isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = \"<group>\"; }};"
+    )
+    objects.append(
+        f"\t\t{zh_strings} /* zh-Hans */ = {{isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = \"zh-Hans\"; path = \"zh-Hans.lproj/InfoPlist.strings\"; sourceTree = \"<group>\"; }};"
+    )
+    objects.append(
+        f"\t\t{strings_variant} /* InfoPlist.strings */ = {{\n"
+        f"\t\t\tisa = PBXVariantGroup;\n"
+        f"\t\t\tchildren = (\n"
+        f"\t\t\t\t{en_strings} /* en */,\n"
+        f"\t\t\t\t{zh_strings} /* zh-Hans */,\n"
+        f"\t\t\t);\n"
+        f"\t\t\tname = InfoPlist.strings;\n"
+        f"\t\t\tsourceTree = \"<group>\";\n"
+        f"\t\t}};"
+    )
+    app_strings_build = xid("build:app-infoplist-strings")
+    widget_strings_build = xid("build:widget-infoplist-strings")
+    widget_assets_build = xid("build:widget-assets")
+    objects.append(
+        f"\t\t{app_strings_build} /* InfoPlist.strings in Resources */ = {{isa = PBXBuildFile; fileRef = {strings_variant} /* InfoPlist.strings */; }};"
+    )
+    objects.append(
+        f"\t\t{widget_strings_build} /* InfoPlist.strings in Resources */ = {{isa = PBXBuildFile; fileRef = {strings_variant} /* InfoPlist.strings */; }};"
+    )
+    objects.append(
+        f"\t\t{widget_assets_build} /* Assets.xcassets in Resources */ = {{isa = PBXBuildFile; fileRef = {assets_ref} /* Assets.xcassets */; }};"
+    )
+    objects.append(phase(
+        app_resources_phase,
+        "PBXResourcesBuildPhase",
+        "Resources",
+        [
+            f"\t\t\t\t{assets_build} /* Assets.xcassets in Resources */,",
+            f"\t\t\t\t{app_strings_build} /* InfoPlist.strings in Resources */,",
+        ],
+    ))
+    objects.append(phase(
+        widget_resources_phase,
+        "PBXResourcesBuildPhase",
+        "Resources",
+        [
+            f"\t\t\t\t{widget_assets_build} /* Assets.xcassets in Resources */,",
+            f"\t\t\t\t{widget_strings_build} /* InfoPlist.strings in Resources */,",
+        ],
+    ))
     objects.append(
         phase(
             embed_phase,
@@ -222,7 +281,12 @@ def main() -> None:
         )
     )
     objects.append(group(widget_group, "ClassdayWidget", "ClassdayWidget", [f"{widget_sources_group} /* Sources */"]))
-    objects.append(group(config_group, "Config", "Config", [f"{ref} /* {name} */" for ref, name in config_refs]))
+    objects.append(group(
+        config_group,
+        "Config",
+        "Config",
+        [f"{ref} /* {name} */" for ref, name in config_refs] + [f"{strings_variant} /* InfoPlist.strings */"],
+    ))
     objects.append(
         group(
             products_group,
@@ -240,6 +304,7 @@ def main() -> None:
                 f"{app_group} /* ClassdayApp */",
                 f"{widget_group} /* ClassdayWidget */",
                 f"{config_group} /* Config */",
+                *metal_children,
                 f"{products_group} /* Products */",
             ],
         )
@@ -284,7 +349,7 @@ def main() -> None:
         "SKIP_INSTALL": "NO",
         "SWIFT_EMIT_LOC_STRINGS": "YES",
         "SWIFT_VERSION": "5.0",
-        "TARGETED_DEVICE_FAMILY": "1",
+        "TARGETED_DEVICE_FAMILY": "1,2",
     }
     app_settings = {
         **common_target,

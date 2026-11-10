@@ -5,7 +5,9 @@ name: classday-ios-ipa
 on:
   push:
     branches:
-      - cursor/classday-v1-ea6a
+      - cursor/shared-app-group-92bb
+      - cursor/classday-2-themes-92bb
+      - main
 
 permissions:
   contents: read
@@ -53,11 +55,16 @@ jobs:
           APP="$(find "$RUNNER_TEMP/DerivedData/Build/Products" -type d -name 'Classday.app' -path '*iphoneos*' | head -n 1)"
           test -n "$APP"
           test -d "$APP/PlugIns/ClassdayWidget.appex"
+          # The Mach-O stays unsigned. Resign tools that look for this Xcode filename
+          # still see the App Group the entitlements declare.
+          cp Classday/Config/Classday.entitlements "$APP/archived-expanded-entitlements.xcent"
+          cp Classday/Config/ClassdayWidget.entitlements "$APP/PlugIns/ClassdayWidget.appex/archived-expanded-entitlements.xcent"
+          VERSION="$(tr -d '[:space:]' < Classday/VERSION)"
           mkdir -p dist/Payload
           cp -R "$APP" dist/Payload/Classday.app
-          (cd dist && zip -r -y Classday-v1.ipa Payload)
-          bash Classday/Tools/verify-device-ipa.sh dist/Classday-v1.ipa | tee dist/verify.txt
-          shasum -a 256 dist/Classday-v1.ipa | tee dist/SHA256SUMS
+          (cd dist && zip -r -y "Classday-v${VERSION}.ipa" Payload)
+          bash Classday/Tools/verify-device-ipa.sh "dist/Classday-v${VERSION}.ipa" | tee dist/verify.txt
+          shasum -a 256 "dist/Classday-v${VERSION}.ipa" | tee dist/SHA256SUMS
           cp "$RUNNER_TEMP/xcodebuild-iphoneos.log" dist/xcodebuild-iphoneos.log
 
       - name: Simulator compile smoke
@@ -76,17 +83,49 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             build | tee dist/xcodebuild-simulator.log
 
+      - name: Theme screenshots
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          mkdir -p dist/screenshots
+          APP="$(find "$RUNNER_TEMP/DerivedDataSim/Build/Products" -type d -name 'Classday.app' -path '*iphonesimulator*' | head -n 1)"
+          test -n "$APP"
+          xcrun simctl list devices available | head -n 40
+          DEVICE="$(xcrun simctl list devices available | sed -n 's/.*iPhone 16 (\(.*\)) (Shutdown)/\1/p' | head -n 1)"
+          if [[ -z "$DEVICE" ]]; then
+            DEVICE="$(xcrun simctl list devices available | sed -n 's/.*iPhone \(.*\) (Shutdown)/\1/p' | head -n 1)"
+          fi
+          test -n "$DEVICE"
+          xcrun simctl boot "$DEVICE" || true
+          xcrun simctl bootstatus "$DEVICE" -b
+          xcrun simctl install "$DEVICE" "$APP"
+          for theme in neon glass hud aurora mech orbit cube; do
+            xcrun simctl terminate "$DEVICE" com.classday.app || true
+            xcrun simctl launch "$DEVICE" com.classday.app --theme "$theme"
+            sleep 4
+            xcrun simctl io "$DEVICE" screenshot "dist/screenshots/${theme}.png"
+          done
+
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: Classday-v1-ipa
+          name: Classday-unsigned-ipa
           path: |
-            dist/Classday-v1.ipa
+            dist/Classday-v*.ipa
             dist/verify.txt
             dist/SHA256SUMS
             dist/xcodebuild-iphoneos.log
             dist/xcodebuild-simulator.log
           if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload theme screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Classday-theme-screenshots
+          path: dist/screenshots/*.png
+          if-no-files-found: ignore
           retention-days: 14
 
       - name: Upload build log on failure

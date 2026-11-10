@@ -71,6 +71,10 @@ struct CourseBlockView: View {
                 .font(.system(size: 9, weight: .medium))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
+            if !occurrence.parityLabel.isEmpty {
+                Text(occurrence.parityLabel)
+                    .font(.system(size: 8, weight: .bold))
+            }
             Spacer(minLength: 0)
             if let progress {
                 GeometryReader { geo in

@@ -87,7 +87,16 @@ public enum StoreCodec {
             schemaVersion: document.schemaVersion,
             origin: document.origin,
             semester: semester,
-            courses: courses
+            courses: courses,
+            weekRules: document.weekRules,
+            overrides: document.overrides,
+            exams: document.exams,
+            homework: document.homework,
+            rooms: document.rooms,
+            library: document.library,
+            activeTimetableID: document.activeTimetableID,
+            appearance: document.appearance,
+            subscribedICSURL: document.subscribedICSURL.trimmingCharacters(in: .whitespacesAndNewlines)
         )
     }
 

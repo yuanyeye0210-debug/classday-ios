@@ -1,6 +1,6 @@
-# 课间 / Classday
+# 课曜 / Heptara
 
-Native SwiftUI iPhone app and WidgetKit extension for a local weekly timetable. Working title: 课间 / Classday. It is an independent design. It is not the official「超级课程表」app and does not aim for feature parity with it.
+Native SwiftUI iPhone app and WidgetKit extension for a local weekly timetable. The product name is 课曜 / Heptara. It is an independent design. It is not the official「超级课程表」app and does not aim for feature parity with it.
 
 There is no campus account, grade query, or school server. Courses live in a JSON file on the phone and, when signing is set up, in an App Group the widgets can read.
 
@@ -25,14 +25,14 @@ python3 Tools/generate_xcodeproj.py
 
 ## Signing
 
-See [Docs/SIGNING.md](Docs/SIGNING.md). Both targets need your team, and both need the App Group `group.com.classday.shared`. Until that group exists, the app keeps the timetable in Application Support and says so in 我的. Widgets cannot see that fallback.
+See [Docs/SIGNING.md](Docs/SIGNING.md). Both targets declare the App Group `group.com.classday.shared`. A free Apple ID resign may grant a different id under your team. The app and the widget pick that granted id together. Until a shared group can be opened, the timetable stays in Application Support, 我的 explains the Sideloadly setting, and the widgets show 读不到课表.
 
 Bundle IDs in the project:
 
 - App: `com.classday.app`
 - Widget: `com.classday.app.widget`
 
-Change them together with the entitlements and `AppGroup.identifier` in `ClassdayCore` if your developer account needs different identifiers.
+The entitlements and `AppGroup.identifier` stay on `group.com.classday.shared`. You do not have to edit that string when Sideloadly rewrites the group for a free Apple ID.
 
 ## Run on iPhone
 
@@ -40,7 +40,7 @@ Change them together with the entitlements and `AppGroup.identifier` in `Classda
 2. Let Xcode register the App Group, or create `group.com.classday.shared` in the developer portal and enable it on both App IDs.
 3. Choose an iPhone or simulator and Run.
 4. The first launch writes clearly marked demo courses (2026 秋季学期, week of 2–8 November 2026 is week 10). The timetable shows a 演示数据 badge. 我的 can restore that demo or clear every course.
-5. On the Home Screen, long-press, tap +, and search 课间. Add **下一节** (small) and **今日课程** (medium).
+5. On the Home Screen, long-press, tap +, and search 课曜 (or Heptara when the phone language is English). Add **下一节** (small) and **今日课程** (medium).
 
 Deep links use `classday://course/<uuid>?meeting=<uuid>`. Notification taps and widget taps open the course detail.
 
@@ -90,7 +90,7 @@ The command archives the last commit into `VersionArchive/previous`, then writes
 - No school login, roster sync, grades, or attendance.
 - Portrait iPhone. iPad is not a separate target.
 - Chinese interface only.
-- Widgets need a signed App Group. WidgetKit may still delay a reload; the timeline covers the next 36 hours of class boundaries.
+- Widgets need a shared App Group in the profile Sideloadly or Xcode installs. The id in that profile may differ from `group.com.classday.shared`. WidgetKit may still delay a reload; the timeline covers the next 36 hours of class boundaries.
 - Reminders are local notifications, capped at 60.
 - Drag-and-drop rescheduling is on the week grid. The day list uses 调整时间.
 - Overlap is based on period numbers, not on clock times that a custom period table might make overlap.
