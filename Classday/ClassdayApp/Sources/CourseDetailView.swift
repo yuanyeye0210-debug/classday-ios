@@ -58,14 +58,23 @@ struct CourseDetailView: View {
 
             if let course, let meeting {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 0) {
                         hero(course: course, meeting: meeting)
-                        infoCard(course: course)
-                        scheduleCard(course: course)
+                        sectionRow(label: "上课地点", primary: course.location, secondary: course.note)
+                        hairline
+                        sectionRow(
+                            label: "任课教师",
+                            primary: course.teacher.isEmpty ? "未填写" : course.teacher,
+                            secondary: course.department
+                        )
+                        hairline
+                        scheduleSection(course: course)
+                        hairline
                         reminderCard(course)
                         PrimaryButton(title: "编辑课程") {
                             model.editor = .edit(course.id)
                         }
+                        .padding(.top, 20)
                     }
                     .padding(.horizontal, 20)
                     .padding(.bottom, 28)
@@ -82,170 +91,153 @@ struct CourseDetailView: View {
     }
 
     private func hero(course: Course, meeting: Meeting) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let bg = Theme.courseBackground(course.colorID, scheme: scheme)
+        let ink = Theme.courseInk(course.colorID, scheme: scheme)
+        return VStack(alignment: .leading, spacing: 0) {
             Text(ScheduleCopy.heroTag(kind: course.kind, weeks: course.weeks))
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.accentInk)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(Capsule().fill(Theme.card.opacity(0.65)))
+                .foregroundStyle(ink.opacity(0.72))
             Text(course.name)
-                .font(.system(size: 34, weight: .bold))
-                .foregroundStyle(Theme.ink)
-            HStack(spacing: 6) {
-                Image(systemName: "clock.fill")
-                    .font(.system(size: 14, weight: .semibold))
-                Text(ScheduleCopy.heroTime(meeting: meeting, semester: model.document.semester))
-                    .font(.system(size: 17, weight: .semibold))
-            }
-            .foregroundStyle(Theme.accentInk)
-            HStack(spacing: 8) {
-                heroChip(icon: "mappin.and.ellipse", text: course.location)
+                .font(.system(size: 36, weight: .bold))
+                .foregroundStyle(ink)
+                .padding(.top, 8)
+            Text(ScheduleCopy.heroTime(meeting: meeting, semester: model.document.semester))
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(ink)
+                .padding(.top, 6)
+            Rectangle().fill(ink.opacity(0.25)).frame(height: 1)
+                .padding(.vertical, 16)
+            HStack(alignment: .top, spacing: 24) {
+                heroFact(label: "地点", value: course.location, ink: ink)
                 if !course.teacher.isEmpty {
-                    heroChip(icon: "person.fill", text: course.teacher)
+                    heroFact(label: "教师", value: course.teacher, ink: ink)
                 }
+                Spacer(minLength: 0)
             }
+            weekStrip(course: course, ink: ink, bg: bg)
+                .padding(.top, 16)
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.hero, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .background(bg, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .accessibilityElement(children: .combine)
     }
 
-    private func heroChip(icon: String, text: String) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: icon)
-                .font(.system(size: 11, weight: .semibold))
-            Text(text)
-                .font(.system(size: 12, weight: .medium))
+    private func heroFact(label: String, value: String, ink: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundStyle(ink.opacity(0.65))
+            Text(value)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(ink)
                 .lineLimit(1)
         }
-        .foregroundStyle(Theme.ink)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(Capsule().fill(Theme.card.opacity(0.65)))
     }
 
-    private func infoCard(course: Course) -> some View {
-        VStack(spacing: 0) {
-            infoRow(icon: "mappin.and.ellipse", title: "上课地点", primary: course.location, secondary: course.note)
-            Rectangle().fill(Theme.line).frame(height: 0.5).padding(.leading, 64)
-            infoRow(
-                icon: "person.fill",
-                title: "任课教师",
-                primary: course.teacher.isEmpty ? "未填写" : course.teacher,
-                secondary: course.department
-            )
-        }
-        .background(Theme.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Theme.line, lineWidth: 0.5))
-    }
-
-    private func infoRow(icon: String, title: String, primary: String, secondary: String) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Theme.accentInk)
-                .frame(width: 36, height: 36)
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.elevated))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.secondary)
-                Text(primary)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Theme.ink)
-                if !secondary.isEmpty {
-                    Text(secondary)
-                        .font(.system(size: 13))
-                        .foregroundStyle(Theme.secondary)
-                }
+    private func weekStrip(course: Course, ink: Color, bg: Color) -> some View {
+        let active = Set(course.meetings.map(\.weekday))
+        return HStack(spacing: 6) {
+            ForEach(1...7, id: \.self) { day in
+                Text(ScheduleCopy.weekdayShort(day))
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(active.contains(day) ? bg : ink.opacity(0.45))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 26)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(active.contains(day) ? ink : ink.opacity(0.10))
+                    )
             }
-            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .accessibilityHidden(true)
+    }
+
+    private var hairline: some View {
+        Rectangle().fill(Theme.line).frame(height: 0.5)
+    }
+
+    private func sectionRow(label: String, primary: String, secondary: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.secondary)
+            Text(primary)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(Theme.ink)
+            if !secondary.isEmpty {
+                Text(secondary)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 14)
         .accessibilityElement(children: .combine)
     }
 
-    private func scheduleCard(course: Course) -> some View {
+    private func scheduleSection(course: Course) -> some View {
         let meetings = course.meetings.sorted {
             if $0.weekday != $1.weekday { return $0.weekday < $1.weekday }
             return $0.startPeriod < $1.startPeriod
         }
         return VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                Image(systemName: "calendar")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.accentInk)
+            HStack(alignment: .firstTextBaseline) {
                 Text("课程安排")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 12))
                     .foregroundStyle(Theme.secondary)
                 Spacer()
                 Text(ScheduleCopy.weekList(course.weeks))
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.secondary)
             }
-            .padding(.horizontal, 16)
             .padding(.top, 14)
-            .padding(.bottom, 6)
+            .padding(.bottom, 2)
             ForEach(Array(meetings.enumerated()), id: \.element.id) { index, meeting in
                 if index > 0 {
-                    Rectangle().fill(Theme.line).frame(height: 0.5).padding(.leading, 72)
+                    hairline
                 }
                 scheduleRow(meeting: meeting)
             }
             Text(model.document.semester.name)
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.secondary)
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
+                .padding(.top, 10)
                 .padding(.bottom, 14)
         }
-        .background(Theme.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Theme.line, lineWidth: 0.5))
     }
 
     private func scheduleRow(meeting: Meeting) -> some View {
-        HStack(spacing: 12) {
-            VStack(spacing: 1) {
-                Text(ScheduleCopy.weekdayName(meeting.weekday))
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(Theme.accentInk)
-                Text(ScheduleCopy.periodSpan(meeting.startPeriod, meeting.endPeriod))
-                    .font(.system(size: 10))
-                    .foregroundStyle(Theme.accentInk.opacity(0.8))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-            }
-            .frame(width: 48, height: 44)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.hero))
-            VStack(alignment: .leading, spacing: 2) {
-                if let clocks = ScheduleCopy.clocks(for: meeting, semester: model.document.semester) {
-                    Text(ScheduleCopy.timeRange(clocks.start, clocks.end))
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(Theme.ink)
-                } else {
-                    Text(ScheduleCopy.periodSpan(meeting.startPeriod, meeting.endPeriod))
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(Theme.ink)
-                }
-                Text(parityText(meeting: meeting))
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.secondary)
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(ScheduleCopy.weekdayName(meeting.weekday))
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(Theme.ink)
+                .frame(width: 36, alignment: .leading)
+            Text(ScheduleCopy.periodSpan(meeting.startPeriod, meeting.endPeriod))
+                .font(.system(size: 13))
+                .foregroundStyle(Theme.secondary)
+                .frame(width: 68, alignment: .leading)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            if let clocks = ScheduleCopy.clocks(for: meeting, semester: model.document.semester) {
+                Text(ScheduleCopy.timeRange(clocks.start, clocks.end))
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Theme.ink)
             }
             Spacer(minLength: 0)
+            Text(parityText(meeting: meeting))
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.secondary)
         }
-        .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .accessibilityElement(children: .combine)
     }
 
     private func parityText(meeting: Meeting) -> String {
         switch model.document.weekRules.first(where: { $0.meetingID == meeting.id })?.parity {
-        case .odd: return "单周上课"
-        case .even: return "双周上课"
-        default: return "每周上课"
+        case .odd: return "单周"
+        case .even: return "双周"
+        default: return "每周"
         }
     }
 
@@ -271,8 +263,7 @@ struct CourseDetailView: View {
             .labelsHidden()
             .tint(Theme.accent)
         }
-        .padding(16)
-        .background(Theme.elevated, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .padding(.vertical, 14)
         .accessibilityElement(children: .combine)
     }
 
