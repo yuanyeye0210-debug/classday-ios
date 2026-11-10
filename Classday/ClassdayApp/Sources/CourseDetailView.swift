@@ -4,7 +4,7 @@ import ClassdayCore
 struct CourseDetailView: View {
     var presentation: CoursePresentation
     var namespace: Namespace.ID
-    @Environment(AppModel.self) private var model
+    @Environment(\.appModel) private var model
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 

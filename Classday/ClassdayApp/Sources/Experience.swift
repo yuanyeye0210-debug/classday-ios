@@ -3,6 +3,7 @@ import UIKit
 import CoreImage
 import CoreHaptics
 import CoreMotion
+import Metal
 import MapKit
 import UniformTypeIdentifiers
 import ClassdayCore
@@ -35,6 +36,23 @@ extension EnvironmentValues {
     var classdayChrome: ClassdayChrome {
         get { self[ClassdayChromeKey.self] }
         set { self[ClassdayChromeKey.self] = newValue }
+    }
+}
+
+enum MetalShaders {
+    /// `ShaderLibrary` traps if the stitchable function is missing. Ask Metal first.
+    static let functions: Set<String> = {
+        guard let device = MTLCreateSystemDefaultDevice() else { return [] }
+        guard let library = try? device.makeDefaultLibrary() else { return [] }
+        return Set(["neonScan", "auroraFlow", "glassWarp"].filter { library.makeFunction(name: $0) != nil })
+    }()
+
+    static func allows(_ layout: String) -> Bool {
+        switch layout {
+        case "aurora": return functions.contains("auroraFlow")
+        case "glass": return functions.contains("glassWarp")
+        default: return functions.contains("neonScan")
+        }
     }
 }
 
@@ -102,6 +120,7 @@ struct MotionParallax: ViewModifier {
 
     private func start() {
         guard chrome.allowsMotion, manager.isDeviceMotionAvailable else { return }
+        guard Bundle.main.object(forInfoDictionaryKey: "NSMotionUsageDescription") != nil else { return }
         manager.deviceMotionUpdateInterval = 1 / 30
         manager.startDeviceMotionUpdates(to: .main) { motion, _ in
             guard let motion else { return }
@@ -119,7 +138,7 @@ struct ThemeBackground: View {
             let time = timeline.date.timeIntervalSinceReferenceDate
             ZStack {
                 Color(chrome.theme.background.palette)
-                if chrome.allowsShader {
+                if chrome.allowsShader, MetalShaders.allows(chrome.theme.specialLayout) {
                     Rectangle()
                         .fill(Color(chrome.theme.glow.palette).opacity(0.35))
                         .colorEffect(shader(time: time))
@@ -146,7 +165,7 @@ struct ThemeBackground: View {
 }
 
 struct ThemeGalleryView: View {
-    @Environment(AppModel.self) private var model
+    @Environment(\.appModel) private var model
     @Environment(\.classdayChrome) private var chrome
 
     var body: some View {
@@ -242,7 +261,7 @@ private struct LiveThemePreview: View {
 }
 
 struct OrbitWeekView: View {
-    @Environment(AppModel.self) private var model
+    @Environment(\.appModel) private var model
     @State private var spin: Double = 0
 
     var body: some View {
@@ -287,7 +306,7 @@ struct OrbitWeekView: View {
 }
 
 struct CubeWeekView: View {
-    @Environment(AppModel.self) private var model
+    @Environment(\.appModel) private var model
     @State private var yaw: Double = 0
 
     var body: some View {
@@ -355,7 +374,7 @@ struct CountdownDial: View {
 }
 
 struct StudyDeskView: View {
-    @Environment(AppModel.self) private var model
+    @Environment(\.appModel) private var model
     @State private var homeworkTitle = ""
     @State private var icsURL = ""
     @State private var fenixID = FenixConfig.clientID
@@ -444,7 +463,7 @@ struct StudyDeskView: View {
             .fileImporter(isPresented: $showImporter, allowedContentTypes: [.json, .plainText, UTType(filenameExtension: "ics") ?? .data]) { result in
                 if case let .success(url) = result { read(url) }
             }
-            .sheet(isPresented: $showOCR) { OCRImportView() }
+            .sheet(isPresented: $showOCR) { OCRImportView().supplyingAppModel(model) }
         }
     }
 

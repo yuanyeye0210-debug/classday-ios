@@ -360,6 +360,7 @@ def main() -> None:
         "GENERATE_INFOPLIST_FILE": "YES",
         "INFOPLIST_FILE": "Config/Classday-Info.plist",
         "LD_RUNPATH_SEARCH_PATHS": "$(inherited) @executable_path/Frameworks",
+        "OTHER_LDFLAGS": ["$(inherited)", "-weak_framework", "CloudKit"],
         "PRODUCT_BUNDLE_IDENTIFIER": "com.classday.app",
         "PRODUCT_NAME": "$(TARGET_NAME)",
     }

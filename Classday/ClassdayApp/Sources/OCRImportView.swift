@@ -4,7 +4,7 @@ import Vision
 import ClassdayCore
 
 struct OCRImportView: View {
-    @Environment(AppModel.self) private var model
+    @Environment(\.appModel) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var picker: PhotosPickerItem?
     @State private var lines: [String] = []

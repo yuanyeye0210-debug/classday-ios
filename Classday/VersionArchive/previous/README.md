@@ -1,6 +1,6 @@
-# 课间 / Classday
+# 课曜 / Heptara
 
-Native SwiftUI iPhone app and WidgetKit extension for a local weekly timetable. Working title: 课间 / Classday. It is an independent design. It is not the official「超级课程表」app and does not aim for feature parity with it.
+Native SwiftUI iPhone app and WidgetKit extension for a local weekly timetable. The product name is 课曜 / Heptara. It is an independent design. It is not the official「超级课程表」app and does not aim for feature parity with it.
 
 There is no campus account, grade query, or school server. Courses live in a JSON file on the phone and, when signing is set up, in an App Group the widgets can read.
 
@@ -40,7 +40,7 @@ The entitlements and `AppGroup.identifier` stay on `group.com.classday.shared`. 
 2. Let Xcode register the App Group, or create `group.com.classday.shared` in the developer portal and enable it on both App IDs.
 3. Choose an iPhone or simulator and Run.
 4. The first launch writes clearly marked demo courses (2026 秋季学期, week of 2–8 November 2026 is week 10). The timetable shows a 演示数据 badge. 我的 can restore that demo or clear every course.
-5. On the Home Screen, long-press, tap +, and search 课间. Add **下一节** (small) and **今日课程** (medium).
+5. On the Home Screen, long-press, tap +, and search 课曜 (or Heptara when the phone language is English). Add **下一节** (small) and **今日课程** (medium).
 
 Deep links use `classday://course/<uuid>?meeting=<uuid>`. Notification taps and widget taps open the course detail.
 

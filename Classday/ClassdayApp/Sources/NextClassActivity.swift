@@ -4,6 +4,7 @@ import ClassdayCore
 
 enum NextClassActivity {
     static func sync(document: StoreDocument, calendar: Calendar) {
+        guard Bundle.main.object(forInfoDictionaryKey: "NSSupportsLiveActivities") as? Bool == true else { return }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         guard let snapshot = NextClassSnapshot.make(document: document, calendar: calendar) else {
             for activity in Activity<NextClassAttributes>.activities {

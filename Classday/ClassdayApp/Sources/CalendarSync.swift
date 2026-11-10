@@ -3,17 +3,40 @@ import Foundation
 import ClassdayCore
 
 enum CalendarSync {
-    static var status = "系统日历还没有同步。打开后，改课会更新或删掉对应事件。"
-    private static let store = EKEventStore()
+    static var status = "系统日历还没有同步。在「学习」里点写入后，改课会更新或删掉对应事件。"
+    private static var store: EKEventStore?
     private static let marker = "classday-event"
 
     static func sync(_ document: StoreDocument, calendar: Calendar) {
-        store.requestFullAccessToEvents { granted, error in
-            finish(document, calendar: calendar, granted: granted, error: error)
+        guard hasUsageDescription else {
+            status = "安装包没有日历权限说明，不能访问系统日历。课表仍只保存在课曜里。"
+            return
+        }
+        let events = eventStore()
+        events.requestFullAccessToEvents { granted, error in
+            finish(document, calendar: calendar, store: events, granted: granted, error: error)
         }
     }
 
-    private static func finish(_ document: StoreDocument, calendar: Calendar, granted: Bool, error: Error?) {
+    private static var hasUsageDescription: Bool {
+        let keys = ["NSCalendarsFullAccessUsageDescription", "NSCalendarsUsageDescription"]
+        return keys.contains { Bundle.main.object(forInfoDictionaryKey: $0) != nil }
+    }
+
+    private static func eventStore() -> EKEventStore {
+        if let store { return store }
+        let created = EKEventStore()
+        store = created
+        return created
+    }
+
+    private static func finish(
+        _ document: StoreDocument,
+        calendar: Calendar,
+        store: EKEventStore,
+        granted: Bool,
+        error: Error?
+    ) {
         guard granted, error == nil, let ek = store.defaultCalendarForNewEvents else {
             status = "没有日历权限，课表仍只保存在课曜里。"
             return
@@ -51,6 +74,6 @@ enum CalendarSync {
                 try? store.remove(event, span: .thisEvent)
             }
         }
-        status = "已写入系统日历。取消或推迟某一周后会跟着更新。"
+        status = "已写入系统日历。取消或推迟某一周后，再点一次写入就会更新。"
     }
 }

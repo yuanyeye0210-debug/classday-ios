@@ -8,6 +8,8 @@
 
 		D1F8D30D21E344E9B420A3B9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		8C15763163D2948F463F3A30 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1F8D30D21E344E9B420A3B9 /* AppDelegate.swift */; };
+		17E73DAB968381EF37D56CF1 /* AppEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppEnvironment.swift; sourceTree = "<group>"; };
+		DBF018C3CE8400D9B0D1EBEA /* AppEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17E73DAB968381EF37D56CF1 /* AppEnvironment.swift */; };
 		86E9CF08A2F3BA04AFB1075E /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		3B7BA45D02B1EB65E3D6E549 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86E9CF08A2F3BA04AFB1075E /* AppModel.swift */; };
 		67116555683C329691F70203 /* CalendarSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarSync.swift; sourceTree = "<group>"; };
@@ -66,6 +68,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				8C15763163D2948F463F3A30 /* AppDelegate.swift in Sources */,
+				DBF018C3CE8400D9B0D1EBEA /* AppEnvironment.swift in Sources */,
 				3B7BA45D02B1EB65E3D6E549 /* AppModel.swift in Sources */,
 				547BFB5C7EC9A46F8E08E33E /* CalendarSync.swift in Sources */,
 				306C24454FCBAA4AB837947D /* ClassdayApp.swift in Sources */,
@@ -160,6 +163,7 @@
 			isa = PBXGroup;
 			children = (
 				D1F8D30D21E344E9B420A3B9 /* AppDelegate.swift */,
+				17E73DAB968381EF37D56CF1 /* AppEnvironment.swift */,
 				86E9CF08A2F3BA04AFB1075E /* AppModel.swift */,
 				67116555683C329691F70203 /* CalendarSync.swift */,
 				CEF53400CCFAAC54F2A9DDC6 /* ClassdayApp.swift */,
@@ -304,7 +308,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 2.0.0;
+				MARKETING_VERSION = 2.0.1;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -317,6 +321,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Config/Classday-Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				OTHER_LDFLAGS = ("$(inherited)", "-weak_framework", CloudKit);
 				PRODUCT_BUNDLE_IDENTIFIER = com.classday.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
@@ -329,7 +334,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 2.0.0;
+				MARKETING_VERSION = 2.0.1;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -342,6 +347,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Config/Classday-Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				OTHER_LDFLAGS = ("$(inherited)", "-weak_framework", CloudKit);
 				PRODUCT_BUNDLE_IDENTIFIER = com.classday.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
@@ -354,7 +360,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 2.0.0;
+				MARKETING_VERSION = 2.0.1;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -377,7 +383,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 2.0.0;
+				MARKETING_VERSION = 2.0.1;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;

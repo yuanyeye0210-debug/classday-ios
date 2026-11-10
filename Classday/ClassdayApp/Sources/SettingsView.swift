@@ -19,7 +19,7 @@ struct JSONFileDocument: FileDocument {
 }
 
 struct SettingsView: View {
-    @Environment(AppModel.self) private var model
+    @Environment(\.appModel) private var model
     @State private var semester: Semester
     @State private var didLoadSemester = false
     @State private var errorText: String?
@@ -168,8 +168,8 @@ struct SettingsView: View {
         .onChange(of: model.document.semester) { _, newValue in
             semester = newValue
         }
-        .sheet(isPresented: $model.showThemeGallery) { ThemeGalleryView() }
-        .sheet(isPresented: $model.showStudyDesk) { StudyDeskView() }
+        .sheet(isPresented: $model.showThemeGallery) { ThemeGalleryView().supplyingAppModel(model) }
+        .sheet(isPresented: $model.showStudyDesk) { StudyDeskView().supplyingAppModel(model) }
         .fileExporter(
             isPresented: $exporting,
             document: exportDocument,

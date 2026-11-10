@@ -118,12 +118,18 @@ struct RootView: View {
 struct TimetableRoot: View {
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.horizontalSizeClass) private var widthClass
     @Namespace private var zoom
 
     var body: some View {
         @Bindable var model = model
         ZStack {
             VStack(spacing: 12) {
+                if widthClass == .regular {
+                    Text("横屏课表")
+                        .font(.caption)
+                        .foregroundStyle(Theme.secondary)
+                }
                 header
                 modeBar
                 statusBanner
@@ -135,12 +141,22 @@ struct TimetableRoot: View {
                         .padding(.horizontal, 20)
                 }
                 Group {
-                    if model.mode == .week {
+                    if model.document.appearance.theme.usesOrbit && model.preferSpecialLayout {
+                        OrbitWeekView()
+                    } else if model.document.appearance.theme.usesCube && model.preferSpecialLayout {
+                        CubeWeekView()
+                    } else if model.mode == .week {
                         WeekTimetableView(namespace: zoom)
                     } else {
                         DayTimetableView(namespace: zoom)
                     }
                 }
+                .gesture(
+                    MagnificationGesture().onEnded { scale in
+                        if scale < 0.9 { model.mode = .day; model.preferSpecialLayout = false }
+                        if scale > 1.1 { model.mode = .week }
+                    }
+                )
                 .animation(motion, value: model.weekIndex)
                 summary
             }
@@ -151,7 +167,12 @@ struct TimetableRoot: View {
                     .zIndex(2)
             }
         }
-        .background(Theme.background.ignoresSafeArea())
+        .background {
+            ThemeBackground()
+            if model.document.appearance.theme.specialLayout == "glass" {
+                ThemeBackground().modifier(MotionParallax())
+            }
+        }
         .toolbar(model.presented == nil ? Visibility.visible : Visibility.hidden, for: .tabBar)
         .animation(motion, value: model.presented?.id)
         .sheet(item: $model.editor) { route in
@@ -171,7 +192,7 @@ struct TimetableRoot: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
-                Text("课间")
+                Text("课曜")
                     .font(.system(size: 34, weight: .bold))
                     .foregroundStyle(Theme.ink)
                 Spacer()
@@ -261,20 +282,23 @@ struct TimetableRoot: View {
     }
 
     private var statusBanner: some View {
-        TimelineView(.periodic(from: .now, by: 30)) { context in
+        TimelineView(.periodic(from: .now, by: 30)) { tick in
+            let schedule = model.document.scheduleContext
             let current = ScheduleEngine.currentOccurrence(
-                at: context.date,
+                at: tick.date,
                 courses: model.document.courses,
                 semester: model.document.semester,
-                calendar: model.calendar
+                calendar: model.calendar,
+                context: schedule
             )
             let next = ScheduleEngine.nextOccurrence(
-                after: context.date,
+                after: tick.date,
                 courses: model.document.courses,
                 semester: model.document.semester,
-                calendar: model.calendar
+                calendar: model.calendar,
+                context: schedule
             )
-            if let text = ScheduleCopy.statusBanner(current: current, next: next, now: context.date, calendar: model.calendar) {
+            if let text = ScheduleCopy.statusBanner(current: current, next: next, now: tick.date, calendar: model.calendar) {
                 Text(text)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Theme.accentInk)

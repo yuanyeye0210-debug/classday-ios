@@ -43,7 +43,7 @@ struct CourseEditorView: View {
     var selectedDay: Date
     var calendar: Calendar
 
-    @Environment(AppModel.self) private var model
+    @Environment(\.appModel) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var draft: Course
     @State private var pattern: WeekPattern

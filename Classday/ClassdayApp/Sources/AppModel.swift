@@ -610,7 +610,6 @@ final class AppModel {
         }
         WidgetReloader.reload()
         NextClassActivity.sync(document: document, calendar: calendar)
-        CalendarSync.sync(document, calendar: calendar)
         Task { [weak self] in
             await self?.refreshReminders()
         }
