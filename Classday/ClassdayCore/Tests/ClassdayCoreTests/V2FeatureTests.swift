@@ -173,6 +173,73 @@ final class SmartImportTests: XCTestCase {
         XCTAssertEqual(result.unparsed.count, 2)
     }
 
+    func testCSVGridLayout() {
+        let csv = """
+        节次/时间,周一,周二,周三,周四,周五
+        08:00-09:40,高等数学 教学楼A301,,大学英语 教学楼B205,
+        10:10-11:50,,程序设计 实验楼机房3,,
+        """
+        let result = ScheduleTextImporter.parseCSV(csv)
+        XCTAssertEqual(Set(result.drafts.map(\.name)), ["高等数学", "大学英语", "程序设计"])
+        let math = result.drafts.first { $0.name == "高等数学" }
+        XCTAssertEqual(math?.meetings.first?.weekday, 1)
+        XCTAssertEqual(math?.meetings.first?.startMinutes, 480)
+        XCTAssertEqual(math?.meetings.first?.location, "教学楼A301")
+        let english = result.drafts.first { $0.name == "大学英语" }
+        XCTAssertEqual(english?.meetings.first?.weekday, 3)
+        let coding = result.drafts.first { $0.name == "程序设计" }
+        XCTAssertEqual(coding?.meetings.first?.weekday, 2)
+        XCTAssertEqual(coding?.meetings.first?.startMinutes, 610)
+    }
+
+    func testCSVListWithTitleRowsAndCombinedCell() {
+        let csv = """
+        2026-2027学年第一学期课表,,
+        班级: 软件工程1班,,
+        课程名称(代码),授课教师,上课时间,周次
+        高等数学(A210331),陈老师,周一 08:00-09:40 教学楼A301,1-16
+        ,陈老师,周三 10:10-11:50 教学楼A302,1-16
+        大学英语,王老师,周五 14:00-15:40,1,3,5,7周
+        """
+        let result = ScheduleTextImporter.parseCSV(csv)
+        let math = result.drafts.first { $0.name == "高等数学" }
+        XCTAssertNotNil(math)
+        XCTAssertEqual(math?.teacher, "陈老师")
+        XCTAssertEqual(math?.meetings.count, 2)
+        XCTAssertEqual(math?.meetings.first?.location, "教学楼A301")
+        let english = result.drafts.first { $0.name == "大学英语" }
+        XCTAssertEqual(english?.customWeeks, [1, 3, 5, 7])
+    }
+
+    func testHTMLTableExport() {
+        let html = """
+        <html><body><table>
+        <tr><td>时间</td><td>星期一</td><td>星期二</td><td>星期四</td></tr>
+        <tr><td>08:00-09:40</td><td>线性代数 教学楼C101</td><td></td><td>体育 操场</td></tr>
+        </table></body></html>
+        """
+        let result = ScheduleTextImporter.parseHTML(html)
+        XCTAssertEqual(Set(result.drafts.map(\.name)), ["线性代数", "体育"])
+        XCTAssertEqual(result.drafts.first { $0.name == "体育" }?.meetings.first?.weekday, 4)
+    }
+
+    func testXLSXGridFile() {
+        let data = Data(base64Encoded: "UEsDBBQAAAAIABIMa11eZo6UIQEAAK4BAAAUAAAAeGwvc2hhcmVkU3RyaW5ncy54bWxtkMFKw0AURfd+xTD7dCatlTYkU1TwC/QDQjI2gWQmZiaiO3FlrSCCBQURClWL2qg7CaI/Y9L0LxwRKaRdPe65990Hz+wchAHYp7HwObOgXsMQUOZw12ddC+5sb2ktCIS0mWsHnFELHlIBO2TFFEICtcqEBT0pIwMh4Xg0tEWNR5QpZ5fHoS2VjLtIRDG1XeFRKsMA1TFeQ6HtMwgcnjBpwTYECfP3Err5r4kpfGJKUp4eF89DE0liol/yR/OL8ff70VLaW0azyyrFLQNjDbeNVVy1Zk9X00mvGLzmk3tQDK7VKO4+1htYX6gePSiz7L+VL5N5cqOOm9Wkjg0da7puNBfOTcf9PDsv088yHYI8vZ09nqmS4iYrTr4a8zBSDyc/UEsDBBQAAAAIABIMa121wty+2AAAANcBAAAYAAAAeGwvd29ya3NoZWV0cy9zaGVldDEueG1sbZHdTsMwDEbveYrI98z9gTGhJNPGxBPAA0StWSuapIqjDt6eMKEoq7iLfRx/R4ncf9lJLBR49E5BvalAkOt8P7qzgve31/sdCI7G9WbyjhR8E8Ne38mLD588EEWRFjhWMMQ4PyNyN5A1vPEzuUQ+fLAmpjKckedApr9eshM2VbVFa0YHWl57JxONlsFfREgiqdv9Hg41iKiAU73oSuKiJXZ/7Fiy+pa9lKy5ZaeStZlhys4CTRZoiuGHlUDJHlcCJdv+H9LmkLYYflrZlmy3WoTF02H+E/0DUEsBAhQDFAAAAAgAEgxrXV5mjpQhAQAArgEAABQAAAAAAAAAAAAAAIABAAAAAHhsL3NoYXJlZFN0cmluZ3MueG1sUEsBAhQDFAAAAAgAEgxrXbXC3L7YAAAA1wEAABgAAAAAAAAAAAAAAIABUwEAAHhsL3dvcmtzaGVldHMvc2hlZXQxLnhtbFBLBQYAAAAAAgACAIgAAABhAgAAAAA=")!
+        let result = ScheduleTextImporter.parseFileData(data)
+        XCTAssertNotNil(result)
+        XCTAssertEqual(Set(result?.drafts.map(\.name) ?? []), ["高等数学", "大学英语", "程序设计"])
+        XCTAssertEqual(result?.drafts.first { $0.name == "程序设计" }?.meetings.first?.weekday, 5)
+        XCTAssertEqual(result?.drafts.first { $0.name == "高等数学" }?.meetings.first?.location, "教学楼A301")
+    }
+
+    func testDOCXGridFile() {
+        let data = Data(base64Encoded: "UEsDBBQAAAAIABIMa12/KAS6FQEAAF4CAAARAAAAd29yZC9kb2N1bWVudC54bWyzsa/IzVEoSy0qzszPs1Uy1DNQUkjNS85PycxLt1UKDXHTtVBSKC5JzEtJzMnPS7VVqkwtVrK347Ipt0rJTy7NTc0rUQCakFdsVW6rlFFSUmClr1+cnJGam1isl1+QmgeUS8svyk0sAXKL0vXL84tSCoryk1OLi4EW5OboGxkYmOnnJmbmKdkBjUzKT6kE0SVJOWCqCEwmg8gCEAHh273oanq2ZqGNPogNIovAZAGYhKjG1PN04oonu3pI1vN09mwy7JmCW48+3Fs4PGdgYWVgoGtgaWViQJrNz3ftf9aw/Mnuxc+mblB4NnXm07XLni3d42xoYEiaOU/2Tn7RtEnh2eTep3N2EfSIPjS29GGxp49IGXYAUEsBAhQDFAAAAAgAEgxrXb8oBLoVAQAAXgIAABEAAAAAAAAAAAAAAIABAAAAAHdvcmQvZG9jdW1lbnQueG1sUEsFBgAAAAABAAEAPwAAAEQBAAAAAA==")!
+        let result = ScheduleTextImporter.parseFileData(data)
+        XCTAssertNotNil(result)
+        XCTAssertEqual(Set(result?.drafts.map(\.name) ?? []), ["线性代数", "体育"])
+        XCTAssertEqual(result?.drafts.first { $0.name == "线性代数" }?.meetings.first?.weekday, 2)
+    }
+
     func testTextLineParsesAllFields() {
         let result = ScheduleTextImporter.parseText("高等数学 周一 08:00-09:40 教学楼A301 陈老师 1-16周")
         XCTAssertEqual(result.drafts.count, 1)
@@ -242,7 +309,7 @@ func testGridParsesTimetableScreenshotLayout() {
 final class ChangelogStructureTests: XCTestCase {
     func testChangelogIsNewestFirstAndComplete() {
         let versions = AppChangelog.entries.map(\.version)
-        XCTAssertEqual(versions.first, "2.1.3")
+        XCTAssertEqual(versions.first, "2.2.0")
         XCTAssertEqual(Set(versions).count, versions.count)
         let parsed = versions.map { $0.split(separator: ".").compactMap { Int($0) } }
         for index in 1..<parsed.count {

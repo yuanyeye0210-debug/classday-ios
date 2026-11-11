@@ -1,4 +1,6 @@
 import Foundation
+import Compression
+import CoreFoundation
 
 public enum WeekParity: String, Codable, Equatable, Hashable, Sendable {
     case any
@@ -714,63 +716,151 @@ public enum ScheduleTextImporter {
             .replacingOccurrences(of: "\r", with: "\n")
             .components(separatedBy: "\n")
             .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-        guard let headerLine = lines.first else { return ([], []) }
+        guard !lines.isEmpty else { return ([], []) }
         let delimiter = [",", ";", "\t"].max { a, b in
-            headerLine.filter { $0 == Character(a) }.count < headerLine.filter { $0 == Character(b) }.count
+            lines.map { $0.filter { $0 == Character(a) }.count }.reduce(0, +)
+                < lines.map { $0.filter { $0 == Character(b) }.count }.reduce(0, +)
         } ?? ","
-        let header = splitCSV(headerLine, delimiter: delimiter).map { normalizeHeader($0) }
-        func column(_ synonyms: [String]) -> Int? {
-            header.firstIndex { synonyms.contains($0) }
+        let rows = lines.map { splitCSV($0, delimiter: delimiter) }
+        if let parsed = parseRows(rows) { return parsed }
+        return ([], lines)
+    }
+
+    /// Shared pipeline for every tabular source (CSV rows, HTML tables, XLSX
+    /// and DOCX grids): a weekday-header row means grid layout, a synonym
+    /// header row means list layout. Returns nil when neither fits.
+    public static func parseRows(_ rows: [[String]]) -> (drafts: [ImportedCourseDraft], unparsed: [String])? {
+        if let table = parseTable(rows) { return table }
+        return listFromRows(rows)
+    }
+
+    private static func listFromRows(_ rows: [[String]]) -> (drafts: [ImportedCourseDraft], unparsed: [String])? {
+        // Real exports carry title/info rows above the header; scan the
+        // first rows and keep the one that matches the most column synonyms.
+        var best: (index: Int, score: Int, columns: [String: Int])?
+        for (index, row) in rows.prefix(6).enumerated() {
+            let normalized = row.map { normalizeHeader($0) }
+            func column(_ synonyms: [String]) -> Int? {
+                normalized.firstIndex { cell in
+                    synonyms.contains { synonym in
+                        cell == synonym || cell.hasPrefix(synonym) || (synonym.count >= 2 && cell.contains(synonym))
+                    }
+                }
+            }
+            var columns: [String: Int] = [:]
+            if let value = column(["课程名称", "课程名", "课程", "课名", "课目", "名称", "name", "course"]) { columns["name"] = value }
+            if let value = column(["星期", "周几", "星期几", "上课星期", "授课星期", "weekday", "day"]) { columns["weekday"] = value }
+            if let value = column(["开始时间", "上课时间", "开始", "起始时间", "上课时间段", "时间", "start", "from"]) { columns["start"] = value }
+            if let value = column(["结束时间", "下课时间", "结束", "end", "to"]) { columns["end"] = value }
+            if let value = column(["节次", "节数", "上课节次", "period", "节"]) { columns["period"] = value }
+            if let value = column(["教室", "上课地点", "地点", "教学地点", "上课教室", "location", "room"]) { columns["location"] = value }
+            if let value = column(["教师", "老师", "任课教师", "授课教师", "主讲教师", "teacher"]) { columns["teacher"] = value }
+            if let value = column(["周次", "周数", "上课周次", "起止周", "上课周", "weeks", "week"]) { columns["weeks"] = value }
+            if let value = column(["时间地点", "上课安排", "时间安排"]) { columns["combined"] = value }
+            let score = columns.count
+            if columns["name"] != nil, columns["weekday"] != nil || columns["start"] != nil || columns["combined"] != nil,
+               score > (best?.score ?? 0) {
+                best = (index, score, columns)
+            }
         }
-        guard let nameCol = column(["课程名称", "课程名", "课程", "课名", "名称", "name", "course"]),
-              let weekdayCol = column(["星期", "周几", "星期几", "上课星期", "weekday", "day"]) else {
-            return ([], lines)
-        }
-        let startCol = column(["开始时间", "上课时间", "开始", "起始时间", "start", "from"])
-        let endCol = column(["结束时间", "下课时间", "结束", "end", "to"])
-        let periodCol = column(["节次", "节数", "上课节次", "period", "节"])
-        let locationCol = column(["教室", "上课地点", "地点", "教学地点", "上课教室", "location", "room"])
-        let teacherCol = column(["教师", "老师", "任课教师", "授课教师", "主讲教师", "teacher"])
-        let weeksCol = column(["周次", "周数", "上课周次", "起止周", "上课周", "weeks", "week"])
+        guard let header = best else { return nil }
+        let columns = header.columns
         var rawMeetings: [(course: ImportedCourseDraft, meeting: ImportedMeetingDraft)] = []
         var unparsed: [String] = []
-        for line in lines.dropFirst() {
-            let cells = splitCSV(line, delimiter: delimiter)
-            func cell(_ index: Int?) -> String {
-                guard let index, index < cells.count else { return "" }
-                return cells[index].trimmingCharacters(in: .whitespaces)
+        var lastName = "", lastTeacher = ""
+        for row in rows.dropFirst(header.index + 1) {
+            func cell(_ key: String) -> String {
+                guard let index = columns[key], index < row.count else { return "" }
+                return row[index].trimmingCharacters(in: .whitespaces)
             }
-            let name = cell(nameCol)
-            guard !name.isEmpty, let weekday = weekdayNumber(in: cell(weekdayCol)) else {
-                unparsed.append(line)
+            var name = cleanCourseName(cell("name"))
+            if name.isEmpty { name = lastName } else { lastName = name }
+            var teacher = cell("teacher")
+            if teacher.isEmpty { teacher = lastTeacher } else { lastTeacher = teacher }
+            let combined = [cell("start"), cell("combined")].filter { !$0.isEmpty }.joined(separator: " ")
+            guard !name.isEmpty,
+                  let weekday = weekdayNumber(in: cell("weekday")) ?? weekdayNumber(in: combined) else {
+                unparsed.append(row.joined(separator: ","))
                 continue
             }
-            var meeting = ImportedMeetingDraft(weekday: weekday, location: cell(locationCol))
-            let startText = cell(startCol), endText = cell(endCol)
-            if let range = timeRange(in: startText) {
+            var meeting = ImportedMeetingDraft(weekday: weekday, location: cell("location"))
+            if let range = timeRange(in: cell("start")) {
+                meeting.startMinutes = range.0
+                meeting.endMinutes = range.1
+            } else if let range = timeRange(in: combined) {
                 meeting.startMinutes = range.0
                 meeting.endMinutes = range.1
             } else {
-                meeting.startMinutes = clockMinutes(startText)
-                meeting.endMinutes = clockMinutes(endText)
+                meeting.startMinutes = clockMinutes(cell("start"))
+                meeting.endMinutes = clockMinutes(cell("end"))
             }
-            if meeting.startMinutes == nil, let periodText = Optional(cell(periodCol)), !periodText.isEmpty {
-                let periods = periodRange(in: periodText)
+            if meeting.startMinutes == nil {
+                let periods = periodRange(in: cell("period").isEmpty ? combined : cell("period"))
                 meeting.startPeriod = periods.0
                 meeting.endPeriod = periods.1
             }
-            let weeks = weekRange(in: cell(weeksCol))
-            meeting.parity = weeks.2
+            if meeting.location.isEmpty, let found = locationToken(in: combined) { meeting.location = found }
+            let weeksInfo = explicitWeeks(in: cell("weeks").isEmpty ? combined : cell("weeks"))
+            meeting.parity = weeksInfo.parity
             var issues: [String] = []
             if meeting.startMinutes == nil && meeting.startPeriod == nil { issues.append("时间没认出") }
             if meeting.location.isEmpty { issues.append("教室没认出") }
             let course = ImportedCourseDraft(
-                name: name, teacher: cell(teacherCol), location: meeting.location,
-                firstWeek: weeks.0, lastWeek: weeks.1,
-                meetings: [], issues: issues, sourceLine: line)
+                name: name, teacher: teacher, location: meeting.location,
+                firstWeek: weeksInfo.first, lastWeek: weeksInfo.last, customWeeks: weeksInfo.custom,
+                meetings: [], issues: issues, sourceLine: row.joined(separator: ","))
             rawMeetings.append((course, meeting))
         }
+        guard !rawMeetings.isEmpty else { return nil }
         return (group(rawMeetings), unparsed)
+    }
+
+    /// Course names in exports carry serial numbers and bracketed course
+    /// codes / credit notes ("(A210331)", "（3学分）"); strip them.
+    private static func cleanCourseName(_ raw: String) -> String {
+        var name = raw.trimmingCharacters(in: .whitespaces)
+        name = replaceAll(#"^\d{1,3}[.、．]\s*"#, in: name).trimmingCharacters(in: .whitespaces)
+        if let regex = try? NSRegularExpression(pattern: #"[\(\[（【][^\)\]）】*[\)\]）】]"#) {
+            let ns = name as NSString
+            for match in regex.matches(in: name, range: NSRange(location: 0, length: ns.length)).reversed() {
+                let inner = ns.substring(with: match.range)
+                if inner.range(of: #"\d"#, options: .regularExpression) != nil
+                    || inner.contains("学分") || inner.contains("代码") || inner.contains("英文") {
+                    if let range = Range(match.range, in: name) { name.removeSubrange(range) }
+                }
+            }
+        }
+        return name.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Week info beyond weekRange's basics: bare "1-16" ranges and explicit
+    /// lists like "1,3,5,7周" (which become an exact custom-weeks list).
+    private static func explicitWeeks(in text: String) -> (first: Int, last: Int, custom: [Int], parity: Int) {
+        let base = weekRange(in: text)
+        let numbers = allMatches(#"\d{1,2}"#, in: text).compactMap { Int($0.groups[0]) }.filter { (1...40).contains($0) }
+        if (text.contains(",") || text.contains("，") || text.contains("、")) && numbers.count >= 2 {
+            let custom = Array(Set(numbers)).sorted()
+            return (custom.first ?? base.0, custom.last ?? base.1, custom, base.2)
+        }
+        if base.0 == 1 && base.1 == 16 && base.2 == 0,
+           let match = firstMatch(#"^\s*(\d{1,2})\s*[-–—~～]\s*(\d{1,2})\s*$"#, in: text),
+           let first = Int(match.groups[0]), let last = Int(match.groups[1]) {
+            return (first, last, [], 0)
+        }
+        return (base.0, base.1, [], base.2)
+    }
+
+    private static func allMatches(_ pattern: String, in text: String) -> [Match] {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let ns = text as NSString
+        return regex.matches(in: text, range: NSRange(location: 0, length: ns.length)).map { match in
+            var groups: [String] = []
+            for index in 1..<match.numberOfRanges {
+                let range = match.range(at: index)
+                groups.append(range.location == NSNotFound ? "" : ns.substring(with: range))
+            }
+            return Match(groups: groups)
+        }
     }
 
     // MARK: one free-text line
@@ -1002,9 +1092,10 @@ public enum ScheduleTextImporter {
     }
 
     private static func normalizeHeader(_ raw: String) -> String {
-        raw.trimmingCharacters(in: .whitespaces)
-            .replacingOccurrences(of: "（", with: "(")
-            .lowercased()
+        var value = raw.trimmingCharacters(in: .whitespaces).lowercased()
+        value = replaceAll(#"[\(\[（【][^\)\]）】*[\)\]）】]"#, in: value)
+        return value.replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "　", with: "")
     }
 
     private static func splitCSV(_ line: String, delimiter: String) -> [String] {
@@ -1039,6 +1130,261 @@ public enum ScheduleTextImporter {
     }
 }
 
+
+// MARK: - Tabular grids, HTML tables and Office files (2.2 engine)
+
+public extension ScheduleTextImporter {
+    /// Grid layout from cell rows: a header row of weekday names, time or
+    /// period labels in the leading columns, one course per cell. Used by
+    /// CSV grids, HTML tables, XLSX and DOCX alike.
+    static func parseTable(_ rows: [[String]]) -> (drafts: [ImportedCourseDraft], unparsed: [String])? {
+        // Find the header row: at least three weekday-labelled cells.
+        var header: (index: Int, columns: [Int: Int])?
+        for (index, row) in rows.prefix(6).enumerated() {
+            var columns: [Int: Int] = [:]
+            for (column, cell) in row.enumerated() {
+                let trimmed = cell.trimmingCharacters(in: .whitespaces)
+                guard trimmed.count <= 8 else { continue }
+                if let weekday = weekdayNumber(in: trimmed) { columns[column] = weekday }
+            }
+            if columns.count >= 3 { header = (index, columns); break }
+        }
+        guard let headerRow = header else { return nil }
+        var rawMeetings: [(course: ImportedCourseDraft, meeting: ImportedMeetingDraft)] = []
+        var unparsed: [String] = []
+        for (rowOffset, row) in rows.dropFirst(headerRow.index + 1).enumerated() {
+            let labelCells = row.prefix(headerRow.columns.keys.min() ?? 0)
+            let label = labelCells.joined(separator: " ")
+            let rowTimes = timeRange(in: label)
+            let rowPeriods = periodRange(in: label)
+            for (column, weekday) in headerRow.columns.sorted(by: { $0.key < $1.key }) {
+                guard column < row.count else { continue }
+                let cell = row[column].trimmingCharacters(in: .whitespacesAndNewlines)
+                if cell.isEmpty { continue }
+                if ["周一", "周二", "周三", "周四", "周五", "周六", "周日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"].contains(cell) { continue }
+                let folded = cell.replacingOccurrences(of: "\n", with: " ")
+                if let course = parseCell(folded, weekday: weekday,
+                                          rowStart: rowTimes?.0, rowEnd: rowTimes?.1,
+                                          rowStartPeriod: rowPeriods.0, rowEndPeriod: rowPeriods.1,
+                                          rowIndex: rowOffset) {
+                    for meeting in course.meetings { rawMeetings.append((course, meeting)) }
+                } else if !cell.isEmpty {
+                    unparsed.append(cell)
+                }
+            }
+        }
+        guard !rawMeetings.isEmpty else { return nil }
+        return (group(rawMeetings), unparsed)
+    }
+
+    /// 教务系统 "xls" exports are often HTML tables in disguise.
+    static func parseHTML(_ html: String) -> (drafts: [ImportedCourseDraft], unparsed: [String]) {
+        var rows: [[String]] = []
+        for rowMatch in allMatchesDotAll(#"<tr[^>]*>(.*?)</tr>"#, in: html) {
+            var cells: [String] = []
+            for cellMatch in allMatchesDotAll(#"<t[dh][^>]*>(.*?)</t[dh]>"#, in: rowMatch.groups[0]) {
+                let text = xmlUnescape(replaceAll(#"<[^>]+>"#, in: cellMatch.groups[0]))
+                    .replacingOccurrences(of: " ", with: " ")
+                cells.append(text.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+            if !cells.isEmpty { rows.append(cells) }
+        }
+        if let parsed = parseRows(rows) { return parsed }
+        let plain = replaceAll(#"<[^>]+>"#, in: html)
+        return parseText(plain)
+    }
+
+    /// Minimal read-only ZIP reader (central directory + stored/deflate),
+    /// enough for the OOXML containers behind .xlsx and .docx.
+    static func unzip(_ data: Data) -> [String: Data] {
+        let bytes = [UInt8](data)
+        func u16(_ offset: Int) -> Int { Int(bytes[offset]) | Int(bytes[offset + 1]) << 8 }
+        func u32(_ offset: Int) -> Int {
+            Int(bytes[offset]) | Int(bytes[offset + 1]) << 8 | Int(bytes[offset + 2]) << 16 | Int(bytes[offset + 3]) << 24
+        }
+        // End of central directory: scan the tail for PK\x05\x06.
+        var eocd = -1
+        var index = bytes.count - 22
+        while index >= 0 && index >= bytes.count - 66000 {
+            if bytes[index] == 0x50 && bytes[index + 1] == 0x4B && bytes[index + 2] == 0x05 && bytes[index + 3] == 0x06 {
+                eocd = index
+                break
+            }
+            index -= 1
+        }
+        guard eocd >= 0 else { return [:] }
+        let count = u16(eocd + 10)
+        var cursor = u32(eocd + 16)
+        var entries: [String: Data] = [:]
+        for _ in 0..<count {
+            guard cursor + 46 <= bytes.count, bytes[cursor] == 0x50, bytes[cursor + 1] == 0x4B,
+                  bytes[cursor + 2] == 0x01, bytes[cursor + 3] == 0x02 else { break }
+            let method = u16(cursor + 10)
+            let compressedSize = u32(cursor + 20)
+            let rawSize = u32(cursor + 24)
+            let nameLength = u16(cursor + 28)
+            let extraLength = u16(cursor + 30)
+            let commentLength = u16(cursor + 32)
+            let localOffset = u32(cursor + 42)
+            let name = String(bytes: bytes[(cursor + 46)..<(cursor + 46 + nameLength)], encoding: .utf8) ?? ""
+            if localOffset + 30 <= bytes.count {
+                let localName = u16(localOffset + 26)
+                let localExtra = u16(localOffset + 28)
+                let dataStart = localOffset + 30 + localName + localExtra
+                let dataEnd = min(dataStart + compressedSize, bytes.count)
+                if dataStart <= dataEnd {
+                    let raw = Data(bytes[dataStart..<dataEnd])
+                    if method == 0 {
+                        entries[name] = raw
+                    } else if method == 8, rawSize > 0 {
+                        var output = Data(count: rawSize)
+                        let written = output.withUnsafeMutableBytes { dst -> Int in
+                            raw.withUnsafeBytes { src in
+                                compression_decode_buffer(
+                                    dst.bindMemory(to: UInt8.self).baseAddress!, rawSize,
+                                    src.bindMemory(to: UInt8.self).baseAddress!, raw.count,
+                                    nil, COMPRESSION_ZLIB)
+                            }
+                        }
+                        if written == rawSize { entries[name] = output }
+                    }
+                }
+            }
+            cursor += 46 + nameLength + extraLength + commentLength
+        }
+        return entries
+    }
+
+    static func parseXLSX(_ data: Data) -> (drafts: [ImportedCourseDraft], unparsed: [String])? {
+        let entries = unzip(data)
+        guard let sheetName = entries.keys.filter({ $0.hasPrefix("xl/worksheets/") && $0.hasSuffix(".xml") }).sorted().first,
+              let sheetData = entries[sheetName],
+              let sheetXML = String(data: sheetData, encoding: .utf8) else { return nil }
+        var shared: [String] = []
+        if let sharedData = entries["xl/sharedStrings.xml"], let sharedXML = String(data: sharedData, encoding: .utf8) {
+            for chunk in sharedXML.components(separatedBy: "<si>").dropFirst() {
+                let runs = allMatchesDotAll(#"<t[^>]*>([^<]*)</t>"#, in: chunk)
+                shared.append(xmlUnescape(runs.map { $0.groups[0] }.joined()))
+            }
+        }
+        var rows: [[String]] = []
+        for rowChunk in sheetXML.components(separatedBy: "<row").dropFirst() {
+            var cells: [String] = []
+            for cellMatch in allMatchesDotAll(#"<c\s([^>]*?)(/>|>(.*?)</c>)"#, in: rowChunk) {
+                let attributes = cellMatch.groups[0]
+                let inner = cellMatch.groups[2]
+                var value = ""
+                if attributes.contains("t=\"s\""), let v = firstMatchDotAll(#"<v>([^<]*)</v>"#, in: inner),
+                   let sharedIndex = Int(v.groups[0]), sharedIndex < shared.count {
+                    value = shared[sharedIndex]
+                } else if attributes.contains("t=\"inlineStr\"") {
+                    value = xmlUnescape(allMatchesDotAll(#"<t[^>]*>([^<]*)</t>"#, in: inner).map { $0.groups[0] }.joined())
+                } else if let v = firstMatchDotAll(#"<v>([^<]*)</v>"#, in: inner) {
+                    value = xmlUnescape(v.groups[0])
+                }
+                // Column from the r attribute (B3 -> 1) keeps sparse rows aligned.
+                var column = cells.count
+                if let ref = firstMatch(#"r=\"([A-Z]+)\d+\""#, in: attributes) {
+                    column = ref.groups[0].reduce(0) { $0 * 26 + (Int($1.unicodeScalars.first!.value) - 64) } - 1
+                }
+                while cells.count < column { cells.append("") }
+                if cells.count == column { cells.append(value) } else if column < cells.count { cells[column] = value }
+            }
+            rows.append(cells)
+        }
+        if let parsed = parseRows(rows) { return parsed }
+        let joined = rows.map { $0.filter { !$0.isEmpty }.joined(separator: " ") }.filter { !$0.isEmpty }
+        return parseText(joined.joined(separator: "\n"))
+    }
+
+    static func parseDOCX(_ data: Data) -> (drafts: [ImportedCourseDraft], unparsed: [String])? {
+        let entries = unzip(data)
+        guard let documentData = entries["word/document.xml"],
+              let xml = String(data: documentData, encoding: .utf8) else { return nil }
+        func cellText(_ chunk: String) -> String {
+            xmlUnescape(allMatchesDotAll(#"<w:t[^>]*>([^<]*)</w:t>"#, in: chunk).map { $0.groups[0] }.joined())
+        }
+        if xml.contains("<w:tbl") {
+            var rows: [[String]] = []
+            for tableChunk in xml.components(separatedBy: "<w:tbl").dropFirst() {
+                for rowChunk in tableChunk.components(separatedBy: "<w:tr").dropFirst() {
+                    var cells: [String] = []
+                    for cellChunk in rowChunk.components(separatedBy: "<w:tc").dropFirst() {
+                        cells.append(cellText(cellChunk))
+                    }
+                    if !cells.isEmpty { rows.append(cells) }
+                }
+                break // first table only: it is the timetable
+            }
+            if let parsed = parseRows(rows) { return parsed }
+        }
+        let lines = xml.components(separatedBy: "<w:p").dropFirst().map { cellText($0) }
+        return parseText(lines.joined(separator: "\n"))
+    }
+
+    /// One entry point for arbitrary file bytes: OOXML containers, HTML
+    /// tables masquerading as .xls, and plain text as the fallback.
+    static func parseFileData(_ data: Data) -> (drafts: [ImportedCourseDraft], unparsed: [String])? {
+        if data.count >= 4, data[0] == 0x50, data[1] == 0x4B {
+            if let xlsx = parseXLSX(data) { return xlsx }
+            if let docx = parseDOCX(data) { return docx }
+            return nil
+        }
+        guard let text = decodeText(data) else { return nil }
+        let lowered = text.lowercased()
+        if lowered.contains("<table") || lowered.contains("<html") {
+            return parseHTML(text)
+        }
+        let csv = parseCSV(text)
+        if !csv.drafts.isEmpty { return csv }
+        return parseText(text)
+    }
+
+    /// UTF-8 first, then GB18030 (legacy exports), then UTF-16.
+    static func decodeText(_ data: Data) -> String? {
+        if let utf8 = String(data: data, encoding: .utf8) { return utf8 }
+        let gb18030 = CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(1586))
+        if let legacy = String(data: data, encoding: String.Encoding(rawValue: gb18030)) { return legacy }
+        return String(data: data, encoding: .utf16)
+    }
+
+    static func xmlUnescape(_ text: String) -> String {
+        var result = text
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&apos;", with: "'")
+        for match in allMatches(#"&#(\d+);"#, in: result) {
+            if let code = Int(match.groups[0]), let scalar = UnicodeScalar(code) {
+                result = result.replacingOccurrences(of: "&#\(code);", with: String(scalar))
+            }
+        }
+        for match in allMatches(#"&#x([0-9a-fA-F]+);"#, in: result) {
+            if let code = Int(match.groups[0], radix: 16), let scalar = UnicodeScalar(code) {
+                result = result.replacingOccurrences(of: "&#x\(match.groups[0]);", with: String(scalar))
+            }
+        }
+        return result.replacingOccurrences(of: "&amp;", with: "&")
+    }
+
+    private static func allMatchesDotAll(_ pattern: String, in text: String) -> [Match] {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]) else { return [] }
+        let ns = text as NSString
+        return regex.matches(in: text, range: NSRange(location: 0, length: ns.length)).map { match in
+            var groups: [String] = []
+            for index in 1..<match.numberOfRanges {
+                let range = match.range(at: index)
+                groups.append(range.location == NSNotFound ? "" : ns.substring(with: range))
+            }
+            return Match(groups: groups)
+        }
+    }
+
+    private static func firstMatchDotAll(_ pattern: String, in text: String) -> Match? {
+        allMatchesDotAll(pattern, in: text).first
+    }
+}
+
 // MARK: - App changelog (shown under 设置 › 关于 › 更新日志)
 //
 // Maintenance rule: every release adds its entry at the TOP of this list in
@@ -1059,6 +1405,11 @@ public enum AppChangelog {
     }
 
     public static let entries: [Entry] = [
+        Entry(version: "2.2.0", title: "所有文件都能导入，识别更准", changes: [
+            "智能导入的文件入口打通了：Excel(.xlsx)、Word(.docx)、PDF、网页表格文件（教务系统导出的那种）、日历 .ics 都能直接选进来识别，老式 .xls 会给出另存提示",
+            "识别引擎重做：网格课表（横着星期、竖着节次）现在 CSV、Excel、Word、PDF 都能按格子对位；表头不在第一行、列名带后缀、时间地点挤在一格的情况也认了",
+            "课程名会自动去掉序号和课程代码括号，空白课程名会自动接上一行的课程，周次支持「1,3,5周」这种逐周列表",
+        ]),
         Entry(version: "2.1.3", title: "设置页全页重包", changes: [
             "「我的」页所有文字项都装上了修饰：主题/数据/更新日志等改成彩色图标行、保存改成整宽按钮、节次加了序号徽章、通知权限带状态点和检查胶囊钮",
         ]),

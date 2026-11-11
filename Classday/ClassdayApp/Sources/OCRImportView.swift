@@ -1,6 +1,7 @@
 import SwiftUI
 import PhotosUI
 import Vision
+import PDFKit
 import UniformTypeIdentifiers
 import CoreFoundation
 import ClassdayCore
@@ -93,7 +94,7 @@ struct SmartImportView: View {
             .onChange(of: pickerItem) { _, item in
                 Task { await recognize(item) }
             }
-            .fileImporter(isPresented: $showFileImporter, allowedContentTypes: [.commaSeparatedText, .tabSeparatedText, .plainText]) { result in
+            .fileImporter(isPresented: $showFileImporter, allowedContentTypes: Self.fileTypes) { result in
                 if case let .success(url) = result { readFile(url) }
             }
             .sheet(item: editingBinding) { draft in
@@ -120,8 +121,8 @@ struct SmartImportView: View {
             } label: {
                 sourceRow(icon: "tablecells.fill",
                           colors: [Color(red: 0.15, green: 0.68, blue: 0.38), Color(red: 0.05, green: 0.55, blue: 0.55)],
-                          title: "CSV / 表格文件",
-                          subtitle: "学校导出的课表 · Excel 另存为 CSV 也行")
+                          title: "表格 / 文档文件",
+                          subtitle: "CSV · Excel · Word · PDF · HTML 都能认")
             }
             .buttonStyle(.plain)
             if !sourceName.isEmpty {
@@ -258,12 +259,121 @@ struct SmartImportView: View {
         }
     }
 
+    /// Everything the Files app might hand us: delimited text, OOXML,
+    /// PDF, HTML-disguised xls, calendar files, our own JSON, and images.
+    static let fileTypes: [UTType] = [
+        .commaSeparatedText, .tabSeparatedText, .plainText, .spreadsheet,
+        .pdf, .html, .image, .json,
+        UTType(filenameExtension: "xlsx")!, UTType(filenameExtension: "docx")!,
+        UTType(filenameExtension: "ics")!, UTType(filenameExtension: "xls")!,
+        UTType(filenameExtension: "csv")!, UTType(filenameExtension: "tsv")!,
+    ]
+
     private func readFile(_ url: URL) {
         let access = url.startAccessingSecurityScopedResource()
         defer { if access { url.stopAccessingSecurityScopedResource() } }
         guard let data = try? Data(contentsOf: url) else { return }
-        let text = Self.decode(data)
-        load(text: text, source: url.lastPathComponent, isCSV: true)
+        let name = url.lastPathComponent
+        let lower = name.lowercased()
+        if data.starts(with: [0xD0, 0xCF, 0x11, 0xE0]) {
+            model.banner = "这是老式 .xls 格式，请在 Excel 里另存为 .xlsx 或 CSV 再导入"
+            return
+        }
+        let decoded = ScheduleTextImporter.decodeText(data)
+        if lower.hasSuffix(".ics") || (decoded?.contains("BEGIN:VCALENDAR") ?? false) {
+            guard let text = decoded else { return }
+            let calendar = ICSImporter.parse(text, totalWeeks: model.document.semester.totalWeeks)
+            model.importCalendar(calendar)
+            model.banner = "日历文件已导入 \(calendar.courses.count) 门课"
+            dismiss()
+            return
+        }
+        if lower.hasSuffix(".json") {
+            dismiss()
+            model.showImporter = true
+            model.banner = "这是课曜的 JSON 备份，已为你打开导入确认"
+            return
+        }
+        if lower.hasSuffix(".pdf") || data.starts(with: [0x25, 0x50, 0x44, 0x46]) {
+            readPDF(data, name: name)
+            return
+        }
+        if lower.hasSuffix(".jpg") || lower.hasSuffix(".jpeg") || lower.hasSuffix(".png") || lower.hasSuffix(".heic")
+            || data.starts(with: [0xFF, 0xD8]) || data.starts(with: [0x89, 0x50, 0x4E, 0x47]) {
+            Task { await recognize(imageData: data, source: name) }
+            return
+        }
+        guard let result = ScheduleTextImporter.parseFileData(data) else {
+            model.banner = "这个文件里没找到能认的课表"
+            return
+        }
+        drafts = result.drafts
+        unparsed = result.unparsed
+        excluded = []
+        sourceName = name
+        if result.drafts.isEmpty {
+            model.banner = "没有认出课程，换一份试试"
+        }
+    }
+
+    private func readPDF(_ data: Data, name: String) {
+        guard let document = PDFDocument(data: data) else {
+            model.banner = "这个 PDF 打不开"
+            return
+        }
+        var blocks: [OCRTextBlock] = []
+        var pagesText: [String] = []
+        for index in 0..<document.pageCount {
+            guard let page = document.page(at: index) else { continue }
+            pagesText.append(page.string ?? "")
+            blocks += pdfBlocks(page: page)
+        }
+        if pagesText.allSatisfy({ $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+            model.banner = "这个 PDF 里没有文字层（像是扫描件），截成图片用「课表图片」导入"
+            return
+        }
+        if let grid = ScheduleTextImporter.parseGrid(blocks) {
+            drafts = grid.drafts
+            unparsed = grid.unparsed
+            excluded = []
+            sourceName = "\(name)（PDF 课表）"
+            return
+        }
+        load(text: pagesText.joined(separator: "\n"), source: name, isCSV: false)
+    }
+
+    /// Word-level blocks from a PDF text layer, in the same bottom-left
+    /// coordinate space Vision OCR uses, so parseGrid can consume them.
+    private func pdfBlocks(page: PDFPage) -> [OCRTextBlock] {
+        let content = page.string ?? ""
+        let characters = Array(content)
+        let count = min(page.numberOfCharacters, characters.count)
+        guard count > 0 else { return [] }
+        let box = page.bounds(for: .mediaBox)
+        guard box.width > 0, box.height > 0 else { return [] }
+        var words: [(text: String, rect: CGRect)] = []
+        var current = ""
+        var currentRect: CGRect?
+        func flush() {
+            if !current.isEmpty, let rect = currentRect { words.append((current, rect)) }
+            current = ""
+            currentRect = nil
+        }
+        for index in 0..<count {
+            let character = characters[index]
+            if character.isWhitespace { flush(); continue }
+            current.append(character)
+            let rect = page.characterBounds(at: index)
+            currentRect = currentRect?.union(rect) ?? rect
+        }
+        flush()
+        return words.map { word in
+            OCRTextBlock(
+                text: word.text,
+                centerX: Double((word.rect.midX - box.minX) / box.width),
+                centerY: Double((word.rect.midY - box.minY) / box.height),
+                height: Double(word.rect.height / box.height))
+        }
     }
 
     static func decode(_ data: Data) -> String {
@@ -279,8 +389,14 @@ struct SmartImportView: View {
         guard let item else { return }
         analyzing = true
         defer { analyzing = false }
-        guard let data = try? await item.loadTransferable(type: Data.self),
-              let image = UIImage(data: data), let cgImage = image.cgImage else { return }
+        guard let data = try? await item.loadTransferable(type: Data.self) else { return }
+        await recognize(imageData: data, source: "课表图片")
+    }
+
+    private func recognize(imageData data: Data, source: String) async {
+        analyzing = true
+        defer { analyzing = false }
+        guard let image = UIImage(data: data), let cgImage = image.cgImage else { return }
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.recognitionLanguages = ["zh-Hans", "en-US"]
@@ -300,7 +416,7 @@ struct SmartImportView: View {
             drafts = grid.drafts
             unparsed = grid.unparsed
             excluded = []
-            sourceName = "课表图片（网格识别）"
+            sourceName = source == "课表图片" ? "课表图片（网格识别）" : source
             return
         }
         let observations = results.sorted {
@@ -309,7 +425,7 @@ struct SmartImportView: View {
                 : $0.boundingBox.minX < $1.boundingBox.minX
         }
         let text = observations.compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
-        load(text: text, source: "课表图片", isCSV: false)
+        load(text: text, source: source, isCSV: false)
     }
 
     // MARK: import
