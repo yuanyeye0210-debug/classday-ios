@@ -5,6 +5,8 @@ import ClassdayCore
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.classdayChrome) private var chrome
+    @State private var motionTracker = MotionTracker()
     @Namespace private var zoom
 
     var body: some View {
@@ -12,15 +14,19 @@ struct RootView: View {
         ZStack {
             TabView(selection: $model.tab) {
                 TodayView()
+                    .background { ThemeBackground() }
                     .tabItem { Label("今日", systemImage: "sun.max") }
                     .tag(AppTab.today)
                 WeekJournalView()
+                    .background { ThemeBackground() }
                     .tabItem { Label("周览", systemImage: "calendar") }
                     .tag(AppTab.week)
                 CoursesView()
+                    .background { ThemeBackground() }
                     .tabItem { Label("课程", systemImage: "books.vertical") }
                     .tag(AppTab.courses)
                 SettingsView()
+                    .background { ThemeBackground() }
                     .tabItem { Label("我的", systemImage: "person") }
                     .tag(AppTab.settings)
             }
@@ -33,6 +39,12 @@ struct RootView: View {
         .background {
             ThemeBackground()
         }
+        .environment(\.motionTracker, motionTracker)
+        .onAppear { if chrome.allowsMotion { motionTracker.start() } }
+        .onChange(of: chrome.allowsMotion) { _, allowed in
+            if allowed { motionTracker.start() } else { motionTracker.stop() }
+        }
+        .onDisappear { motionTracker.stop() }
         .toolbar(model.presented == nil ? .visible : .hidden, for: .tabBar)
         .animation(reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.86), value: model.presented?.id)
         .sheet(item: $model.editor) { route in

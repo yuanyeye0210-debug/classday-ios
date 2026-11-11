@@ -5,8 +5,8 @@ final class V2FeatureTests: XCTestCase {
     private let calendar = TestSupport.calendar()
 
     func testSevenThemesAndSaverDowngrade() {
-        XCTAssertEqual(ClassdayThemes.all.count, 7)
-        XCTAssertEqual(Set(ClassdayThemes.all.map(\.id)).count, 7)
+        XCTAssertEqual(ClassdayThemes.all.count, 8)
+        XCTAssertEqual(Set(ClassdayThemes.all.map(\.id)).count, 8)
         XCTAssertEqual(ClassdayThemes.theme(id: "missing").id, "neon")
         XCTAssertEqual(ClassdayThemes.effectiveTier(selected: .high, lowPower: true, reduceMotion: false), .saver)
         XCTAssertEqual(ClassdayThemes.effectiveTier(selected: .high, lowPower: false, reduceMotion: true), .saver)
@@ -351,7 +351,7 @@ func testGridParsesTimetableScreenshotLayout() {
 final class ChangelogStructureTests: XCTestCase {
     func testChangelogIsNewestFirstAndComplete() {
         let versions = AppChangelog.entries.map(\.version)
-        XCTAssertEqual(versions.first, "2.3.0")
+        XCTAssertEqual(versions.first, "2.3.1")
         XCTAssertEqual(Set(versions).count, versions.count)
         let parsed = versions.map { $0.split(separator: ".").compactMap { Int($0) } }
         for index in 1..<parsed.count {

@@ -22,7 +22,7 @@ struct ClassdayChrome: Equatable {
             tier: tier,
             allowsShader: rich && choice.theme.usesShader,
             allowsMotion: rich && choice.theme.usesMotion && !reduceMotion,
-            allowsParticles: rich && tier == .high && choice.theme.specialLayout == "aurora"
+            allowsParticles: rich && tier == .high && (choice.theme.specialLayout == "aurora" || choice.theme.specialLayout == "dust")
         )
     }
 }
@@ -35,6 +35,87 @@ extension EnvironmentValues {
     var classdayChrome: ClassdayChrome {
         get { self[ClassdayChromeKey.self] }
         set { self[ClassdayChromeKey.self] = newValue }
+    }
+}
+
+@Observable
+final class MotionTracker {
+    /// Gravity direction in screen coordinates (x right, y down), low-pass
+    /// filtered at 30 Hz. Stays (0, 1) — straight down — when the phone is
+    /// upright, motion is unavailable (simulator), or tracking is stopped.
+    var gravity = CGVector(dx: 0, dy: 1)
+    private let manager = CMMotionManager()
+    private var running = false
+
+    func start() {
+        guard !running, manager.isDeviceMotionAvailable else { return }
+        running = true
+        manager.deviceMotionUpdateInterval = 1.0 / 30.0
+        manager.startDeviceMotionUpdates(to: .main) { [weak self] motion, _ in
+            guard let self, let gravity = motion?.gravity else { return }
+            // Device frame (x right, y up) -> screen frame (x right, y down).
+            let target = CGVector(dx: -gravity.x, dy: -gravity.y)
+            self.gravity = CGVector(
+                dx: self.gravity.dx * 0.72 + target.dx * 0.28,
+                dy: self.gravity.dy * 0.72 + target.dy * 0.28
+            )
+        }
+    }
+
+    func stop() {
+        guard running else { return }
+        running = false
+        manager.stopDeviceMotionUpdates()
+        gravity = CGVector(dx: 0, dy: 1)
+    }
+}
+
+private struct MotionTrackerKey: EnvironmentKey {
+    static let defaultValue = MotionTracker()
+}
+
+extension EnvironmentValues {
+    var motionTracker: MotionTracker {
+        get { self[MotionTrackerKey.self] }
+        set { self[MotionTrackerKey.self] = newValue }
+    }
+}
+
+/// Stateful dust for the Stardust Gravity theme: particles integrate the
+/// live gravity vector, pool at the low edge and bounce off the walls.
+final class DustBox {
+    var px: [Double] = []
+    var py: [Double] = []
+    var vx: [Double] = []
+    var vy: [Double] = []
+    private var last: Double = 0
+
+    init(count: Int = 42) {
+        for i in 0..<count {
+            let s = Double(i) * 1.6180339887 + 0.37
+            px.append((s * 7.13).truncatingRemainder(dividingBy: 1))
+            py.append((s * 11.71).truncatingRemainder(dividingBy: 1))
+            vx.append(0)
+            vy.append(0)
+        }
+    }
+
+    func step(gravity: CGVector, time: Double) {
+        let dt = last == 0 ? 0.016 : min(max(time - last, 0.001), 0.05)
+        last = time
+        let damp = pow(0.30, dt)
+        for i in px.indices {
+            vx[i] += Double(gravity.dx) * 1.5 * dt
+            vy[i] += Double(gravity.dy) * 1.5 * dt
+            vx[i] *= damp
+            vy[i] *= damp
+            px[i] += vx[i] * dt
+            py[i] += vy[i] * dt
+            if px[i] < 0.012 { px[i] = 0.012; vx[i] = abs(vx[i]) * 0.45 }
+            if px[i] > 0.988 { px[i] = 0.988; vx[i] = -abs(vx[i]) * 0.45 }
+            if py[i] < 0.012 { py[i] = 0.012; vy[i] = abs(vy[i]) * 0.45 }
+            if py[i] > 0.988 { py[i] = 0.988; vy[i] = -abs(vy[i]) * 0.45 }
+        }
     }
 }
 
@@ -116,6 +197,9 @@ struct ThemeFieldView: View {
     var animated: Bool
     var particles: Bool
 
+    @Environment(\.motionTracker) private var tracker
+    @State private var dustBox = DustBox()
+
     var body: some View {
         GeometryReader { geo in
             if animated {
@@ -136,17 +220,23 @@ struct ThemeFieldView: View {
         let w = max(size.width, 1)
         let h = max(size.height, 1)
         let dark = theme.prefersDark
+        let grav = tracker.gravity
+        // Deviation of the gravity vector from straight-down: zero when the
+        // phone is upright, grows as it tilts. Background layers parallax
+        // against it; loose particles integrate the raw vector instead.
+        let tiltX = CGFloat(grav.dx)
+        let tiltY = CGFloat(grav.dy - 1)
         return ZStack {
             Color(theme.background.palette)
             if active {
                 blob(color: theme.glow, size: w * 0.85, blur: 55, opacity: dark ? 0.50 : 0.55,
-                     x: w * 0.16 + drift(time, 0.11, 0.0, 26), y: h * 0.10 + drift(time, 0.09, 1.7, 20))
+                     x: w * 0.16 + drift(time, 0.11, 0.0, 26) - tiltX * 30, y: h * 0.10 + drift(time, 0.09, 1.7, 20) - tiltY * 30)
                 blob(color: theme.accent, size: w * 0.70, blur: 60, opacity: dark ? 0.42 : 0.45,
-                     x: w * 0.86 + drift(time, 0.08, 3.1, 30), y: h * 0.34 + drift(time, 0.12, 0.6, 24))
+                     x: w * 0.86 + drift(time, 0.08, 3.1, 30) - tiltX * 46, y: h * 0.34 + drift(time, 0.12, 0.6, 24) - tiltY * 46)
                 blob(color: theme.courseAccents.count > 3 ? theme.courseAccents[3] : theme.glow,
                      size: w * 0.62, blur: 58, opacity: dark ? 0.36 : 0.42,
-                     x: w * 0.42 + drift(time, 0.10, 5.2, 22), y: h * 0.88 + drift(time, 0.07, 2.4, 18))
-                signature(size: size, time: time)
+                     x: w * 0.42 + drift(time, 0.10, 5.2, 22) - tiltX * 36, y: h * 0.88 + drift(time, 0.07, 2.4, 18) - tiltY * 36)
+                signature(size: size, time: time, tiltX: tiltX, tiltY: tiltY, gravity: grav)
             }
         }
         .frame(width: w, height: h)
@@ -164,7 +254,7 @@ struct ThemeFieldView: View {
     }
 
     @ViewBuilder
-    private func signature(size: CGSize, time: Double) -> some View {
+    private func signature(size: CGSize, time: Double, tiltX: CGFloat, tiltY: CGFloat, gravity: CGVector) -> some View {
         let w = size.width
         let h = size.height
         switch theme.specialLayout {
@@ -191,7 +281,7 @@ struct ThemeFieldView: View {
                         let frac = seed.truncatingRemainder(dividingBy: 1)
                         let period = 8 + frac * 7
                         let progress = (time / period + frac * 3.7).truncatingRemainder(dividingBy: 1)
-                        let x = frac * canvasSize.width + sin(time * 0.7 + seed) * 9
+                        let x = frac * canvasSize.width + sin(time * 0.7 + seed) * 9 + Double(tiltX) * 44 * progress
                         let y = canvasSize.height - progress * (canvasSize.height + 24)
                         let r = 1.4 + (seed * 0.53).truncatingRemainder(dividingBy: 1) * 2.2
                         let fade = sin(progress * Double.pi)
@@ -244,6 +334,47 @@ struct ThemeFieldView: View {
                 .shadow(color: Color(theme.accent.palette), radius: 7)
                 .position(x: center.x + CGFloat(cos(angle)) * 109, y: center.y + CGFloat(sin(angle)) * 109)
                 .allowsHitTesting(false)
+        case "glass":
+            RoundedRectangle(cornerRadius: 60)
+                .fill(LinearGradient(colors: [.clear, Color.white.opacity(0.34), .clear], startPoint: .leading, endPoint: .trailing))
+                .frame(width: 120, height: h * 1.5)
+                .blur(radius: 14)
+                .rotationEffect(.degrees(-22))
+                .position(x: w / 2 + tiltX * w * 0.85, y: h / 2)
+                .allowsHitTesting(false)
+        case "dust":
+            Canvas { context, canvasSize in
+                let cw = Double(canvasSize.width)
+                let ch = Double(canvasSize.height)
+                // Three star layers parallaxing against the tilt, by depth.
+                for layer in 0..<3 {
+                    let depth = [6.0, 14.0, 26.0][layer]
+                    for i in 0..<36 {
+                        let seed = Double(layer * 131 + i * 17 + 7)
+                        let fx = (sin(seed * 12.9898) * 43758.5453).truncatingRemainder(dividingBy: 1)
+                        let fy = (sin(seed * 78.233) * 12543.123).truncatingRemainder(dividingBy: 1)
+                        var sx = (abs(fx) * cw - Double(tiltX) * depth * 1.6).truncatingRemainder(dividingBy: cw)
+                        var sy = (abs(fy) * ch - Double(tiltY) * depth * 1.6).truncatingRemainder(dividingBy: ch)
+                        if sx < 0 { sx += cw }
+                        if sy < 0 { sy += ch }
+                        let r = 0.8 + Double(layer) * 0.6 + abs(fx) * 0.7
+                        let rect = CGRect(x: sx - r, y: sy - r, width: r * 2, height: r * 2)
+                        context.fill(Path(ellipseIn: rect), with: .color(.white.opacity(0.30 + Double(layer) * 0.26)))
+                    }
+                }
+                // Dust with real gravity: integrates the live vector, pools
+                // at the low edge, bounces off the walls.
+                if animated {
+                    dustBox.step(gravity: gravity, time: time)
+                }
+                for i in dustBox.px.indices {
+                    let r = 1.3 + Double(i % 5) * 0.45
+                    let rect = CGRect(x: dustBox.px[i] * cw - r, y: dustBox.py[i] * ch - r, width: r * 2, height: r * 2)
+                    let gold = i % 4 != 0
+                    context.fill(Path(ellipseIn: rect), with: .color(gold ? Color(red: 1.0, green: 0.90, blue: 0.62).opacity(0.95) : Color(theme.glow.palette).opacity(0.9)))
+                }
+            }
+            .allowsHitTesting(false)
         case "cube":
             Canvas { context, canvasSize in
                 var path = Path()
@@ -278,8 +409,6 @@ struct ThemeBackground: View {
             animated: chrome.tier == .high,
             particles: chrome.allowsParticles
         )
-        .scaleEffect(chrome.allowsMotion ? 1.07 : 1)
-        .modifier(MotionParallax())
         .ignoresSafeArea()
     }
 }
