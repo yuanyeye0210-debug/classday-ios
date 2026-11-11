@@ -1038,3 +1038,42 @@ public enum ScheduleTextImporter {
         return cells
     }
 }
+
+// MARK: - App changelog (shown under 设置 › 关于 › 更新日志)
+//
+// Maintenance rule: every release adds its entry at the TOP of this list in
+// the same commit that bumps MARKETING_VERSION. User-facing wording only.
+// A structural test in V2FeatureTests guards ordering and completeness.
+
+public enum AppChangelog {
+    public struct Entry: Equatable, Sendable {
+        public var version: String
+        public var title: String
+        public var changes: [String]
+
+        public init(version: String, title: String, changes: [String]) {
+            self.version = version
+            self.title = title
+            self.changes = changes
+        }
+    }
+
+    public static let entries: [Entry] = [
+        Entry(version: "2.1.0", title: "智能导入课表", changes: [
+            "新增智能导入：课表图片、CSV 文件、粘贴文本都能自动认出课程名、上课时间、教室和老师",
+            "导入前逐门确认：每个上课安排的星期、时间、教室、单双周都能单独改，还能自定义上课周",
+            "认不出的内容会原样列出来，不会瞎编时间硬塞进课表",
+            "新增本页：更新日志",
+        ]),
+        Entry(version: "2.0.1", title: "修复共享组警告", changes: [
+            "「我的」页不再弹出 App Group 不可用警告，侧载安装时安静使用本机存储",
+            "新增一个独有共享组，小组件读取课表更稳",
+        ]),
+        Entry(version: "2.0.0", title: "新框架与三项新功能", changes: [
+            "全新框架：今日、周览、课程、我的四个页签加浮动玻璃底栏",
+            "考试倒计时卡与考试页，作业待办上了今日页",
+            "自定义日程：课程外的安排和课程一起排进时间线",
+            "成绩记录与 GPA：按学分加权，汇总进课程页",
+        ]),
+    ]
+}

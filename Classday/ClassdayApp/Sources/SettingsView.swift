@@ -25,6 +25,7 @@ struct SettingsView: View {
     @State private var errorText: String?
     @State private var exporting = false
     @State private var exportDocument = JSONFileDocument(data: Data())
+    @State private var showChangelog = false
 
     init() {
         _semester = State(initialValue: DemoData.makeSemester())
@@ -151,6 +152,7 @@ struct SettingsView: View {
                         .font(.footnote)
                         .foregroundStyle(Theme.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                    Button("更新日志") { showChangelog = true }
                 }
             }
             .padding(20)
@@ -165,6 +167,7 @@ struct SettingsView: View {
         .onChange(of: model.document.semester) { _, newValue in
             semester = newValue
         }
+        .sheet(isPresented: $showChangelog) { ChangelogView() }
         .sheet(isPresented: $model.showThemeGallery) { ThemeGalleryView() }
         .sheet(isPresented: $model.showStudyDesk) { StudyDeskView() }
         .fileExporter(
@@ -288,5 +291,34 @@ struct SettingsView: View {
     private func openSettings() {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
         UIApplication.shared.open(url)
+    }
+}
+
+struct ChangelogView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(AppChangelog.entries, id: \.version) { entry in
+                    Section {
+                        ForEach(entry.changes, id: \.self) { change in
+                            HStack(alignment: .top, spacing: 8) {
+                                Text("·").foregroundStyle(.secondary)
+                                Text(change)
+                            }
+                        }
+                    } header: {
+                        Text("\(entry.version) · \(entry.title)")
+                    }
+                }
+            }
+            .navigationTitle("更新日志")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") { dismiss() }
+                }
+            }
+        }
     }
 }

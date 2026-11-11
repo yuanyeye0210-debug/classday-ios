@@ -208,3 +208,27 @@ final class SmartImportTests: XCTestCase {
         XCTAssertTrue(result.unparsed.isEmpty)
     }
 }
+
+
+final class ChangelogStructureTests: XCTestCase {
+    func testChangelogIsNewestFirstAndComplete() {
+        let versions = AppChangelog.entries.map(\.version)
+        XCTAssertEqual(versions.first, "2.1.0")
+        XCTAssertEqual(Set(versions).count, versions.count)
+        let parsed = versions.map { $0.split(separator: ".").compactMap { Int($0) } }
+        for index in 1..<parsed.count {
+            XCTAssertEqual(parsed[index].count, 3)
+            let previous = parsed[index - 1], current = parsed[index]
+            XCTAssertTrue(
+                previous[0] > current[0]
+                    || (previous[0] == current[0] && previous[1] > current[1])
+                    || (previous[0] == current[0] && previous[1] == current[1] && previous[2] > current[2]),
+                "changelog must be newest first")
+        }
+        for entry in AppChangelog.entries {
+            XCTAssertFalse(entry.title.isEmpty)
+            XCTAssertFalse(entry.changes.isEmpty)
+            XCTAssertTrue(entry.changes.allSatisfy { !$0.isEmpty })
+        }
+    }
+}
