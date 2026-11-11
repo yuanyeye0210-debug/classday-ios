@@ -352,7 +352,7 @@ func testGridParsesTimetableScreenshotLayout() {
 final class ChangelogStructureTests: XCTestCase {
     func testChangelogIsNewestFirstAndComplete() {
         let versions = AppChangelog.entries.map(\.version)
-        XCTAssertEqual(versions.first, "2.4.1")
+        XCTAssertEqual(versions.first, "2.5.0")
         XCTAssertEqual(Set(versions).count, versions.count)
         let parsed = versions.map { $0.split(separator: ".").compactMap { Int($0) } }
         for index in 1..<parsed.count {
@@ -417,4 +417,30 @@ final class ChangelogStructureTests: XCTestCase {
         XCTAssertNil(old.gradeScheme)
         XCTAssertEqual(old.credits, 0)
     }
+
+    func testGradeSchemeParserReadsOAFormulaJSON() {
+        let json = #"{"scale": 20, "components": ["P", "TEST60", "EX1", "EX2"], "branches": [[{"component": "P", "weight": 0.25}, {"component": "TEST60", "weight": 0.25}, {"component": "EX1", "weight": 0.5}], [{"component": "P", "weight": 0.25}, {"component": "EX1", "weight": 0.75}], [{"component": "P", "weight": 0.25}, {"component": "EX2", "weight": 0.75}]]}"#
+        let scheme = GradeSchemeParser.parse(json)
+        XCTAssertNotNil(scheme)
+        XCTAssertEqual(scheme?.scale, 20)
+        XCTAssertEqual(scheme?.components.count, 4)
+        XCTAssertEqual(scheme?.branches.count, 3)
+        var filled = scheme!
+        for comp in filled.components {
+            filled.scores[comp.id] = ["P": 16.0, "TEST60": 14.0, "EX1": 15.0][comp.name]
+        }
+        XCTAssertEqual(filled.finalGrade ?? -1, 15.25, accuracy: 0.001)
+    }
+
+    func testGradeSchemeParserStripsFencesAndPercents() {
+        let text = "识别结果：\n```json\n" + #"{"scale": 100, "components": ["平时", "期末"], "branches": [[{"component": "平时", "weight": 40}, {"component": "期末", "weight": 60}]]}"# + "\n```"
+        let scheme = GradeSchemeParser.parse(text)
+        XCTAssertNotNil(scheme)
+        XCTAssertEqual(scheme?.branches.first?.map { $0.weight } ?? [], [0.4, 0.6])
+    }
+
+    func testGradeSchemeParserRejectsGarbage() {
+        XCTAssertNil(GradeSchemeParser.parse("这张图里没有记分规则"))
+    }
+
 }

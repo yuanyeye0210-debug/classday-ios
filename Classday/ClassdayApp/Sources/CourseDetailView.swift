@@ -1,4 +1,7 @@
 import SwiftUI
+import PhotosUI
+import Security
+import UIKit
 import ClassdayCore
 
 struct CourseDetailView: View {
@@ -540,11 +543,19 @@ struct GradeEditorView: View {
     @State private var loaded = false
     @State private var useScheme = false
     @State private var scheme = GradeScheme()
+    @State private var pickerItem: PhotosPickerItem?
+    @State private var pickedImageData: Data?
+    @State private var aiBusy = false
+    @State private var aiNote: String?
+    @State private var keyDraft = ""
+    @State private var hasKey = GradeAIKeyStore.load() != nil
+    @State private var showKeyField = false
 
     var body: some View {
         let course = model.course(courseID)
         NavigationStack {
             Form {
+                aiSection
                 if useScheme {
                     schemeSections
                 } else {
@@ -722,6 +733,101 @@ struct GradeEditorView: View {
 
     // MARK: 草稿操作
 
+    // MARK: AI 识别记分规则（识别只填草稿，核对后保存才生效）
+
+    @ViewBuilder
+    private var aiSection: some View {
+        Section {
+            if let pickedImageData, let uiImage = UIImage(data: pickedImageData) {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxHeight: 150)
+                    .frame(maxWidth: .infinity)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            PhotosPicker(selection: $pickerItem, matching: .images) {
+                Label(pickedImageData == nil ? "选择规则图片" : "换一张图片", systemImage: "photo.on.rectangle.angled")
+            }
+            if hasKey && !showKeyField {
+                HStack {
+                    Label("Gemini 密钥已保存", systemImage: "key.fill")
+                    Spacer()
+                    Button("更换") { showKeyField = true }
+                }
+            }
+            if !hasKey || showKeyField {
+                SecureField("粘贴 Gemini API 密钥", text: $keyDraft)
+                Button("保存密钥到钥匙串") {
+                    let value = keyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !value.isEmpty {
+                        GradeAIKeyStore.save(value)
+                        hasKey = true
+                        showKeyField = false
+                        keyDraft = ""
+                        aiNote = "密钥已保存，现在可以识别了。"
+                    }
+                }
+                .disabled(keyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            Button {
+                runRecognition()
+            } label: {
+                if aiBusy {
+                    HStack { ProgressView(); Text("识别中…") }
+                } else {
+                    Label("AI 识别并填入草稿", systemImage: "sparkles")
+                }
+            }
+            .disabled(pickedImageData == nil || aiBusy)
+            if let aiNote {
+                Text(aiNote).font(.footnote).foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("AI 识别记分规则")
+        } footer: {
+            Text("上传评分公式的截图或照片（比如老师发的评分说明），AI 会把满分、分项和候选算法填成下面的草稿；识别只填草稿，核对无误后点保存才生效。密钥只存本机钥匙串。")
+        }
+        .onChange(of: pickerItem) { _, item in
+            Task {
+                if let data = try? await item?.loadTransferable(type: Data.self) {
+                    pickedImageData = GradeImagePrep.preparedJPEG(data) ?? data
+                }
+            }
+        }
+    }
+
+    private func runRecognition() {
+        guard let data = pickedImageData else { return }
+        guard let key = GradeAIKeyStore.load(), !key.isEmpty else {
+            showKeyField = true
+            aiNote = "先粘贴 Gemini 密钥并保存，再点识别。"
+            return
+        }
+        aiBusy = true
+        aiNote = nil
+        Task {
+            do {
+                let recognized = try await GradeRuleRecognizer.recognize(jpegData: data, apiKey: key)
+                var merged = recognized
+                if useScheme {
+                    let oldIDByName = Dictionary(uniqueKeysWithValues: scheme.components.map { ($0.name, $0.id) })
+                    for comp in merged.components {
+                        if let oldID = oldIDByName[comp.name], let score = scheme.scores[oldID] {
+                            merged.scores[comp.id] = score
+                        }
+                    }
+                }
+                scheme = merged
+                useScheme = true
+                aiNote = "已按图片识别填好草稿：满分 \(CourseDetailView.numberText(merged.scale)) 分制、\(merged.components.count) 个分项、\(merged.branches.count) 条候选算法。请逐项核对，确认无误后点保存。"
+            } catch {
+                aiNote = (error as? LocalizedError)?.errorDescription ?? "识别失败，请换一张更清晰的图片再试。"
+            }
+            aiBusy = false
+        }
+    }
+
     private func startScheme() {
         if scheme.components.isEmpty {
             let exam = GradeComponent(name: "期末考试")
@@ -802,5 +908,107 @@ struct GradeEditorView: View {
     private var parsed: Double? {
         guard let value = Double(gradeText), (0...100).contains(value) else { return nil }
         return value
+    }
+}
+
+
+// MARK: - 记分规则 AI 识别（Gemini 视觉；密钥只存钥匙串）
+
+enum GradeAIKeyStore {
+    private static var baseQuery: [String: Any] {
+        [kSecClass as String: kSecClassGenericPassword,
+         kSecAttrService as String: "com.classday.app",
+         kSecAttrAccount as String: "gemini-grade-key"]
+    }
+
+    static func load() -> String? {
+        var query = baseQuery
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var result: AnyObject?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let data = result as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    static func save(_ value: String) {
+        SecItemDelete(baseQuery as CFDictionary)
+        var attributes = baseQuery
+        attributes[kSecValueData as String] = Data(value.utf8)
+        SecItemAdd(attributes as CFDictionary, nil)
+    }
+}
+
+enum GradeImagePrep {
+    /// 识别前把图片压到长边 1568 以内并转 JPEG，控制上传体积。
+    static func preparedJPEG(_ data: Data) -> Data? {
+        guard let image = UIImage(data: data) else { return nil }
+        let maxSide: CGFloat = 1568
+        let longest = max(image.size.width, image.size.height)
+        guard longest > maxSide else { return image.jpegData(compressionQuality: 0.85) }
+        let ratio = maxSide / longest
+        let newSize = CGSize(width: image.size.width * ratio, height: image.size.height * ratio)
+        let resized = UIGraphicsImageRenderer(size: newSize).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: newSize))
+        }
+        return resized.jpegData(compressionQuality: 0.85)
+    }
+}
+
+enum GradeRuleRecognizer {
+    enum Failure: LocalizedError {
+        case badResponse(Int)
+        case noText
+        case unparsable
+
+        var errorDescription: String? {
+            switch self {
+            case .badResponse(let code):
+                return "识别服务返回 \(code)，请检查密钥是否有效、额度是否充足。"
+            case .noText:
+                return "识别服务没有返回内容，请稍后再试。"
+            case .unparsable:
+                return "没能从这张图里读出记分规则，换一张更清晰、只含公式的图片再试。"
+            }
+        }
+    }
+
+    static func recognize(jpegData: Data, apiKey: String) async throws -> GradeScheme {
+        let prompt = """
+        你是课程成绩记分规则识别器。仔细读图中的总成绩计算规则（可能有公式、权重、取最高/max、两次考试机会、补考等），只输出一个 JSON 对象，不要输出任何其他文字。格式：
+        {"scale": 满分数字, "components": ["分项代号", ...], "branches": [[{"component": "分项代号", "weight": 小数权重}, ...], ...]}
+        规则：
+        - scale 是总成绩满分：葡萄牙 0–20 分制填 20，百分制填 100，按图中说明判断。
+        - components 是所有分项的代号，保留图中原文（如 P、TEST60、EX1、EX2、平时成绩、期末考试）。
+        - branches 是候选算法：普通加权平均只有一条；出现 max、取最高、或、补考替代等结构时，每种算法一条，总成绩最终取各条的最高值。
+        - weight 用 0 到 1 的小数（25% 写 0.25），同一条内权重之和应为 1。
+        - 分项代号必须与 components 里完全一致。
+        """
+        let body: [String: Any] = [
+            "contents": [[
+                "parts": [
+                    ["text": prompt],
+                    ["inlineData": ["mimeType": "image/jpeg", "data": jpegData.base64EncodedString()]]
+                ]
+            ]],
+            "generationConfig": ["responseMimeType": "application/json", "temperature": 0.1]
+        ]
+        var request = URLRequest(url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=\(apiKey)")!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+            throw Failure.badResponse(http.statusCode)
+        }
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let candidates = json["candidates"] as? [[String: Any]],
+              let content = candidates.first?["content"] as? [String: Any],
+              let parts = content["parts"] as? [[String: Any]],
+              let text = parts.first?["text"] as? String else {
+            throw Failure.noText
+        }
+        guard let scheme = GradeSchemeParser.parse(text) else { throw Failure.unparsable }
+        return scheme
     }
 }

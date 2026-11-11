@@ -1549,6 +1549,11 @@ public enum AppChangelog {
     }
 
     public static let entries: [Entry] = [
+        Entry(version: "2.5.0", title: "记分规则可以拍照识别了", changes: [
+            "成绩录入页新增「AI 识别记分规则」：上传评分公式的截图或照片，AI 自动把满分、分项和候选算法填成草稿",
+            "识别只填草稿：逐项核对、改错之后点保存才生效（和智能导入一个原则）",
+            "识别走 Gemini 视觉，第一次使用时粘贴你的 Google AI Studio 密钥，之后存本机钥匙串",
+        ]),
         Entry(version: "2.4.1", title: "更新安装改走 SideStore", changes: [
             "「检查更新」下载后的安装说明改为 SideStore 流程：下载 IPA 到「文件」→ 打开 LocalDevVPN 连接 → 打开 SideStore 点 + 选中 IPA 安装，之后更新不用再回电脑用 Sideloadly",
             "还没装 SideStore 的，说明里写了首次需要在电脑上用 iloader 装一次",
@@ -1868,5 +1873,55 @@ public extension ScheduleTextImporter {
             customWeeks: english?.custom ?? [],
             meetings: [], issues: issues, sourceLine: trimmed)
         return (course, meeting)
+    }
+}
+
+
+// MARK: - 记分规则 AI 识别结果解析（读图在 App 层，这里只把模型 JSON 变规则草稿，可单测）
+
+public enum GradeSchemeParser {
+    private struct AITerm: Decodable {
+        var component: String
+        var weight: Double
+    }
+
+    private struct AIResult: Decodable {
+        var scale: Double
+        var components: [String]
+        var branches: [[AITerm]]
+    }
+
+    /// 把视觉模型返回的文本解析成规则草稿；读不出规则返回 nil。
+    /// 宽容处理：截取首尾大括号之间的 JSON、权重若以百分比给出（合计远大于 1）自动除以 100。
+    public static func parse(_ text: String) -> GradeScheme? {
+        var json = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let start = json.firstIndex(of: "{"), let end = json.lastIndex(of: "}") {
+            json = String(json[start...end])
+        }
+        guard let data = json.data(using: .utf8),
+              let result = try? JSONDecoder().decode(AIResult.self, from: data) else { return nil }
+        var names: [String] = []
+        for raw in result.components {
+            let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !name.isEmpty && !names.contains(name) { names.append(name) }
+        }
+        guard !names.isEmpty else { return nil }
+        let components = names.enumerated().map { GradeComponent(id: "ai-\($0.offset)", name: $0.element) }
+        let idByName = Dictionary(uniqueKeysWithValues: components.map { ($0.name, $0.id) })
+        var branches: [[GradeTerm]] = []
+        for rawBranch in result.branches {
+            let validWeightSum = rawBranch.filter { idByName[$0.component] != nil }.reduce(0.0) { $0 + $1.weight }
+            let divisor = validWeightSum > 1.5 ? 100.0 : 1.0
+            let terms = rawBranch.compactMap { term -> GradeTerm? in
+                guard let id = idByName[term.component] else { return nil }
+                return GradeTerm(componentID: id, weight: term.weight / divisor)
+            }
+            if !terms.isEmpty { branches.append(terms) }
+        }
+        if branches.isEmpty {
+            branches = [components.map { GradeTerm(componentID: $0.id, weight: 1.0 / Double(components.count)) }]
+        }
+        let scale = (result.scale >= 10 && result.scale <= 1000) ? result.scale : 100
+        return GradeScheme(scale: scale, components: components, scores: [:], branches: branches)
     }
 }
