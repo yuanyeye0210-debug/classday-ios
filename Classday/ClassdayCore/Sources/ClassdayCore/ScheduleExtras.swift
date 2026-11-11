@@ -1549,6 +1549,11 @@ public enum AppChangelog {
     }
 
     public static let entries: [Entry] = [
+        Entry(version: "2.7.0", title: "邮件停课识别", changes: [
+            "老师发邮件说某节课不上？在「我的 \u203a 假期与不上课时段 \u203a 邮件停课识别」粘贴邮件文字或选邮件截图，AI 自动认出日期、课程和时段（相对日期如「今天/明天」会换算好）",
+            "识别先出草稿：单门课停课还是全天停课、日期、课程、时段、原因逐项核对可改，确认才生效；被停的那节课不再出现、也不提醒，下午的课照常",
+            "停课记录和假期放在一起管理，老师改主意补课时删掉记录就恢复",
+        ]),
         Entry(version: "2.6.0", title: "校历假期与不上课时段", changes: [
             "新增假期/不上课时段：假期内的课自动跳过、不提醒，今日页和周览会标「假期」",
             "校历导入：选 .ics 校历文件或拍照 AI 识别，先出确认页逐项核对可改、确认才写入",
@@ -2040,5 +2045,75 @@ public enum HolidayImporter {
         guard let date = SemesterCalendar.parseCivil(civil, calendar: calendar),
               let before = calendar.date(byAdding: .day, value: -1, to: date) else { return nil }
         return SemesterCalendar.formatCivil(before, calendar: calendar)
+    }
+}
+
+
+/// The editable draft produced from a cancellation recognition result.
+public struct CancellationDraft: Equatable, Sendable {
+    public var date: String
+    public var courseID: UUID?
+    public var courseName: String
+    public var courseMatched: Bool
+    public var scope: String
+    public var reason: String
+
+    public init(date: String, courseID: UUID?, courseName: String, courseMatched: Bool, scope: String, reason: String) {
+        self.date = date
+        self.courseID = courseID
+        self.courseName = courseName
+        self.courseMatched = courseMatched
+        self.scope = scope
+        self.reason = reason
+    }
+}
+
+public enum CancellationParser {
+    /// Parses the model's JSON: {"date": "YYYY-MM-DD", "course": "课程名",
+    /// "scope": "am|pm|all|day", "reason": "..."}. The course name is matched
+    /// against the user's real courses; an unmatched name stays unmatched so
+    /// the UI can ask the user to pick instead of guessing. An empty course
+    /// means the whole day is off. Returns nil when there is no usable date.
+    public static func parseAI(_ text: String, courses: [Course], calendar: Calendar) -> CancellationDraft? {
+        var json = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let start = json.firstIndex(of: "{"), let end = json.lastIndex(of: "}") {
+            json = String(json[start...end])
+        }
+        struct AIRaw: Decodable {
+            var date: String?
+            var course: String?
+            var scope: String?
+            var reason: String?
+        }
+        guard let data = json.data(using: .utf8),
+              let raw = try? JSONDecoder().decode(AIRaw.self, from: data),
+              let date = raw.date?.trimmingCharacters(in: .whitespacesAndNewlines),
+              SemesterCalendar.parseCivil(date, calendar: calendar) != nil else { return nil }
+        let courseName = (raw.course ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        var scope = (raw.scope ?? "all").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if !["day", "all", "am", "pm"].contains(scope) { scope = "all" }
+        var courseID: UUID?
+        var matched = false
+        if courseName.isEmpty {
+            scope = "day"
+        } else {
+            let needle = courseName.replacingOccurrences(of: " ", with: "").lowercased()
+            if let hit = courses.first(where: { course in
+                let name = course.name.replacingOccurrences(of: " ", with: "").lowercased()
+                return !name.isEmpty && (name == needle || name.contains(needle) || needle.contains(name))
+            }) {
+                courseID = hit.id
+                matched = true
+            }
+            if scope == "day" { scope = "all" }
+        }
+        return CancellationDraft(
+            date: date,
+            courseID: courseID,
+            courseName: courseName,
+            courseMatched: matched,
+            scope: scope,
+            reason: (raw.reason ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        )
     }
 }

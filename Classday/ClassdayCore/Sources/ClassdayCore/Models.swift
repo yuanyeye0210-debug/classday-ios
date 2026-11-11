@@ -342,6 +342,30 @@ public struct HolidayPeriod: Codable, Equatable, Hashable, Identifiable, Sendabl
     }
 }
 
+
+/// One cancelled class session (or a whole cancelled day) recognised from a
+/// teacher's email or set by hand. `date` is a civil "yyyy-MM-dd" string.
+/// `courseID == nil` means the whole day is off (scope "day"); otherwise the
+/// scope selects which of that course's sessions that day are cancelled:
+/// "all", "am" (starts before noon) or "pm" (starts at/after noon).
+public struct ClassCancellation: Codable, Equatable, Hashable, Identifiable, Sendable {
+    public var id: UUID
+    public var date: String
+    public var courseID: UUID?
+    public var courseName: String
+    public var scope: String
+    public var reason: String
+
+    public init(id: UUID, date: String, courseID: UUID?, courseName: String, scope: String, reason: String) {
+        self.id = id
+        self.date = date
+        self.courseID = courseID
+        self.courseName = courseName
+        self.scope = scope
+        self.reason = reason
+    }
+}
+
 public struct Semester: Codable, Equatable, Hashable, Sendable {
     public var name: String
     public var shortName: String
@@ -350,6 +374,7 @@ public struct Semester: Codable, Equatable, Hashable, Sendable {
     public var periods: [PeriodTemplate]
     public var defaultReminderMinutes: Int
     public var holidays: [HolidayPeriod]
+    public var cancellations: [ClassCancellation]
 
     public init(
         name: String,
@@ -358,7 +383,8 @@ public struct Semester: Codable, Equatable, Hashable, Sendable {
         totalWeeks: Int,
         periods: [PeriodTemplate],
         defaultReminderMinutes: Int,
-        holidays: [HolidayPeriod] = []
+        holidays: [HolidayPeriod] = [],
+        cancellations: [ClassCancellation] = []
     ) {
         self.name = name
         self.shortName = shortName
@@ -367,10 +393,11 @@ public struct Semester: Codable, Equatable, Hashable, Sendable {
         self.periods = periods
         self.defaultReminderMinutes = defaultReminderMinutes
         self.holidays = holidays
+        self.cancellations = cancellations
     }
 
     private enum CodingKeys: String, CodingKey {
-        case name, shortName, startDate, totalWeeks, periods, defaultReminderMinutes, holidays
+        case name, shortName, startDate, totalWeeks, periods, defaultReminderMinutes, holidays, cancellations
     }
 
     /// Hand-written decode so documents saved before holidays existed
@@ -384,6 +411,7 @@ public struct Semester: Codable, Equatable, Hashable, Sendable {
         periods = try container.decode([PeriodTemplate].self, forKey: .periods)
         defaultReminderMinutes = try container.decode(Int.self, forKey: .defaultReminderMinutes)
         holidays = try container.decodeIfPresent([HolidayPeriod].self, forKey: .holidays) ?? []
+        cancellations = try container.decodeIfPresent([ClassCancellation].self, forKey: .cancellations) ?? []
     }
 }
 

@@ -108,6 +108,27 @@ public enum SemesterCalendar {
         return semester.holidays.first { $0.startDate <= civil && civil <= $0.endDate }
     }
 
+
+    /// The class cancellation covering a specific session start, if any.
+    /// A whole-day cancellation (courseID nil, scope "day") matches every
+    /// course; otherwise the course must match and the scope selects all of
+    /// that course's sessions that day, the morning ones ("am", starting
+    /// before 12:00) or the afternoon ones ("pm").
+    public static func cancellation(on date: Date, courseID: UUID, semester: Semester, calendar: Calendar) -> ClassCancellation? {
+        let civil = formatCivil(date, calendar: calendar)
+        let hour = calendar.component(.hour, from: date)
+        return semester.cancellations.first { entry in
+            guard entry.date == civil else { return false }
+            if let entryCourse = entry.courseID, entryCourse != courseID { return false }
+            switch entry.scope {
+            case "day", "all": return true
+            case "am": return hour < 12
+            case "pm": return hour >= 12
+            default: return true
+            }
+        }
+    }
+
     /// The semester's last day: the Sunday of its final week.
     public static func endDate(semester: Semester, calendar: Calendar) -> Date? {
         guard let monday = semesterMonday(semester, calendar: calendar) else { return nil }

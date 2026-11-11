@@ -126,6 +126,11 @@ public enum StoreCodec {
                 errors.append("假期日期不正确")
             }
         }
+        for cancellation in semester.cancellations {
+            if SemesterCalendar.parseCivil(cancellation.date, calendar: calendar) == nil {
+                errors.append("停课日期不正确")
+            }
+        }
         if !(0...180).contains(semester.defaultReminderMinutes) {
             errors.append("默认提醒分钟数必须在 0 到 180 之间")
         }

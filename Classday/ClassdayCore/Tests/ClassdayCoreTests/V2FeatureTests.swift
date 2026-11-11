@@ -352,7 +352,7 @@ func testGridParsesTimetableScreenshotLayout() {
 final class ChangelogStructureTests: XCTestCase {
     func testChangelogIsNewestFirstAndComplete() {
         let versions = AppChangelog.entries.map(\.version)
-        XCTAssertEqual(versions.first, "2.6.0")
+        XCTAssertEqual(versions.first, "2.7.0")
         XCTAssertEqual(Set(versions).count, versions.count)
         let parsed = versions.map { $0.split(separator: ".").compactMap { Int($0) } }
         for index in 1..<parsed.count {
@@ -448,6 +448,7 @@ final class ChangelogStructureTests: XCTestCase {
         let json = #"{"name":"2026 春季","shortName":"春","startDate":"2026-09-07","totalWeeks":16,"periods":[],"defaultReminderMinutes":10}"#
         let semester = try JSONDecoder().decode(Semester.self, from: Data(json.utf8))
         XCTAssertTrue(semester.holidays.isEmpty)
+        XCTAssertTrue(semester.cancellations.isEmpty)
         XCTAssertEqual(semester.totalWeeks, 16)
     }
 
@@ -501,6 +502,56 @@ final class ChangelogStructureTests: XCTestCase {
         XCTAssertEqual(periods.count, 1)
         XCTAssertEqual(periods[0].name, "寒假")
         XCTAssertEqual(periods[0].endDate, "2027-02-21")
+    }
+
+    func testCancellationsSkipOnlyTheNamedSession() {
+        let calendar = Calendar(identifier: .gregorian)
+        let document = DemoData.makeDocument()
+        func occs(_ week: Int, _ semester: Semester) -> [Occurrence] {
+            ScheduleEngine.occurrences(inWeek: week, courses: document.courses, semester: semester, calendar: calendar, context: document.scheduleContext)
+        }
+        let target = (1...document.semester.totalWeeks).first { !occs($0, document.semester).isEmpty }
+        XCTAssertNotNil(target)
+        guard let target else { return }
+        let baseline = occs(target, document.semester)
+        let first = baseline[0]
+        let civil = SemesterCalendar.formatCivil(first.start, calendar: calendar)
+        var semester = document.semester
+        semester.cancellations = [ClassCancellation(id: UUID(), date: civil, courseID: first.courseID, courseName: first.name, scope: "all", reason: "大风")]
+        let after = occs(target, semester)
+        XCTAssertFalse(after.contains { $0.id == first.id })
+        let sameCourseThatDay = baseline.filter { $0.courseID == first.courseID && SemesterCalendar.formatCivil($0.start, calendar: calendar) == civil }.count
+        XCTAssertEqual(after.count, baseline.count - sameCourseThatDay)
+        // The opposite half-day scope must not touch this session.
+        let hour = calendar.component(.hour, from: first.start)
+        var semester2 = document.semester
+        semester2.cancellations = [ClassCancellation(id: UUID(), date: civil, courseID: first.courseID, courseName: first.name, scope: hour < 12 ? "pm" : "am", reason: "")]
+        XCTAssertTrue(occs(target, semester2).contains { $0.id == first.id })
+        // A whole-day entry removes every session that date.
+        var semester3 = document.semester
+        semester3.cancellations = [ClassCancellation(id: UUID(), date: civil, courseID: nil, courseName: "全天停课", scope: "day", reason: "")]
+        XCTAssertFalse(occs(target, semester3).contains { SemesterCalendar.formatCivil($0.start, calendar: calendar) == civil })
+    }
+
+    func testCancellationParserMatchesCourseAndScope() {
+        let calendar = Calendar(identifier: .gregorian)
+        let document = DemoData.makeDocument()
+        let course = document.courses[0]
+        let json = "{\"date\": \"2026-11-11\", \"course\": \"" + course.name + "\", \"scope\": \"am\", \"reason\": \"大风\"}"
+        let draft = CancellationParser.parseAI(json, courses: document.courses, calendar: calendar)
+        XCTAssertEqual(draft?.date, "2026-11-11")
+        XCTAssertEqual(draft?.courseID, course.id)
+        XCTAssertEqual(draft?.scope, "am")
+        XCTAssertEqual(draft?.reason, "大风")
+        XCTAssertTrue(draft?.courseMatched ?? false)
+        let unknown = CancellationParser.parseAI("{\"date\": \"2026-11-11\", \"course\": \"不存在的课\", \"scope\": \"all\", \"reason\": \"\"}", courses: document.courses, calendar: calendar)
+        XCTAssertNotNil(unknown)
+        XCTAssertNil(unknown?.courseID)
+        XCTAssertFalse(unknown?.courseMatched ?? true)
+        let dayDraft = CancellationParser.parseAI("{\"date\": \"2026-11-12\", \"course\": \"\", \"scope\": \"day\", \"reason\": \"全校停课\"}", courses: document.courses, calendar: calendar)
+        XCTAssertEqual(dayDraft?.scope, "day")
+        XCTAssertNil(dayDraft?.courseID)
+        XCTAssertNil(CancellationParser.parseAI("这封邮件里没有停课信息", courses: document.courses, calendar: calendar))
     }
 
 }

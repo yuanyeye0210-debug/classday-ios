@@ -23,6 +23,7 @@ struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @State private var semester: Semester
     @State private var showCalendarImport = false
+    @State private var showMailCancel = false
     @State private var newHolidayName = ""
     @State private var newHolidayStart = Date()
     @State private var newHolidayEnd = Date()
@@ -151,6 +152,43 @@ struct SettingsView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    Divider()
+                    Button {
+                        showMailCancel = true
+                    } label: {
+                        HStack(spacing: 12) {
+                            iconBadge("envelope.badge.fill", color: .pink)
+                            Text("邮件停课识别").font(.system(size: 16, weight: .medium)).foregroundStyle(Theme.ink)
+                            Spacer()
+                            Text("粘贴 / 截图").font(.system(size: 13)).foregroundStyle(Theme.secondary)
+                            Image(systemName: "chevron.right").font(.system(size: 12, weight: .bold)).foregroundStyle(Theme.secondary.opacity(0.6))
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    if !semester.cancellations.isEmpty {
+                        Divider()
+                        Text("停课记录")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Theme.secondary)
+                        ForEach(semester.cancellations.sorted { $0.date < $1.date }) { entry in
+                            HStack(spacing: 12) {
+                                iconBadge("calendar.badge.minus", color: .red)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(entry.courseID == nil ? "全天停课" : entry.courseName).font(.system(size: 15.5, weight: .semibold)).foregroundStyle(Theme.ink)
+                                    Text(cancellationDetailText(entry)).font(.system(size: 12.5)).foregroundStyle(Theme.secondary)
+                                }
+                                Spacer()
+                                Button(role: .destructive) {
+                                    semester.cancellations.removeAll { $0.id == entry.id }
+                                    saveHolidays()
+                                } label: {
+                                    Image(systemName: "trash").foregroundStyle(.red)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
                 }
                 section("上课时间") {
                     ForEach(semester.periods) { period in
@@ -321,7 +359,13 @@ struct SettingsView: View {
         .scrollIndicators(.hidden)
         .background(Theme.background.ignoresSafeArea())
         .sheet(isPresented: $showCalendarImport) {
-            CalendarImportView { drafts in mergeHolidays(drafts) }
+            CalendarImportView(onConfirm: { drafts in mergeHolidays(drafts) }, onOpenMail: {
+                showCalendarImport = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showMailCancel = true }
+            })
+        }
+        .sheet(isPresented: $showMailCancel) {
+            MailCancelView { record in mergeCancellation(record) }
         }
         .onAppear {
             if !didLoadSemester || semester == lastSyncedSemester {
@@ -394,6 +438,20 @@ struct SettingsView: View {
             semester = model.document.semester
             lastSyncedSemester = semester
         }
+    }
+
+    private func cancellationDetailText(_ entry: ClassCancellation) -> String {
+        let parts = entry.date.split(separator: "-")
+        let md = parts.count == 3 ? "\(Int(parts[1]) ?? 0)月\(Int(parts[2]) ?? 0)日" : entry.date
+        let scope = ["day": "全天", "all": "当天全部节次", "am": "上午", "pm": "下午"][entry.scope] ?? entry.scope
+        return entry.reason.isEmpty ? "\(md) · \(scope)" : "\(md) · \(scope) · \(entry.reason)"
+    }
+
+    private func mergeCancellation(_ record: ClassCancellation) {
+        if !semester.cancellations.contains(where: { $0.date == record.date && $0.courseID == record.courseID && $0.scope == record.scope }) {
+            semester.cancellations.append(record)
+        }
+        saveHolidays()
     }
 
     private func mergeHolidays(_ drafts: [HolidayPeriod]) {
@@ -715,6 +773,7 @@ private struct HolidayDraft: Identifiable {
 
 struct CalendarImportView: View {
     var onConfirm: ([HolidayPeriod]) -> Void
+    var onOpenMail: (() -> Void)? = nil
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var drafts: [HolidayDraft] = []
@@ -781,6 +840,15 @@ struct CalendarImportView: View {
                 if let note {
                     Section {
                         Text(note).font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
+                if let onOpenMail {
+                    Section {
+                        Button {
+                            onOpenMail()
+                        } label: {
+                            Label("老师发邮件说某节课不上？用邮件停课识别", systemImage: "envelope.badge")
+                        }
                     }
                 }
                 Section("待添加的假期（草稿）") {
@@ -905,6 +973,258 @@ enum CalendarRuleRecognizer {
                     ["inlineData": ["mimeType": "image/jpeg", "data": jpegData.base64EncodedString()]]
                 ]
             ]],
+            "generationConfig": ["responseMimeType": "application/json", "temperature": 0.1]
+        ]
+        var request = URLRequest(url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=\(apiKey)")!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+            throw GradeRuleRecognizer.Failure.badResponse(http.statusCode)
+        }
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let candidates = json["candidates"] as? [[String: Any]],
+              let content = candidates.first?["content"] as? [String: Any],
+              let parts = content["parts"] as? [[String: Any]],
+              let text = parts.first?["text"] as? String else {
+            throw GradeRuleRecognizer.Failure.noText
+        }
+        return text
+    }
+}
+
+struct MailCancelView: View {
+    var onConfirm: (ClassCancellation) -> Void
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    @State private var mailText = ""
+    @State private var pickerItem: PhotosPickerItem?
+    @State private var pickedData: Data?
+    @State private var busy = false
+    @State private var note: String?
+    @State private var keyDraft = ""
+    @State private var hasKey = GradeAIKeyStore.load() != nil
+    @State private var showKeyField = false
+    @State private var hasDraft = false
+    @State private var isDay = false
+    @State private var draftDate = Date()
+    @State private var draftCourseID: UUID?
+    @State private var draftScope = "all"
+    @State private var draftReason = ""
+    @State private var courseMatched = true
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Text("老师发邮件说某节课不上时，把邮件文字粘进来（中文、英语、葡语都可以），或者选一张邮件截图。AI 认出日期、课程和时段后先出草稿，你逐项核对、改好，确认才生效；被停的那节课不会再出现、也不会提醒。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                Section("邮件文字") {
+                    TextEditor(text: $mailText)
+                        .frame(minHeight: 110)
+                    Button {
+                        recognizeText()
+                    } label: {
+                        if busy {
+                            HStack { ProgressView(); Text("识别中…") }
+                        } else {
+                            Label("AI 识别粘贴的文字", systemImage: "sparkles")
+                        }
+                    }
+                    .disabled(mailText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || busy)
+                }
+                Section("邮件截图") {
+                    PhotosPicker(selection: $pickerItem, matching: .images) {
+                        Label(pickedData == nil ? "选择邮件截图" : "换一张邮件截图", systemImage: "photo.on.rectangle.angled")
+                    }
+                    if hasKey && !showKeyField {
+                        HStack {
+                            Label("Gemini 密钥已保存", systemImage: "key.fill")
+                            Spacer()
+                            Button("更换") { showKeyField = true }
+                        }
+                    }
+                    if !hasKey || showKeyField {
+                        SecureField("粘贴 Gemini API 密钥", text: $keyDraft)
+                        Button("保存密钥到钥匙串") {
+                            let value = keyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !value.isEmpty {
+                                GradeAIKeyStore.save(value)
+                                hasKey = true
+                                showKeyField = false
+                                keyDraft = ""
+                                note = "密钥已保存，现在可以识别了。"
+                            }
+                        }
+                        .disabled(keyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                    Button {
+                        recognizeImage()
+                    } label: {
+                        if busy {
+                            HStack { ProgressView(); Text("识别中…") }
+                        } else {
+                            Label("AI 识别截图", systemImage: "sparkles")
+                        }
+                    }
+                    .disabled(pickedData == nil || busy)
+                }
+                if let note {
+                    Section {
+                        Text(note).font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
+                if hasDraft {
+                    Section("停课草稿（逐项可改）") {
+                        Picker("类型", selection: $isDay) {
+                            Text("单门课停课").tag(false)
+                            Text("全天停课").tag(true)
+                        }
+                        .pickerStyle(.segmented)
+                        DatePicker("日期", selection: $draftDate, displayedComponents: .date)
+                        if !isDay {
+                            Picker("课程", selection: $draftCourseID) {
+                                Text("请选择").tag(UUID?.none)
+                                ForEach(model.document.courses) { course in
+                                    Text(course.name).tag(Optional(course.id))
+                                }
+                            }
+                            if !courseMatched {
+                                Text("AI 报的课名没在你的课程里对上号，请在上面手动选一门。")
+                                    .font(.footnote)
+                                    .foregroundStyle(.orange)
+                            }
+                            Picker("时段", selection: $draftScope) {
+                                Text("仅上午那一节").tag("am")
+                                Text("仅下午那一节").tag("pm")
+                                Text("当天全部节次").tag("all")
+                            }
+                        }
+                        TextField("原因（可空）", text: $draftReason)
+                    }
+                }
+            }
+            .navigationTitle("邮件停课识别")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("确认停课") {
+                        let name = isDay ? "全天停课" : (model.document.courses.first { $0.id == draftCourseID }?.name ?? "")
+                        onConfirm(ClassCancellation(
+                            id: UUID(),
+                            date: SemesterCalendar.formatCivil(draftDate, calendar: model.calendar),
+                            courseID: isDay ? nil : draftCourseID,
+                            courseName: name,
+                            scope: isDay ? "day" : draftScope,
+                            reason: draftReason.trimmingCharacters(in: .whitespacesAndNewlines)
+                        ))
+                        dismiss()
+                    }
+                    .disabled(!hasDraft || (!isDay && draftCourseID == nil))
+                }
+            }
+            .onChange(of: pickerItem) { _, item in
+                Task {
+                    if let data = try? await item?.loadTransferable(type: Data.self) {
+                        pickedData = GradeImagePrep.preparedJPEG(data) ?? data
+                    }
+                }
+            }
+        }
+    }
+
+    private func savedKey() -> String? {
+        guard let key = GradeAIKeyStore.load(), !key.isEmpty else {
+            showKeyField = true
+            note = "先粘贴 Gemini 密钥并保存，再点识别（和记分规则识别共用同一个密钥）。"
+            return nil
+        }
+        return key
+    }
+
+    private func recognizeText() {
+        guard let key = savedKey() else { return }
+        busy = true
+        Task {
+            do {
+                let json = try await MailCancelRecognizer.recognize(text: mailText, courses: model.document.courses, today: Date(), calendar: model.calendar, apiKey: key)
+                applyResult(json)
+            } catch {
+                note = (error as? LocalizedError)?.errorDescription ?? "识别失败，稍后再试。"
+            }
+            busy = false
+        }
+    }
+
+    private func recognizeImage() {
+        guard let data = pickedData, let key = savedKey() else { return }
+        busy = true
+        Task {
+            do {
+                let json = try await MailCancelRecognizer.recognize(jpegData: data, courses: model.document.courses, today: Date(), calendar: model.calendar, apiKey: key)
+                applyResult(json)
+            } catch {
+                note = (error as? LocalizedError)?.errorDescription ?? "识别失败，换一张更清晰的截图再试。"
+            }
+            busy = false
+        }
+    }
+
+    private func applyResult(_ json: String) {
+        guard let draft = CancellationParser.parseAI(json, courses: model.document.courses, calendar: model.calendar) else {
+            note = "没从这封邮件里认出停课信息。可以检查一下粘贴的内容，或者直接在假期区手动加一段不上课时段。"
+            return
+        }
+        isDay = draft.scope == "day"
+        draftDate = SemesterCalendar.parseCivil(draft.date, calendar: model.calendar) ?? Date()
+        draftCourseID = draft.courseID
+        draftScope = draft.scope == "day" ? "all" : draft.scope
+        draftReason = draft.reason
+        courseMatched = draft.courseMatched
+        hasDraft = true
+        note = (draft.courseMatched || isDay)
+            ? "已认出停课信息：核对下面的草稿，点「确认停课」生效。"
+            : "日期和时段认出来了，但课程没对上号，请在草稿里手动选一门课再确认。"
+    }
+}
+
+enum MailCancelRecognizer {
+    private static func prompt(courses: [Course], today: Date, calendar: Calendar) -> String {
+        let todayText = SemesterCalendar.formatCivil(today, calendar: calendar)
+        let weekdayNames = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"]
+        let weekday = weekdayNames[max(0, calendar.component(.weekday, from: today) - 1)]
+        return """
+        你是停课通知识别器。下面是一封老师发的邮件（可能是中文、英语或葡语），请找出其中通知取消课程的信息。今天是 \(todayText)（\(weekday)）。只输出一个 JSON 对象，不要输出任何其他文字。格式：
+        {"date": "YYYY-MM-DD", "course": "课程名", "scope": "am", "reason": "原因"}
+        规则：
+        - date 是停课的日期：「今天」就是今天，「明天」是今天的下一天，「下周X」按今天推算；邮件写了具体日期就按写的来。
+        - course 从这个课程列表里选对应的那一门，填列表里的原名：\(courses.map(\.name).joined(separator: "、"))。如果是全校/全天停课，course 填空字符串。
+        - scope：只取消上午的课填 "am"，只取消下午的填 "pm"，某门课当天全部取消填 "all"，全天所有课都取消填 "day"；邮件没提时段就填 "all"。
+        - reason 是简短原因（如"大风天气"），没有就填空字符串。
+        - 如果邮件里根本没有取消课程的信息，输出 {"date": "", "course": "", "scope": "", "reason": ""}。
+        """
+    }
+
+    static func recognize(text: String, courses: [Course], today: Date, calendar: Calendar, apiKey: String) async throws -> String {
+        try await call(parts: [["text": prompt(courses: courses, today: today, calendar: calendar) + "\n\n邮件内容：\n" + text]], apiKey: apiKey)
+    }
+
+    static func recognize(jpegData: Data, courses: [Course], today: Date, calendar: Calendar, apiKey: String) async throws -> String {
+        try await call(parts: [
+            ["text": prompt(courses: courses, today: today, calendar: calendar)],
+            ["inlineData": ["mimeType": "image/jpeg", "data": jpegData.base64EncodedString()]]
+        ], apiKey: apiKey)
+    }
+
+    private static func call(parts: [[String: Any]], apiKey: String) async throws -> String {
+        let body: [String: Any] = [
+            "contents": [["parts": parts]],
             "generationConfig": ["responseMimeType": "application/json", "temperature": 0.1]
         ]
         var request = URLRequest(url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=\(apiKey)")!)

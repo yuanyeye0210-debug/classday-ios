@@ -162,6 +162,11 @@ public enum ScheduleEngine {
                 if SemesterCalendar.holiday(on: start, semester: semester, calendar: calendar) != nil {
                     continue
                 }
+                // A recognised cancellation (teacher email etc.) suppresses
+                // just the named session - or the whole day for a day entry.
+                if SemesterCalendar.cancellation(on: start, courseID: course.id, semester: semester, calendar: calendar) != nil {
+                    continue
+                }
                 let parityLabel = parity == .any ? "" : parity.title
                 built.append(
                     Occurrence(
