@@ -717,10 +717,14 @@ public enum ScheduleTextImporter {
             .components(separatedBy: "\n")
             .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
         guard !lines.isEmpty else { return ([], []) }
-        let delimiter = [",", ";", "\t"].max { a, b in
-            lines.map { $0.filter { $0 == Character(a) }.count }.reduce(0, +)
-                < lines.map { $0.filter { $0 == Character(b) }.count }.reduce(0, +)
-        } ?? ","
+        var delimiter = ","
+        var bestCount = -1
+        for candidate in [",", ";", "\t"] {
+            let needle = Character(candidate)
+            var total = 0
+            for line in lines { total += line.filter { $0 == needle }.count }
+            if total > bestCount { bestCount = total; delimiter = candidate }
+        }
         let rows = lines.map { splitCSV($0, delimiter: delimiter) }
         if let parsed = parseRows(rows) { return parsed }
         return ([], lines)
@@ -1163,12 +1167,12 @@ public extension ScheduleTextImporter {
                 if cell.isEmpty { continue }
                 if ["周一", "周二", "周三", "周四", "周五", "周六", "周日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"].contains(cell) { continue }
                 let folded = cell.replacingOccurrences(of: "\n", with: " ")
-                if let course = parseCell(folded, weekday: weekday,
+                if let parsed = parseCell(folded, weekday: weekday,
                                           rowStart: rowTimes?.0, rowEnd: rowTimes?.1,
                                           rowStartPeriod: rowPeriods.0, rowEndPeriod: rowPeriods.1,
                                           rowIndex: rowOffset) {
-                    for meeting in course.meetings { rawMeetings.append((course, meeting)) }
-                } else if !cell.isEmpty {
+                    rawMeetings.append(parsed)
+                } else {
                     unparsed.append(cell)
                 }
             }
