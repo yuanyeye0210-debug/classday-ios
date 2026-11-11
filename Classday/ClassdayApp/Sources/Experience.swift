@@ -77,16 +77,24 @@ final class MotionTracker {
     var profile = TiltHapticProfile.make(themeID: "glass", layout: "glass")
     /// 0 standard, 1 keen, 2 maximum. Maximum is the factory default:
     /// finest detents, no settle delay, the loosest dock window.
-    var sensitivity = 2 { didSet { sensitivity = min(2, max(0, sensitivity)) } }
+    /// No observer-based clamp here on purpose: MotionTracker is
+    /// @Observable, whose setter routes through the observation
+    /// registrar, so the old self-assigning property observer recursed
+    /// until the stack overflowed (the 2.3.4-2.3.6 instant launch
+    /// crash on real devices; the simulator never runs start(), so
+    /// CI could not see it). Reads go through sensitivityTier, which
+    /// clamps defensively instead.
+    var sensitivity = 2
+    private var sensitivityTier: Int { min(2, max(0, sensitivity)) }
     private var lastTickTheta: Double = -100
 
     private var detentStep: Double {
-        max(2.5, profile.detentDegrees * [1.0, 0.6, 0.35][sensitivity])
+        max(2.5, profile.detentDegrees * [1.0, 0.6, 0.35][sensitivityTier])
     }
     private var azimuthStep: Double {
-        profile.azimuthDegrees > 0 ? max(15, profile.azimuthDegrees * [1.0, 0.6, 0.35][sensitivity]) : 0
+        profile.azimuthDegrees > 0 ? max(15, profile.azimuthDegrees * [1.0, 0.6, 0.35][sensitivityTier]) : 0
     }
-    private var tapThrottle: TimeInterval { sensitivity == 2 ? 0.035 : 0.06 }
+    private var tapThrottle: TimeInterval { sensitivityTier == 2 ? 0.035 : 0.06 }
     private var lastDetent = -1
     private var candidateDetent = -1
     private var candidateSamples = 0
@@ -98,7 +106,7 @@ final class MotionTracker {
         guard !running, manager.isDeviceMotionAvailable else { return }
         running = true
         hapticsEnabled = UserDefaults.standard.object(forKey: "classday.tiltHaptics") as? Bool ?? true
-        sensitivity = UserDefaults.standard.object(forKey: "classday.tiltSensitivity") as? Int ?? 2
+        sensitivity = min(2, max(0, UserDefaults.standard.object(forKey: "classday.tiltSensitivity") as? Int ?? 2))
         for g in [softTap, lightTap, mediumTap, heavyTap, rigidTap] { g.prepare() }
         selectionTap.prepare()
         notifier.prepare()
@@ -221,7 +229,7 @@ final class MotionTracker {
         // not double-fire; maximum fires on the crossing sample itself.
         // All levels share a travel hysteresis (0.4 of a step since the
         // last tick), which is what actually stops boundary rattle.
-        let stableNeeded = sensitivity == 2 ? 0 : 1
+        let stableNeeded = sensitivityTier == 2 ? 0 : 1
         if candidateSamples >= stableNeeded, detent != lastDetent, abs(theta - lastTickTheta) >= step * 0.4 {
             if lastDetent >= 0, now - lastTapAt > tapThrottle {
                 fireTick(profile.intensity)
@@ -245,10 +253,10 @@ final class MotionTracker {
         } else if theta < 6 {
             lastAzimuthDetent = -1
         }
-        if theta > (sensitivity == 2 ? 8 : 12) { dockArmed = true }
+        if theta > (sensitivityTier == 2 ? 8 : 12) { dockArmed = true }
         // Dock: one firm tap when the phone comes home to upright,
         // latched until it has been properly tilted again.
-        if dockArmed, theta < (sensitivity == 2 ? 4.0 : 2.5) {
+        if dockArmed, theta < (sensitivityTier == 2 ? 4.0 : 2.5) {
             fireDock()
             dockArmed = false
             lastTapAt = now
