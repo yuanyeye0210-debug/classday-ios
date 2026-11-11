@@ -101,4 +101,16 @@ public enum SemesterCalendar {
     public static func contains(_ date: Date, semester: Semester, calendar: Calendar) -> Bool {
         weekIndex(for: date, semester: semester, calendar: calendar) != nil
     }
+
+    /// The holiday / no-class period covering a date, if any (civil-string compare).
+    public static func holiday(on date: Date, semester: Semester, calendar: Calendar) -> HolidayPeriod? {
+        let civil = formatCivil(date, calendar: calendar)
+        return semester.holidays.first { $0.startDate <= civil && civil <= $0.endDate }
+    }
+
+    /// The semester's last day: the Sunday of its final week.
+    public static func endDate(semester: Semester, calendar: Calendar) -> Date? {
+        guard let monday = semesterMonday(semester, calendar: calendar) else { return nil }
+        return calendar.date(byAdding: .day, value: semester.totalWeeks * 7 - 1, to: monday)
+    }
 }

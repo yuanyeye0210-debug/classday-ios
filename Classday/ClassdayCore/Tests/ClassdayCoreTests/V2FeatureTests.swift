@@ -352,7 +352,7 @@ func testGridParsesTimetableScreenshotLayout() {
 final class ChangelogStructureTests: XCTestCase {
     func testChangelogIsNewestFirstAndComplete() {
         let versions = AppChangelog.entries.map(\.version)
-        XCTAssertEqual(versions.first, "2.5.0")
+        XCTAssertEqual(versions.first, "2.6.0")
         XCTAssertEqual(Set(versions).count, versions.count)
         let parsed = versions.map { $0.split(separator: ".").compactMap { Int($0) } }
         for index in 1..<parsed.count {
@@ -441,6 +441,66 @@ final class ChangelogStructureTests: XCTestCase {
 
     func testGradeSchemeParserRejectsGarbage() {
         XCTAssertNil(GradeSchemeParser.parse("这张图里没有记分规则"))
+    }
+
+
+    func testSemesterLegacyJSONDecodesWithoutHolidays() throws {
+        let json = #"{"name":"2026 春季","shortName":"春","startDate":"2026-09-07","totalWeeks":16,"periods":[],"defaultReminderMinutes":10}"#
+        let semester = try JSONDecoder().decode(Semester.self, from: Data(json.utf8))
+        XCTAssertTrue(semester.holidays.isEmpty)
+        XCTAssertEqual(semester.totalWeeks, 16)
+    }
+
+    func testHolidaysSkipOccurrences() {
+        let calendar = Calendar(identifier: .gregorian)
+        let document = DemoData.makeDocument()
+        func count(_ week: Int, _ semester: Semester) -> Int {
+            ScheduleEngine.occurrences(inWeek: week, courses: document.courses, semester: semester, calendar: calendar, context: document.scheduleContext).count
+        }
+        let target = (1...document.semester.totalWeeks).first { count($0, document.semester) > 0 }
+        XCTAssertNotNil(target)
+        guard let target else { return }
+        let dates = SemesterCalendar.dates(inWeek: target, semester: document.semester, calendar: calendar)
+        var semester = document.semester
+        semester.holidays = [HolidayPeriod(id: UUID(), name: "校历假期",
+                                           startDate: SemesterCalendar.formatCivil(dates.first!, calendar: calendar),
+                                           endDate: SemesterCalendar.formatCivil(dates.last!, calendar: calendar))]
+        XCTAssertEqual(count(target, semester), 0)
+        if target + 1 <= document.semester.totalWeeks {
+            XCTAssertEqual(count(target + 1, semester), count(target + 1, document.semester))
+        }
+    }
+
+    func testHolidayImporterParsesICS() {
+        let calendar = Calendar(identifier: .gregorian)
+        let ics = ["BEGIN:VCALENDAR",
+                   "BEGIN:VEVENT",
+                   "DTSTART;VALUE=DATE:20261224",
+                   "DTEND;VALUE=DATE:20270104",
+                   "SUMMARY:圣诞与新年假期",
+                   "END:VEVENT",
+                   "BEGIN:VEVENT",
+                   "DTSTART:20270414T090000",
+                   "DTEND:20270414T180000",
+                   "SUMMARY:校庆日",
+                   "END:VEVENT",
+                   "END:VCALENDAR"].joined(separator: "\r\n")
+        let periods = HolidayImporter.parseICS(ics, calendar: calendar)
+        XCTAssertEqual(periods.count, 2)
+        XCTAssertEqual(periods[0].name, "圣诞与新年假期")
+        XCTAssertEqual(periods[0].startDate, "2026-12-24")
+        XCTAssertEqual(periods[0].endDate, "2027-01-03")
+        XCTAssertEqual(periods[1].startDate, "2027-04-14")
+        XCTAssertEqual(periods[1].endDate, "2027-04-14")
+    }
+
+    func testHolidayImporterParsesAIJSON() {
+        let calendar = Calendar(identifier: .gregorian)
+        let text = #"{"holidays": [{"name": "寒假", "start": "2027-01-18", "end": "2027-02-21"}, {"name": "坏数据", "start": "x", "end": "y"}]}"#
+        let periods = HolidayImporter.parseAI(text, calendar: calendar)
+        XCTAssertEqual(periods.count, 1)
+        XCTAssertEqual(periods[0].name, "寒假")
+        XCTAssertEqual(periods[0].endDate, "2027-02-21")
     }
 
 }

@@ -429,11 +429,19 @@ struct WeekJournalView: View {
                         .padding(.vertical, 2)
                         .background(Capsule(style: .continuous).fill(Theme.accent))
                 }
+                if model.holiday(on: date) != nil {
+                    Text("假期")
+                        .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule(style: .continuous).fill(Color.orange))
+                }
             }
             .frame(width: 42)
             VStack(alignment: .leading, spacing: 8) {
                 if items.isEmpty && events.isEmpty {
-                    Text("无课")
+                    Text(model.holiday(on: date).map { "假期 · \($0.name)" } ?? "无课")
                         .font(.system(size: 13.5, design: .rounded))
                         .foregroundStyle(Theme.secondary.opacity(0.7))
                         .padding(.vertical, 6)

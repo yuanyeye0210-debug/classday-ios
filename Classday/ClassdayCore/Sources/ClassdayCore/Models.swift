@@ -325,6 +325,23 @@ public struct PersonalEvent: Codable, Equatable, Hashable, Sendable, Identifiabl
     }
 }
 
+/// A no-class period (school holiday, break, or a personal no-class stretch).
+/// Dates are civil "yyyy-MM-dd" strings, both ends inclusive - the same
+/// representation Semester.startDate uses.
+public struct HolidayPeriod: Codable, Equatable, Hashable, Identifiable, Sendable {
+    public var id: UUID
+    public var name: String
+    public var startDate: String
+    public var endDate: String
+
+    public init(id: UUID, name: String, startDate: String, endDate: String) {
+        self.id = id
+        self.name = name
+        self.startDate = startDate
+        self.endDate = endDate
+    }
+}
+
 public struct Semester: Codable, Equatable, Hashable, Sendable {
     public var name: String
     public var shortName: String
@@ -332,6 +349,7 @@ public struct Semester: Codable, Equatable, Hashable, Sendable {
     public var totalWeeks: Int
     public var periods: [PeriodTemplate]
     public var defaultReminderMinutes: Int
+    public var holidays: [HolidayPeriod]
 
     public init(
         name: String,
@@ -339,7 +357,8 @@ public struct Semester: Codable, Equatable, Hashable, Sendable {
         startDate: String,
         totalWeeks: Int,
         periods: [PeriodTemplate],
-        defaultReminderMinutes: Int
+        defaultReminderMinutes: Int,
+        holidays: [HolidayPeriod] = []
     ) {
         self.name = name
         self.shortName = shortName
@@ -347,6 +366,24 @@ public struct Semester: Codable, Equatable, Hashable, Sendable {
         self.totalWeeks = totalWeeks
         self.periods = periods
         self.defaultReminderMinutes = defaultReminderMinutes
+        self.holidays = holidays
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name, shortName, startDate, totalWeeks, periods, defaultReminderMinutes, holidays
+    }
+
+    /// Hand-written decode so documents saved before holidays existed
+    /// (no `holidays` key) still load; every other field stays strict.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        shortName = try container.decode(String.self, forKey: .shortName)
+        startDate = try container.decode(String.self, forKey: .startDate)
+        totalWeeks = try container.decode(Int.self, forKey: .totalWeeks)
+        periods = try container.decode([PeriodTemplate].self, forKey: .periods)
+        defaultReminderMinutes = try container.decode(Int.self, forKey: .defaultReminderMinutes)
+        holidays = try container.decodeIfPresent([HolidayPeriod].self, forKey: .holidays) ?? []
     }
 }
 

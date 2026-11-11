@@ -119,6 +119,13 @@ public enum StoreCodec {
         if !(1...30).contains(semester.totalWeeks) {
             errors.append("学期周数必须在 1 到 30 之间")
         }
+        for holiday in semester.holidays {
+            if SemesterCalendar.parseCivil(holiday.startDate, calendar: calendar) == nil
+                || SemesterCalendar.parseCivil(holiday.endDate, calendar: calendar) == nil
+                || holiday.startDate > holiday.endDate {
+                errors.append("假期日期不正确")
+            }
+        }
         if !(0...180).contains(semester.defaultReminderMinutes) {
             errors.append("默认提醒分钟数必须在 0 到 180 之间")
         }

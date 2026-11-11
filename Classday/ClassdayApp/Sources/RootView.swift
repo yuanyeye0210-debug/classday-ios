@@ -288,6 +288,14 @@ struct TodayView: View {
                             .padding(.vertical, 3)
                             .background(Capsule().fill(Theme.hero))
                     }
+                    if let holiday = model.holiday(on: now) {
+                        Text("假期 · \(holiday.name)")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Capsule().fill(Color.orange))
+                    }
                 }
             }
             Spacer()
@@ -756,6 +764,65 @@ struct TodayView: View {
     }
 }
 
+/// 左滑露出删除按钮的行容器：横向拖动跟手、松手弹簧吸附开/合；
+/// 行已打开（或刚拖过）时点按只负责合上，删除走外部的确认流程。
+private struct SwipeRevealRow<Content: View>: View {
+    var onDelete: () -> Void
+    @ViewBuilder var content: (_ isOpen: Bool, _ offset: CGFloat, _ close: @escaping () -> Void) -> Content
+    @State private var offset: CGFloat = 0
+    @State private var isOpen = false
+
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            Button(role: .destructive) {
+                onDelete()
+            } label: {
+                VStack(spacing: 3) {
+                    Image(systemName: "trash.fill").font(.system(size: 15))
+                    Text("删除").font(.system(size: 11, weight: .bold, design: .rounded))
+                }
+                .foregroundStyle(.white)
+                .frame(width: 66)
+                .frame(maxHeight: .infinity)
+                .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Color.red))
+            }
+            .buttonStyle(.plain)
+            .opacity(offset < -6 ? 1 : 0)
+
+            content(isOpen, offset) { close() }
+                .offset(x: offset)
+                .simultaneousGesture(dragGesture)
+        }
+    }
+
+    private func close() {
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+            offset = 0
+            isOpen = false
+        }
+    }
+
+    private var dragGesture: some Gesture {
+        DragGesture(minimumDistance: 14, coordinateSpace: .local)
+            .onChanged { value in
+                guard abs(value.translation.width) > abs(value.translation.height) * 1.4 else { return }
+                let base: CGFloat = isOpen ? -78 : 0
+                offset = min(0, max(-78, base + value.translation.width))
+            }
+            .onEnded { _ in
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+                    if offset < -39 {
+                        offset = -78
+                        isOpen = true
+                    } else {
+                        offset = 0
+                        isOpen = false
+                    }
+                }
+            }
+    }
+}
+
 struct CoursesView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var scheme
@@ -800,12 +867,17 @@ struct CoursesView: View {
 
     private func courseCard(_ course: Course) -> some View {
         let next = nextOccurrence(course: course)
-        return Button {
-            let meetingID = next?.meetingID ?? course.meetings.first?.id
-            if let meetingID {
-                model.present(courseID: course.id, meetingID: meetingID)
-            }
-        } label: {
+        return SwipeRevealRow(onDelete: { model.confirmDeleteCourseID = course.id }) { isOpen, offset, close in
+            Button {
+                if isOpen || offset < -10 {
+                    close()
+                    return
+                }
+                let meetingID = next?.meetingID ?? course.meetings.first?.id
+                if let meetingID {
+                    model.present(courseID: course.id, meetingID: meetingID)
+                }
+            } label: {
             HStack(spacing: 13) {
                 CourseGlyphTile(name: course.name, colorID: course.colorID, size: 54)
                 VStack(alignment: .leading, spacing: 3) {
@@ -851,8 +923,9 @@ struct CoursesView: View {
             .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Theme.elevated))
             .shadow(color: .black.opacity(scheme == .dark ? 0 : 0.05), radius: 10, x: 0, y: 4)
             .modifier(TiltCardFX(cornerRadius: 20, strength: 0.7, lite: true))
+            }
+            .buttonStyle(JournalPressStyle())
         }
-        .buttonStyle(JournalPressStyle())
     }
 
     private func nextOccurrence(course: Course) -> Occurrence? {

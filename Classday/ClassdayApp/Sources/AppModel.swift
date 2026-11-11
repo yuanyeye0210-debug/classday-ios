@@ -197,6 +197,10 @@ final class AppModel {
         ScheduleEngine.occurrences(on: date, courses: document.courses, semester: document.semester, calendar: calendar, context: document.scheduleContext)
     }
 
+    func holiday(on date: Date) -> HolidayPeriod? {
+        SemesterCalendar.holiday(on: date, semester: document.semester, calendar: calendar)
+    }
+
     func shiftWeek(by delta: Int) {
         let next = min(max(1, weekIndex + delta), document.semester.totalWeeks)
         guard next != weekIndex else { return }

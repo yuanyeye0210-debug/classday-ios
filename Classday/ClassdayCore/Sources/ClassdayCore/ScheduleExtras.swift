@@ -1549,6 +1549,13 @@ public enum AppChangelog {
     }
 
     public static let entries: [Entry] = [
+        Entry(version: "2.6.0", title: "校历假期与不上课时段", changes: [
+            "新增假期/不上课时段：假期内的课自动跳过、不提醒，今日页和周览会标「假期」",
+            "校历导入：选 .ics 校历文件或拍照 AI 识别，先出确认页逐项核对可改、确认才写入",
+            "学期设置里能看到自动推算的结束日期；假期列表在学期设置里随时增删",
+            "课程页的课程卡可以左滑删除了（点删除后还会再确认一次）",
+            "检查更新的行改清楚了：没新版时不再显示误导的箭头，结果写明「已是最新版」",
+        ]),
         Entry(version: "2.5.0", title: "记分规则可以拍照识别了", changes: [
             "成绩录入页新增「AI 识别记分规则」：上传评分公式的截图或照片，AI 自动把满分、分项和候选算法填成草稿",
             "识别只填草稿：逐项核对、改错之后点保存才生效（和智能导入一个原则）",
@@ -1923,5 +1930,115 @@ public enum GradeSchemeParser {
         }
         let scale = (result.scale >= 10 && result.scale <= 1000) ? result.scale : 100
         return GradeScheme(scale: scale, components: components, scores: [:], branches: branches)
+    }
+}
+
+
+// MARK: - 校历假期解析（ICS 确定性解析 + AI 识别结果解析，两条路产出的都是待确认草稿）
+
+public enum HolidayImporter {
+    /// Parses iCalendar (.ics) VEVENTs into holiday drafts. All-day events use
+    /// the iCalendar convention that DTEND is exclusive, so the stored end is
+    /// DTEND minus one day; date-time events ending at exactly midnight are
+    /// treated the same way.
+    public static func parseICS(_ text: String, calendar: Calendar) -> [HolidayPeriod] {
+        let unfolded = text
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\n ", with: "")
+            .replacingOccurrences(of: "\n\t", with: "")
+        var periods: [HolidayPeriod] = []
+        for block in unfolded.components(separatedBy: "BEGIN:VEVENT") {
+            guard block.contains("END:VEVENT") else { continue }
+            var startRaw: String?
+            var endRaw: String?
+            var summary = ""
+            for line in block.components(separatedBy: "\n") {
+                if line.hasPrefix("DTSTART") {
+                    startRaw = valuePart(of: line)
+                } else if line.hasPrefix("DTEND") {
+                    endRaw = valuePart(of: line)
+                } else if line.hasPrefix("SUMMARY") {
+                    summary = unescape(valuePart(of: line))
+                }
+            }
+            guard let startValue = startRaw, let start = civilDate(from: startValue, calendar: calendar) else { continue }
+            var end = start
+            if let endValue = endRaw, let endCivil = civilDate(from: endValue, calendar: calendar) {
+                let exclusive = !endValue.contains("T") || endValue.hasSuffix("T000000") || endValue.hasSuffix("T000000Z")
+                if exclusive, let dayBefore = civilDayBefore(endCivil, calendar: calendar) {
+                    end = dayBefore
+                } else {
+                    end = endCivil
+                }
+            }
+            if end < start { end = start }
+            let name = summary.isEmpty ? "假期" : summary
+            appendUnique(&periods, HolidayPeriod(id: UUID(), name: name, startDate: start, endDate: end))
+        }
+        return periods.sorted { $0.startDate < $1.startDate }
+    }
+
+    /// Parses the vision model's JSON: {"holidays": [{"name", "start", "end"}]}.
+    /// Entries with unparseable dates are dropped rather than guessed.
+    public static func parseAI(_ text: String, calendar: Calendar) -> [HolidayPeriod] {
+        var json = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let start = json.firstIndex(of: "{"), let end = json.lastIndex(of: "}") {
+            json = String(json[start...end])
+        }
+        struct AIHoliday: Decodable {
+            var name: String
+            var start: String
+            var end: String
+        }
+        struct AIResult: Decodable {
+            var holidays: [AIHoliday]
+        }
+        guard let data = json.data(using: .utf8),
+              let result = try? JSONDecoder().decode(AIResult.self, from: data) else { return [] }
+        var periods: [HolidayPeriod] = []
+        for item in result.holidays {
+            let name = item.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty,
+                  SemesterCalendar.parseCivil(item.start, calendar: calendar) != nil,
+                  SemesterCalendar.parseCivil(item.end, calendar: calendar) != nil else { continue }
+            appendUnique(&periods, HolidayPeriod(id: UUID(), name: name, startDate: min(item.start, item.end), endDate: max(item.start, item.end)))
+        }
+        return periods.sorted { $0.startDate < $1.startDate }
+    }
+
+    private static func appendUnique(_ periods: inout [HolidayPeriod], _ period: HolidayPeriod) {
+        if !periods.contains(where: { $0.name == period.name && $0.startDate == period.startDate && $0.endDate == period.endDate }) {
+            periods.append(period)
+        }
+    }
+
+    private static func valuePart(of line: String) -> String {
+        guard let colon = line.firstIndex(of: ":") else { return "" }
+        return String(line[line.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
+    }
+
+    private static func unescape(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\,", with: ",")
+            .replacingOccurrences(of: "\\;", with: ";")
+            .replacingOccurrences(of: "\\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Extracts the leading yyyyMMdd of an iCalendar date/date-time value and
+    /// returns it as a validated civil string.
+    private static func civilDate(from rawValue: String, calendar: Calendar) -> String? {
+        let digits = rawValue.filter { $0.isNumber }
+        guard digits.count >= 8 else { return nil }
+        let head = String(digits.prefix(8))
+        let civil = "\(head.prefix(4))-\(head.dropFirst(4).prefix(2))-\(head.dropFirst(6).prefix(2))"
+        guard SemesterCalendar.parseCivil(civil, calendar: calendar) != nil else { return nil }
+        return civil
+    }
+
+    private static func civilDayBefore(_ civil: String, calendar: Calendar) -> String? {
+        guard let date = SemesterCalendar.parseCivil(civil, calendar: calendar),
+              let before = calendar.date(byAdding: .day, value: -1, to: date) else { return nil }
+        return SemesterCalendar.formatCivil(before, calendar: calendar)
     }
 }

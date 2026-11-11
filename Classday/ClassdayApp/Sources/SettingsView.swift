@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 import UniformTypeIdentifiers
 import UIKit
 import ClassdayCore
@@ -21,6 +22,10 @@ struct JSONFileDocument: FileDocument {
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @State private var semester: Semester
+    @State private var showCalendarImport = false
+    @State private var newHolidayName = ""
+    @State private var newHolidayStart = Date()
+    @State private var newHolidayEnd = Date()
     @State private var didLoadSemester = false
     @State private var lastSyncedSemester: Semester?
     @State private var errorText: String?
@@ -73,6 +78,12 @@ struct SettingsView: View {
                             Text("共 \(semester.totalWeeks) 周").font(.system(size: 16, weight: .medium))
                         }
                     }
+                    HStack(spacing: 12) {
+                        iconBadge("flag.checkered", color: .purple)
+                        Text("结束日期").font(.system(size: 16, weight: .medium)).foregroundStyle(Theme.ink)
+                        Spacer()
+                        Text(semesterEndText).font(.system(size: 14)).foregroundStyle(Theme.secondary)
+                    }
                     if let errorText {
                         Text(errorText).font(.footnote).foregroundStyle(.red)
                     }
@@ -86,6 +97,60 @@ struct SettingsView: View {
                         }
                     }
                     .disabled(!didLoadSemester)
+                }
+                section("假期与不上课时段") {
+                    if semester.holidays.isEmpty {
+                        Text("还没有假期。导入校历、拍照识别，或在下面手动加一段——假期内的课会自动跳过、不提醒。")
+                            .font(.system(size: 13.5, design: .rounded))
+                            .foregroundStyle(Theme.secondary)
+                    }
+                    ForEach(semester.holidays.sorted { $0.startDate < $1.startDate }) { holiday in
+                        HStack(spacing: 12) {
+                            iconBadge("beach.umbrella.fill", color: .orange)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(holiday.name).font(.system(size: 15.5, weight: .semibold)).foregroundStyle(Theme.ink)
+                                Text(holidayRangeText(holiday)).font(.system(size: 12.5)).foregroundStyle(Theme.secondary)
+                            }
+                            Spacer()
+                            Button(role: .destructive) {
+                                semester.holidays.removeAll { $0.id == holiday.id }
+                                saveHolidays()
+                            } label: {
+                                Image(systemName: "trash").foregroundStyle(.red)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    Divider()
+                    labeledField("新时段名称", text: $newHolidayName)
+                    HStack(spacing: 12) {
+                        Text("开始").font(.system(size: 14)).foregroundStyle(Theme.secondary)
+                        DatePicker("开始", selection: $newHolidayStart, displayedComponents: .date).labelsHidden()
+                        Spacer()
+                        Text("结束").font(.system(size: 14)).foregroundStyle(Theme.secondary)
+                        DatePicker("结束", selection: $newHolidayEnd, displayedComponents: .date).labelsHidden()
+                    }
+                    saveButton("添加时段") {
+                        let name = newHolidayName.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let start = SemesterCalendar.formatCivil(newHolidayStart, calendar: model.calendar)
+                        let end = SemesterCalendar.formatCivil(newHolidayEnd, calendar: model.calendar)
+                        semester.holidays.append(HolidayPeriod(id: UUID(), name: name.isEmpty ? "不上课" : name, startDate: min(start, end), endDate: max(start, end)))
+                        newHolidayName = ""
+                        saveHolidays()
+                    }
+                    Button {
+                        showCalendarImport = true
+                    } label: {
+                        HStack(spacing: 12) {
+                            iconBadge("calendar.badge.plus", color: .teal)
+                            Text("校历导入").font(.system(size: 16, weight: .medium)).foregroundStyle(Theme.ink)
+                            Spacer()
+                            Text("文件 / 拍照识别").font(.system(size: 13)).foregroundStyle(Theme.secondary)
+                            Image(systemName: "chevron.right").font(.system(size: 12, weight: .bold)).foregroundStyle(Theme.secondary.opacity(0.6))
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                 }
                 section("上课时间") {
                     ForEach(semester.periods) { period in
@@ -223,7 +288,8 @@ struct SettingsView: View {
                     }
                     Divider().padding(.leading, 58)
                     settingsRow(icon: "arrow.down.circle.fill", color: .teal,
-                                title: "检查更新", value: checkingUpdate ? "检查中…" : updateNote) {
+                                title: "检查更新", value: checkingUpdate ? "检查中…" : updateNote,
+                                showsChevron: updateURL != nil) {
                         Task { await checkForUpdate() }
                     }
                     if let updateURL {
@@ -254,6 +320,9 @@ struct SettingsView: View {
         }
         .scrollIndicators(.hidden)
         .background(Theme.background.ignoresSafeArea())
+        .sheet(isPresented: $showCalendarImport) {
+            CalendarImportView { drafts in mergeHolidays(drafts) }
+        }
         .onAppear {
             if !didLoadSemester || semester == lastSyncedSemester {
                 semester = model.document.semester
@@ -302,8 +371,40 @@ struct SettingsView: View {
             .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(color))
     }
 
+    private var semesterEndText: String {
+        guard let end = SemesterCalendar.endDate(semester: semester, calendar: model.calendar) else { return "—" }
+        let cal = model.calendar
+        return "\(cal.component(.year, from: end))年\(cal.component(.month, from: end))月\(cal.component(.day, from: end))日（自动推算）"
+    }
+
+    private func holidayRangeText(_ holiday: HolidayPeriod) -> String {
+        func md(_ civil: String) -> String {
+            let parts = civil.split(separator: "-")
+            guard parts.count == 3, let m = Int(parts[1]), let d = Int(parts[2]) else { return civil }
+            return "\(m)月\(d)日"
+        }
+        return holiday.startDate == holiday.endDate ? md(holiday.startDate) : "\(md(holiday.startDate)) – \(md(holiday.endDate))"
+    }
+
+    private func saveHolidays() {
+        if let error = model.updateSemester(semester) {
+            errorText = error
+        } else {
+            errorText = nil
+            semester = model.document.semester
+            lastSyncedSemester = semester
+        }
+    }
+
+    private func mergeHolidays(_ drafts: [HolidayPeriod]) {
+        for draft in drafts where !semester.holidays.contains(where: { $0.name == draft.name && $0.startDate == draft.startDate && $0.endDate == draft.endDate }) {
+            semester.holidays.append(draft)
+        }
+        saveHolidays()
+    }
+
     private func settingsRow(icon: String, color: Color, title: String, value: String?,
-                             destructive: Bool = false, action: @escaping () -> Void) -> some View {
+                             destructive: Bool = false, showsChevron: Bool = true, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 12) {
                 iconBadge(icon, color: color)
@@ -314,9 +415,11 @@ struct SettingsView: View {
                 if let value {
                     Text(value).font(.system(size: 14)).foregroundStyle(Theme.secondary)
                 }
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(Theme.secondary.opacity(0.6))
+                if showsChevron {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(Theme.secondary.opacity(0.6))
+                }
             }
             .padding(.vertical, 9)
             .padding(.horizontal, 4)
@@ -580,7 +683,7 @@ extension SettingsView {
                 // classday-releases archive repo under predictable names.
                 updateURL = URL(string: "https://raw.githubusercontent.com/yuanyeye0210-debug/classday-releases/main/Classday-v\(latest).ipa")
             } else {
-                updateNote = "已是最新"
+                updateNote = "已是最新版"
             }
         } catch {
             updateNote = "检查失败"
@@ -596,5 +699,229 @@ extension SettingsView {
             if x != y { return x > y }
         }
         return false
+    }
+}
+
+
+// MARK: - 校历导入（文件 .ics 确定性解析 / 拍照 AI 识别，都先出草稿确认页）
+
+private struct HolidayDraft: Identifiable {
+    var id = UUID()
+    var name: String
+    var start: Date
+    var end: Date
+    var included = true
+}
+
+struct CalendarImportView: View {
+    var onConfirm: ([HolidayPeriod]) -> Void
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    @State private var drafts: [HolidayDraft] = []
+    @State private var note: String?
+    @State private var showFileImporter = false
+    @State private var pickerItem: PhotosPickerItem?
+    @State private var pickedData: Data?
+    @State private var busy = false
+    @State private var keyDraft = ""
+    @State private var hasKey = GradeAIKeyStore.load() != nil
+    @State private var showKeyField = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Text("从校历文件或校历图片识别假期时段，先放进下面的草稿里；逐项核对、改好，点「添加所选」才写入假期列表。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                Section("校历文件") {
+                    Button {
+                        showFileImporter = true
+                    } label: {
+                        Label("选择 .ics 校历文件", systemImage: "doc.badge.plus")
+                    }
+                }
+                Section("拍照识别") {
+                    PhotosPicker(selection: $pickerItem, matching: .images) {
+                        Label(pickedData == nil ? "选择校历图片" : "换一张校历图片", systemImage: "photo.on.rectangle.angled")
+                    }
+                    if hasKey && !showKeyField {
+                        HStack {
+                            Label("Gemini 密钥已保存", systemImage: "key.fill")
+                            Spacer()
+                            Button("更换") { showKeyField = true }
+                        }
+                    }
+                    if !hasKey || showKeyField {
+                        SecureField("粘贴 Gemini API 密钥", text: $keyDraft)
+                        Button("保存密钥到钥匙串") {
+                            let value = keyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !value.isEmpty {
+                                GradeAIKeyStore.save(value)
+                                hasKey = true
+                                showKeyField = false
+                                keyDraft = ""
+                                note = "密钥已保存，现在可以识别了。"
+                            }
+                        }
+                        .disabled(keyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                    Button {
+                        runAIRecognition()
+                    } label: {
+                        if busy {
+                            HStack { ProgressView(); Text("识别中…") }
+                        } else {
+                            Label("AI 识别校历", systemImage: "sparkles")
+                        }
+                    }
+                    .disabled(pickedData == nil || busy)
+                }
+                if let note {
+                    Section {
+                        Text(note).font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
+                Section("待添加的假期（草稿）") {
+                    if drafts.isEmpty {
+                        Text("还没有草稿。先选一个校历文件，或选一张校历图片识别。")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    ForEach($drafts) { $draft in
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Toggle(isOn: $draft.included) {
+                                    TextField("名称", text: $draft.name)
+                                }
+                                Button(role: .destructive) {
+                                    drafts.removeAll { $0.id == draft.id }
+                                } label: {
+                                    Image(systemName: "trash").foregroundStyle(.red)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            HStack(spacing: 10) {
+                                DatePicker("开始", selection: $draft.start, displayedComponents: .date)
+                                DatePicker("结束", selection: $draft.end, displayedComponents: .date)
+                            }
+                            .font(.system(size: 13))
+                        }
+                    }
+                }
+            }
+            .navigationTitle("校历导入")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("添加所选") {
+                        let cal = model.calendar
+                        let chosen = drafts.filter { $0.included }.map { draft in
+                            HolidayPeriod(
+                                id: UUID(),
+                                name: draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "假期" : draft.name,
+                                startDate: SemesterCalendar.formatCivil(min(draft.start, draft.end), calendar: cal),
+                                endDate: SemesterCalendar.formatCivil(max(draft.start, draft.end), calendar: cal)
+                            )
+                        }
+                        onConfirm(chosen)
+                        dismiss()
+                    }
+                    .disabled(!drafts.contains { $0.included })
+                }
+            }
+            .fileImporter(isPresented: $showFileImporter, allowedContentTypes: [UTType(filenameExtension: "ics") ?? .data]) { result in
+                if case .success(let url) = result {
+                    loadICS(url)
+                }
+            }
+            .onChange(of: pickerItem) { _, item in
+                Task {
+                    if let data = try? await item?.loadTransferable(type: Data.self) {
+                        pickedData = GradeImagePrep.preparedJPEG(data) ?? data
+                    }
+                }
+            }
+        }
+    }
+
+    private func loadICS(_ url: URL) {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else {
+            note = "这个文件读不出来，换一个 .ics 文件试试。"
+            return
+        }
+        appendDrafts(HolidayImporter.parseICS(text, calendar: model.calendar), source: "文件")
+    }
+
+    private func appendDrafts(_ periods: [HolidayPeriod], source: String) {
+        let cal = model.calendar
+        for period in periods {
+            guard let start = SemesterCalendar.parseCivil(period.startDate, calendar: cal),
+                  let end = SemesterCalendar.parseCivil(period.endDate, calendar: cal) else { continue }
+            drafts.append(HolidayDraft(name: period.name, start: start, end: end))
+        }
+        note = periods.isEmpty
+            ? "没有从\(source)里识别到假期时段，换一份校历试试。"
+            : "从\(source)识别到 \(periods.count) 段假期，已放进下面的草稿，请核对后点「添加所选」。"
+    }
+
+    private func runAIRecognition() {
+        guard let data = pickedData else { return }
+        guard let key = GradeAIKeyStore.load(), !key.isEmpty else {
+            showKeyField = true
+            note = "先粘贴 Gemini 密钥并保存，再点识别。"
+            return
+        }
+        busy = true
+        Task {
+            do {
+                let text = try await CalendarRuleRecognizer.recognize(jpegData: data, apiKey: key)
+                appendDrafts(HolidayImporter.parseAI(text, calendar: model.calendar), source: "图片")
+            } catch {
+                note = (error as? LocalizedError)?.errorDescription ?? "识别失败，换一张更清晰的校历图片再试。"
+            }
+            busy = false
+        }
+    }
+}
+
+enum CalendarRuleRecognizer {
+    static func recognize(jpegData: Data, apiKey: String) async throws -> String {
+        let prompt = """
+        你是学校校历识别器。读图中这所学校的校历/学期安排，找出所有不上课的时段：寒假、暑假、公众假期、停课周等。只输出一个 JSON 对象，不要输出任何其他文字。格式：
+        {"holidays": [{"name": "时段名称", "start": "YYYY-MM-DD", "end": "YYYY-MM-DD"}, ...]}
+        规则：start/end 是该时段的第一天和最后一天（都包含在时段内）；只有一天的时段 start 和 end 相同；年份按图中年份，跨年时段注意结束年份；名称用图中原文（如"圣诞假期""寒假"）。
+        """
+        let body: [String: Any] = [
+            "contents": [[
+                "parts": [
+                    ["text": prompt],
+                    ["inlineData": ["mimeType": "image/jpeg", "data": jpegData.base64EncodedString()]]
+                ]
+            ]],
+            "generationConfig": ["responseMimeType": "application/json", "temperature": 0.1]
+        ]
+        var request = URLRequest(url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=\(apiKey)")!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+            throw GradeRuleRecognizer.Failure.badResponse(http.statusCode)
+        }
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let candidates = json["candidates"] as? [[String: Any]],
+              let content = candidates.first?["content"] as? [String: Any],
+              let parts = content["parts"] as? [[String: Any]],
+              let text = parts.first?["text"] as? String else {
+            throw GradeRuleRecognizer.Failure.noText
+        }
+        return text
     }
 }

@@ -157,6 +157,11 @@ public enum ScheduleEngine {
                     start = start.addingTimeInterval(TimeInterval(minutes * 60))
                     end = end.addingTimeInterval(TimeInterval(minutes * 60))
                 }
+                // Holidays / no-class periods suppress the session entirely
+                // (no occurrence, no reminder, no Live Activity).
+                if SemesterCalendar.holiday(on: start, semester: semester, calendar: calendar) != nil {
+                    continue
+                }
                 let parityLabel = parity == .any ? "" : parity.title
                 built.append(
                     Occurrence(
