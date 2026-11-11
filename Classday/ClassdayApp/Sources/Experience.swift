@@ -228,6 +228,7 @@ struct ThemeFieldView: View {
         animated ? CGFloat(sin(time * speed + phase) * amp) : 0
     }
 
+    @ViewBuilder
     private func field(size: CGSize, time: Double) -> some View {
         let w = max(size.width, 1)
         let h = max(size.height, 1)
@@ -252,6 +253,7 @@ struct ThemeFieldView: View {
             }
         }
         .frame(width: w, height: h)
+        .modifier(ThemeShaderModifier(layout: theme.specialLayout, active: active, animated: animated, size: size, tiltX: tiltX, tiltY: tiltY, time: time))
     }
 
     private func blob(color: ThemeColor, size: CGFloat, blur: CGFloat, opacity: Double, x: Double, y: Double) -> some View {
@@ -407,6 +409,46 @@ struct ThemeFieldView: View {
                 .allowsHitTesting(false)
         default:
             EmptyView()
+        }
+    }
+}
+
+/// GPU signature layer (2.3.2), the physics tier: thin-film iridescence
+/// on glass, a tilt-riding specular band on mech, and a gravitational-lens
+/// bend on stardust. All three are fed by the same spring-followed gravity
+/// vector as the rest of the field, so they move as one physical system.
+private struct ThemeShaderModifier: ViewModifier {
+    var layout: String
+    var active: Bool
+    var animated: Bool
+    var size: CGSize
+    var tiltX: CGFloat
+    var tiltY: CGFloat
+    var time: Double
+
+    func body(content: Content) -> some View {
+        if layout == "glass", active {
+            content.colorEffect(ShaderLibrary.iridescentFilm(
+                .float2(Float(size.width), Float(size.height)),
+                .float2(Float(tiltX), Float(tiltY)),
+                .float(Float(time)),
+                .float(0.55)
+            ))
+        } else if layout == "mech", active {
+            content.colorEffect(ShaderLibrary.mechSheen(
+                .float2(Float(size.width), Float(size.height)),
+                .float(Float(tiltX))
+            ))
+        } else if layout == "dust", animated {
+            content.distortionEffect(
+                ShaderLibrary.gravityLens(
+                    .float2(Float(size.width / 2 + tiltX * size.width * 0.26), Float(size.height / 2 + tiltY * size.height * 0.26)),
+                    .float(1.0)
+                ),
+                maxSampleOffset: CGSize(width: 48, height: 48)
+            )
+        } else {
+            content
         }
     }
 }
