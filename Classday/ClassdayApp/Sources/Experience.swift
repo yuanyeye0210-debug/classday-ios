@@ -416,7 +416,7 @@ struct StudyDeskView: View {
                         .keyboardType(.URL)
                     Button("订阅并导入") { Task { await subscribe() } }
                     Button("导入 .ics 或 JSON 文件") { showImporter = true }
-                    Button("拍照识别课表") { showOCR = true }
+                    Button("智能导入课表（图片 / CSV / 文本）") { showOCR = true }
                     TextField("Fénix client id", text: $fenixID)
                     SecureField("Fénix client secret", text: $fenixSecret)
                     Button("用 Fénix 登录并导入") {
@@ -454,7 +454,7 @@ struct StudyDeskView: View {
             .fileImporter(isPresented: $showImporter, allowedContentTypes: [.json, .plainText, UTType(filenameExtension: "ics") ?? .data]) { result in
                 if case let .success(url) = result { read(url) }
             }
-            .sheet(isPresented: $showOCR) { OCRImportView() }
+            .sheet(isPresented: $showOCR) { SmartImportView() }
         }
     }
 

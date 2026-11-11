@@ -99,6 +99,8 @@ final class AppModel {
     var showThemeGallery = false
     var showStudyDesk = false
     var showExams = false
+    var showSmartImport = false
+    var smartImportSample = false
 
     let calendar: Calendar
     private let storeURL: URL
@@ -570,6 +572,16 @@ final class AppModel {
             courseID: occurrence.courseID, meetingID: occurrence.meetingID, week: occurrence.weekIndex, kind: .delayed, delayMinutes: minutes
         ))
         banner = "本周这一节推迟 \(minutes) 分钟"
+        persist(markUserEdited: true)
+    }
+
+    /// Applies per-meeting odd/even rules for freshly imported courses without
+    /// overwriting the import banner once per meeting.
+    func applyImportedParities(_ pairs: [(meetingID: UUID, parity: WeekParity)]) {
+        guard !pairs.isEmpty else { return }
+        for pair in pairs {
+            document = TimetableLibrary.settingParity(document, meetingID: pair.meetingID, parity: pair.parity)
+        }
         persist(markUserEdited: true)
     }
 

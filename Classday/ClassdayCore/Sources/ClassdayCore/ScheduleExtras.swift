@@ -632,3 +632,409 @@ public enum CountdownCopy {
         return "\(max(minutes, 1)) 分钟"
     }
 }
+
+// MARK: - Smart import drafts (CSV / free text / OCR lines)
+//
+// Recognition only ever produces drafts. Nothing here writes to the store:
+// the app shows every draft to the user first, fields stay editable, and only
+// the confirmed drafts are converted into courses.
+
+public struct ImportedMeetingDraft: Equatable, Sendable, Identifiable {
+    public var id: UUID
+    public var weekday: Int // 1 = Monday ... 7 = Sunday, 0 = not recognized
+    public var startMinutes: Int?
+    public var endMinutes: Int?
+    public var startPeriod: Int?
+    public var endPeriod: Int?
+    public var location: String
+    public var parity: Int // per-meeting: 0 = every week, 1 = odd weeks, 2 = even weeks
+
+    public init(id: UUID = UUID(), weekday: Int, startMinutes: Int? = nil, endMinutes: Int? = nil,
+                startPeriod: Int? = nil, endPeriod: Int? = nil, location: String = "", parity: Int = 0) {
+        self.id = id
+        self.weekday = weekday
+        self.startMinutes = startMinutes
+        self.endMinutes = endMinutes
+        self.startPeriod = startPeriod
+        self.endPeriod = endPeriod
+        self.location = location
+        self.parity = parity
+    }
+}
+
+public struct ImportedCourseDraft: Equatable, Sendable, Identifiable {
+    public var id: UUID
+    public var name: String
+    public var teacher: String
+    public var location: String
+    public var firstWeek: Int
+    public var lastWeek: Int
+    public var customWeeks: [Int] // empty = use the first...last range; non-empty = exactly these weeks
+    public var meetings: [ImportedMeetingDraft]
+    public var issues: [String]
+    public var sourceLine: String
+
+    public init(id: UUID = UUID(), name: String, teacher: String = "", location: String = "",
+                firstWeek: Int = 1, lastWeek: Int = 16, customWeeks: [Int] = [],
+                meetings: [ImportedMeetingDraft], issues: [String] = [], sourceLine: String = "") {
+        self.id = id
+        self.name = name
+        self.teacher = teacher
+        self.location = location
+        self.firstWeek = firstWeek
+        self.lastWeek = lastWeek
+        self.customWeeks = customWeeks
+        self.meetings = meetings
+        self.issues = issues
+        self.sourceLine = sourceLine
+    }
+}
+
+public enum ScheduleTextImporter {
+    // MARK: public entry points
+
+    public static func parseText(_ text: String) -> (drafts: [ImportedCourseDraft], unparsed: [String]) {
+        var rawMeetings: [(course: ImportedCourseDraft, meeting: ImportedMeetingDraft)] = []
+        var unparsed: [String] = []
+        for rawLine in text.components(separatedBy: .newlines) {
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty { continue }
+            if weekdayTokenCount(line) >= 3 { continue } // a timetable header row, not a course
+            if let parsed = parseLine(line) {
+                for meeting in parsed.meetings { rawMeetings.append((parsed, meeting)) }
+            } else {
+                unparsed.append(line)
+            }
+        }
+        return (group(rawMeetings), unparsed)
+    }
+
+    public static func parseCSV(_ text: String) -> (drafts: [ImportedCourseDraft], unparsed: [String]) {
+        let lines = text.replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+            .components(separatedBy: "\n")
+            .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        guard let headerLine = lines.first else { return ([], []) }
+        let delimiter = [",", ";", "\t"].max { a, b in
+            headerLine.filter { $0 == Character(a) }.count < headerLine.filter { $0 == Character(b) }.count
+        } ?? ","
+        let header = splitCSV(headerLine, delimiter: delimiter).map { normalizeHeader($0) }
+        func column(_ synonyms: [String]) -> Int? {
+            header.firstIndex { synonyms.contains($0) }
+        }
+        guard let nameCol = column(["课程名称", "课程名", "课程", "课名", "名称", "name", "course"]),
+              let weekdayCol = column(["星期", "周几", "星期几", "上课星期", "weekday", "day"]) else {
+            return ([], lines)
+        }
+        let startCol = column(["开始时间", "上课时间", "开始", "起始时间", "start", "from"])
+        let endCol = column(["结束时间", "下课时间", "结束", "end", "to"])
+        let periodCol = column(["节次", "节数", "上课节次", "period", "节"])
+        let locationCol = column(["教室", "上课地点", "地点", "教学地点", "上课教室", "location", "room"])
+        let teacherCol = column(["教师", "老师", "任课教师", "授课教师", "主讲教师", "teacher"])
+        let weeksCol = column(["周次", "周数", "上课周次", "起止周", "上课周", "weeks", "week"])
+        var rawMeetings: [(course: ImportedCourseDraft, meeting: ImportedMeetingDraft)] = []
+        var unparsed: [String] = []
+        for line in lines.dropFirst() {
+            let cells = splitCSV(line, delimiter: delimiter)
+            func cell(_ index: Int?) -> String {
+                guard let index, index < cells.count else { return "" }
+                return cells[index].trimmingCharacters(in: .whitespaces)
+            }
+            let name = cell(nameCol)
+            guard !name.isEmpty, let weekday = weekdayNumber(in: cell(weekdayCol)) else {
+                unparsed.append(line)
+                continue
+            }
+            var meeting = ImportedMeetingDraft(weekday: weekday, location: cell(locationCol))
+            let startText = cell(startCol), endText = cell(endCol)
+            if let range = timeRange(in: startText) {
+                meeting.startMinutes = range.0
+                meeting.endMinutes = range.1
+            } else {
+                meeting.startMinutes = clockMinutes(startText)
+                meeting.endMinutes = clockMinutes(endText)
+            }
+            if meeting.startMinutes == nil, let periodText = Optional(cell(periodCol)), !periodText.isEmpty {
+                let periods = periodRange(in: periodText)
+                meeting.startPeriod = periods.0
+                meeting.endPeriod = periods.1
+            }
+            let weeks = weekRange(in: cell(weeksCol))
+            meeting.parity = weeks.2
+            var issues: [String] = []
+            if meeting.startMinutes == nil && meeting.startPeriod == nil { issues.append("时间没认出") }
+            if meeting.location.isEmpty { issues.append("教室没认出") }
+            let course = ImportedCourseDraft(
+                name: name, teacher: cell(teacherCol), location: meeting.location,
+                firstWeek: weeks.0, lastWeek: weeks.1,
+                meetings: [], issues: issues, sourceLine: line)
+            rawMeetings.append((course, meeting))
+        }
+        return (group(rawMeetings), unparsed)
+    }
+
+    // MARK: one free-text line
+
+    private static func parseLine(_ line: String) -> ImportedCourseDraft? {
+        guard weekdayRanges(in: line).count > 0 || timeRange(in: line) != nil || periodRange(in: line).0 != nil else {
+            return nil
+        }
+        let weeks = weekRange(in: line)
+        var issues: [String] = []
+        var teacher = ""
+        if let match = firstMatch(#"(?:教师|老师|任课教师)[:：]?\s*([一-龥]{2,4})"#, in: line) {
+            teacher = match.groups[0]
+        }
+        var lineLocation = ""
+        if let match = firstMatch(#"(?:教室|地点)[:：]?\s*([^\s，,；;]+)"#, in: line) {
+            lineLocation = match.groups[0]
+        }
+        let weekdayMatches = weekdayRanges(in: line)
+        var meetings: [ImportedMeetingDraft] = []
+        if weekdayMatches.isEmpty {
+            var meeting = ImportedMeetingDraft(weekday: 0, location: lineLocation, parity: weeks.2)
+            applyTime(from: line, to: &meeting)
+            meetings.append(meeting)
+            issues.append("星期没认出")
+        } else {
+            for (index, match) in weekdayMatches.enumerated() {
+                let segmentEnd = index + 1 < weekdayMatches.count ? weekdayMatches[index + 1].range.lowerBound : line.endIndex
+                let segment = String(line[match.range.upperBound..<segmentEnd])
+                var meeting = ImportedMeetingDraft(weekday: match.weekday, location: locationToken(in: segment) ?? lineLocation, parity: weeks.2)
+                applyTime(from: segment, to: &meeting)
+                meetings.append(meeting)
+            }
+        }
+        var namePart = weekdayMatches.first.map { String(line[line.startIndex..<$0.range.lowerBound]) } ?? line
+        namePart = stripExtracted(namePart)
+        if namePart.isEmpty {
+            // The name may sit after the schedule info ("周一 08:00 高等数学 A301").
+            let tail = weekdayMatches.last.map { String(line[$0.range.upperBound...]) } ?? ""
+            namePart = stripExtracted(tail).components(separatedBy: .whitespaces).first ?? ""
+        }
+        let name = namePart.trimmingCharacters(in: .whitespaces.union(.punctuationCharacters))
+        if name.isEmpty { issues.append("课程名没认出") }
+        if meetings.contains(where: { $0.startMinutes == nil && $0.startPeriod == nil }) { issues.append("时间没认出") }
+        if meetings.allSatisfy({ $0.location.isEmpty }) && lineLocation.isEmpty { issues.append("教室没认出") }
+        let firstLocation = meetings.first(where: { !$0.location.isEmpty })?.location ?? lineLocation
+        return ImportedCourseDraft(
+            name: name, teacher: teacher, location: firstLocation,
+            firstWeek: weeks.0, lastWeek: weeks.1,
+            meetings: meetings, issues: issues, sourceLine: line)
+    }
+
+    private static func applyTime(from segment: String, to meeting: inout ImportedMeetingDraft) {
+        if let range = timeRange(in: segment) {
+            meeting.startMinutes = range.0
+            meeting.endMinutes = range.1
+        } else {
+            let periods = periodRange(in: segment)
+            meeting.startPeriod = periods.0
+            meeting.endPeriod = periods.1
+        }
+        if meeting.location.isEmpty, let location = locationToken(in: segment) {
+            meeting.location = location
+        }
+    }
+
+    private static func stripExtracted(_ text: String) -> String {
+        var result = text
+        let patterns = [
+            #"第?\s*\d{1,2}\s*[-–—~～]\s*\d{1,2}\s*周"#,
+            #"第\s*\d{1,2}\s*周"#, #"单周|双周"#,
+            #"\d{1,2}[:：]\d{2}\s*[-–—~～至]\s*\d{1,2}[:：]\d{2}"#,
+            #"第?\s*\d{1,2}\s*(?:[-–—~～至]\s*\d{1,2})?\s*节"#,
+            #"(?:教室|地点)[:：]?\s*[^\s，,；;]+"#,
+            #"(?:教师|老师|任课教师)[:：]?\s*[一-龥]{2,4}"#,
+            #"[^\s，,；;]*(?:楼|室|馆|机房|实验室)[^\s，,；;]*"#,
+        ]
+        for pattern in patterns {
+            result = replaceAll(pattern, in: result)
+        }
+        return result
+    }
+
+    // MARK: grouping
+
+    private static func group(_ raw: [(course: ImportedCourseDraft, meeting: ImportedMeetingDraft)]) -> [ImportedCourseDraft] {
+        var order: [String] = []
+        var map: [String: ImportedCourseDraft] = [:]
+        for (course, meeting) in raw {
+            let key = [course.name, course.teacher, String(course.firstWeek), String(course.lastWeek)].joined(separator: "|")
+            if var existing = map[key] {
+                existing.meetings.append(meeting)
+                if existing.location.isEmpty { existing.location = meeting.location }
+                for issue in course.issues where !existing.issues.contains(issue) { existing.issues.append(issue) }
+                map[key] = existing
+            } else {
+                var fresh = course
+                fresh.meetings = [meeting]
+                map[key] = fresh
+                order.append(key)
+            }
+        }
+        return order.compactMap { map[$0] }
+    }
+
+    // MARK: field extractors
+
+    static func weekdayNumber(in text: String) -> Int? {
+        if let match = firstMatch(#"(?:周|星期)\s*([一二三四五六日天1-7])"#, in: text) {
+            return weekdayValue(match.groups[0])
+        }
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        if let digit = Int(trimmed), (1...7).contains(digit) { return digit }
+        return nil
+    }
+
+    private static func weekdayValue(_ token: String) -> Int? {
+        switch token {
+        case "一", "1": return 1
+        case "二", "2": return 2
+        case "三", "3": return 3
+        case "四", "4": return 4
+        case "五", "5": return 5
+        case "六", "6": return 6
+        case "日", "天", "7": return 7
+        default: return nil
+        }
+    }
+
+    private static func weekdayTokenCount(_ text: String) -> Int {
+        weekdayRanges(in: text).count
+    }
+
+    private static func weekdayRanges(in text: String) -> [(range: Range<String.Index>, weekday: Int)] {
+        guard let regex = try? NSRegularExpression(pattern: #"(?:周|星期)\s*([一二三四五六日天1-7])"#) else { return [] }
+        let ns = text as NSString
+        return regex.matches(in: text, range: NSRange(location: 0, length: ns.length)).compactMap { match in
+            guard let range = Range(match.range, in: text),
+                  let groupRange = Range(match.range(at: 1), in: text),
+                  let weekday = weekdayValue(String(text[groupRange])) else { return nil }
+            return (range, weekday)
+        }
+    }
+
+    static func timeRange(in text: String) -> (Int, Int)? {
+        guard let match = firstMatch(#"(\d{1,2})[:：](\d{2})\s*[-–—~～至]\s*(\d{1,2})[:：](\d{2})"#, in: text),
+              let h1 = Int(match.groups[0]), let m1 = Int(match.groups[1]),
+              let h2 = Int(match.groups[2]), let m2 = Int(match.groups[3]) else { return nil }
+        return (h1 * 60 + m1, h2 * 60 + m2)
+    }
+
+    static func clockMinutes(_ text: String) -> Int? {
+        guard let match = firstMatch(#"^\s*(\d{1,2})[:：](\d{2})\s*$"#, in: text),
+              let h = Int(match.groups[0]), let m = Int(match.groups[1]) else { return nil }
+        return h * 60 + m
+    }
+
+    static func periodRange(in text: String) -> (Int?, Int?) {
+        if let match = firstMatch(#"(\d{1,2})\s*[-–—~～至]\s*(\d{1,2})\s*节"#, in: text),
+           let start = Int(match.groups[0]), let end = Int(match.groups[1]) {
+            return (start, end)
+        }
+        if let match = firstMatch(#"第\s*(\d{1,2})\s*节"#, in: text), let only = Int(match.groups[0]) {
+            return (only, only)
+        }
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        if let match = firstMatch(#"^(\d{1,2})\s*[-–—~～]\s*(\d{1,2})$"#, in: trimmed),
+           let start = Int(match.groups[0]), let end = Int(match.groups[1]) {
+            return (start, end)
+        }
+        if let only = Int(trimmed), (1...16).contains(only) { return (only, only) }
+        return (nil, nil)
+    }
+
+    static func weekRange(in text: String) -> (Int, Int, Int) {
+        var parity = 0
+        if text.contains("单周") { parity = 1 }
+        if text.contains("双周") { parity = 2 }
+        if let match = firstMatch(#"(\d{1,2})\s*[-–—~～]\s*(\d{1,2})\s*周"#, in: text),
+           let first = Int(match.groups[0]), let last = Int(match.groups[1]) {
+            return (first, last, parity)
+        }
+        if let match = firstMatch(#"第\s*(\d{1,2})\s*周"#, in: text), let only = Int(match.groups[0]) {
+            return (only, only, parity)
+        }
+        return (1, 16, parity)
+    }
+
+    private static func locationToken(in segment: String) -> String? {
+        if let match = firstMatch(#"(?:教室|地点)[:：]?\s*([^\s，,；;]+)"#, in: segment) {
+            return match.groups[0]
+        }
+        let tokens = segment.components(separatedBy: CharacterSet(charactersIn: " \t，,；;、（）()【】"))
+        for token in tokens {
+            let trimmed = token.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            if trimmed.contains("楼") || trimmed.contains("机房") || trimmed.contains("实验室")
+                || trimmed.contains("体育馆") || trimmed.contains("操场") {
+                return trimmed
+            }
+            if firstMatch(#"^[A-Za-z]{1,2}\d{3,4}$"#, in: trimmed) != nil { return trimmed }
+            if firstMatch(#"^\d{3,4}室$"#, in: trimmed) != nil { return trimmed }
+        }
+        return nil
+    }
+
+    // MARK: regex helpers
+
+    private struct Match {
+        var groups: [String]
+    }
+
+    private static func firstMatch(_ pattern: String, in text: String) -> Match? {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let ns = text as NSString
+        guard let match = regex.firstMatch(in: text, range: NSRange(location: 0, length: ns.length)) else { return nil }
+        var groups: [String] = []
+        for index in 1..<match.numberOfRanges {
+            let range = match.range(at: index)
+            groups.append(range.location == NSNotFound ? "" : ns.substring(with: range))
+        }
+        return Match(groups: groups)
+    }
+
+    private static func replaceAll(_ pattern: String, in text: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return text }
+        let ns = text as NSString
+        return regex.stringByReplacingMatches(in: text, range: NSRange(location: 0, length: ns.length), withTemplate: " ")
+    }
+
+    private static func normalizeHeader(_ raw: String) -> String {
+        raw.trimmingCharacters(in: .whitespaces)
+            .replacingOccurrences(of: "（", with: "(")
+            .lowercased()
+    }
+
+    private static func splitCSV(_ line: String, delimiter: String) -> [String] {
+        var cells: [String] = []
+        var current = ""
+        var inQuotes = false
+        let chars = Array(line)
+        var index = 0
+        while index < chars.count {
+            let char = chars[index]
+            if char == "\"" {
+                if inQuotes, index + 1 < chars.count, chars[index + 1] == "\"" {
+                    current.append("\"")
+                    index += 2
+                    continue
+                }
+                inQuotes.toggle()
+                index += 1
+                continue
+            }
+            if !inQuotes, String(char) == delimiter {
+                cells.append(current)
+                current = ""
+                index += 1
+                continue
+            }
+            current.append(char)
+            index += 1
+        }
+        cells.append(current)
+        return cells
+    }
+}

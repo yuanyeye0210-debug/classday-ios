@@ -192,6 +192,9 @@ struct TodayView: View {
         .sheet(isPresented: $model.showExams) {
             ExamsView()
         }
+        .sheet(isPresented: $model.showSmartImport) {
+            SmartImportView()
+        }
         .sheet(isPresented: $showNewEvent) {
             EventEditorView(existing: nil)
         }

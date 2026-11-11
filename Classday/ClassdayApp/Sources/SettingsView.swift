@@ -135,6 +135,7 @@ struct SettingsView: View {
                         }
                     }
                     Button("导入 JSON") { model.showImporter = true }
+                    Button("智能导入课表（图片 / CSV）") { model.showSmartImport = true }
                     Button("恢复演示数据") { model.confirmReset = true }
                     Button("清空课程") { model.confirmClear = true }
                     Text("导入会替换当前课表。文件需要 schemaVersion \(StoreDocument.currentSchema)。没有校园账号，也不会查询成绩。")

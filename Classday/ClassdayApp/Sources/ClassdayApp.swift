@@ -82,6 +82,10 @@ private struct ChromeInstaller: ViewModifier {
             model.tab = .today
             model.showExams = true
         }
+        if arguments.contains("--smartimport") {
+            model.smartImportSample = true
+            model.showSmartImport = true
+        }
         guard let index = arguments.firstIndex(of: "--theme"), index + 1 < arguments.count else { return }
         model.setAppearance(AppearanceChoice(themeID: arguments[index + 1], performance: .balanced))
     }

@@ -129,3 +129,82 @@ final class V2FeatureTests: XCTestCase {
         XCTAssertTrue(outcome.errors.isEmpty)
     }
 }
+
+final class SmartImportTests: XCTestCase {
+    func testCSVParsesStandardExport() {
+        let csv = """
+        课程名称,星期,开始时间,结束时间,教室,教师,周次
+        高等数学,周一,08:00,09:40,教学楼A301,陈老师,1-16周
+        高等数学,周三,10:10,11:50,教学楼A301,陈老师,1-16周
+        大学英语,星期四,08:00,09:40,教学楼B205,林老师,1-16周
+        """
+        let result = ScheduleTextImporter.parseCSV(csv)
+        XCTAssertEqual(result.drafts.count, 2)
+        XCTAssertTrue(result.unparsed.isEmpty)
+        let math = result.drafts.first { $0.name == "高等数学" }
+        XCTAssertEqual(math?.meetings.count, 2)
+        XCTAssertEqual(math?.meetings.first?.weekday, 1)
+        XCTAssertEqual(math?.meetings.first?.startMinutes, 480)
+        XCTAssertEqual(math?.meetings.first?.endMinutes, 580)
+        XCTAssertEqual(math?.teacher, "陈老师")
+        XCTAssertEqual(math?.firstWeek, 1)
+        XCTAssertEqual(math?.lastWeek, 16)
+        XCTAssertTrue(math?.issues.isEmpty ?? false)
+    }
+
+    func testCSVSemicolonPeriodColumnAndOddWeeks() {
+        let csv = """
+        课程;星期;节次;地点;周次
+        程序设计;周五;5-6;实验楼机房3;1-15周 单周
+        """
+        let result = ScheduleTextImporter.parseCSV(csv)
+        XCTAssertEqual(result.drafts.count, 1)
+        let draft = result.drafts.first
+        XCTAssertEqual(draft?.meetings.first?.startPeriod, 5)
+        XCTAssertEqual(draft?.meetings.first?.endPeriod, 6)
+        XCTAssertEqual(draft?.meetings.first?.location, "实验楼机房3")
+        XCTAssertEqual(draft?.meetings.first?.parity, 1)
+        XCTAssertEqual(draft?.lastWeek, 15)
+    }
+
+    func testCSVWithoutHeadersIsReturnedUnparsed() {
+        let result = ScheduleTextImporter.parseCSV("a,b,c\n1,2,3")
+        XCTAssertTrue(result.drafts.isEmpty)
+        XCTAssertEqual(result.unparsed.count, 2)
+    }
+
+    func testTextLineParsesAllFields() {
+        let result = ScheduleTextImporter.parseText("高等数学 周一 08:00-09:40 教学楼A301 陈老师 1-16周")
+        XCTAssertEqual(result.drafts.count, 1)
+        let draft = result.drafts.first
+        XCTAssertEqual(draft?.name, "高等数学")
+        XCTAssertEqual(draft?.meetings.first?.weekday, 1)
+        XCTAssertEqual(draft?.meetings.first?.startMinutes, 480)
+        XCTAssertEqual(draft?.meetings.first?.location, "教学楼A301")
+        XCTAssertEqual(draft?.lastWeek, 16)
+    }
+
+    func testTextLineWithTwoMeetingsGroupsIntoOneCourse() {
+        let text = """
+        大学物理 周二 08:00-09:40 周四 10:10-11:50 教学楼A206 赵老师
+        这行没有任何课程信息
+        """
+        let result = ScheduleTextImporter.parseText(text)
+        XCTAssertEqual(result.drafts.count, 1)
+        XCTAssertEqual(result.drafts.first?.meetings.count, 2)
+        XCTAssertEqual(result.drafts.first?.meetings.map(\.weekday), [2, 4])
+        XCTAssertEqual(result.unparsed, ["这行没有任何课程信息"])
+    }
+
+    func testTextMissingLocationFlagsIssueButStaysEditable() {
+        let result = ScheduleTextImporter.parseText("体育 周三 14:00-15:40")
+        XCTAssertEqual(result.drafts.count, 1)
+        XCTAssertTrue(result.drafts.first?.issues.contains("教室没认出") ?? false)
+    }
+
+    func testHeaderRowIsSkippedNotUnparsed() {
+        let result = ScheduleTextImporter.parseText("节次 周一 周二 周三 周四 周五")
+        XCTAssertTrue(result.drafts.isEmpty)
+        XCTAssertTrue(result.unparsed.isEmpty)
+    }
+}
