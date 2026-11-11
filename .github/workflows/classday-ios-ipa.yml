@@ -119,6 +119,9 @@ jobs:
           xcrun simctl io "$DEVICE" screenshot "dist/screenshots/courses-glass.png"
           xcrun simctl terminate "$DEVICE" com.classday.app || true
           xcrun simctl launch "$DEVICE" com.classday.app --theme glass --exams
+          xcrun simctl launch "$DEVICE" com.classday.app --theme glass --smartimport
+          sleep 3
+          xcrun simctl io "$DEVICE" screenshot "dist/screenshots/smartimport-glass.png"
           sleep 3
           xcrun simctl io "$DEVICE" screenshot "dist/screenshots/exams-glass.png"
 
