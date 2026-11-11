@@ -2,6 +2,7 @@ import SwiftUI
 import PhotosUI
 import Vision
 import UniformTypeIdentifiers
+import CoreFoundation
 import ClassdayCore
 
 /// Smart import: photos, CSV files and pasted text are parsed into editable
@@ -70,7 +71,7 @@ struct SmartImportView: View {
                 if case let .success(url) = result { readFile(url) }
             }
             .sheet(item: editingBinding) { draft in
-                DraftEditorView(draft: draft)
+                DraftEditorView(draft: binding(for: draft.id))
             }
         }
     }
@@ -187,8 +188,16 @@ struct SmartImportView: View {
                 return drafts[index]
             },
             set: { newValue in
-                guard let newValue, let index = drafts.firstIndex(where: { $0.id == newValue.id }) else { return }
-                drafts[index] = newValue
+                if newValue == nil { editingID = nil }
+            }
+        )
+    }
+
+    private func binding(for id: UUID) -> Binding<ImportedCourseDraft> {
+        Binding(
+            get: { drafts.first { $0.id == id } ?? ImportedCourseDraft(name: "", meetings: []) },
+            set: { newValue in
+                if let index = drafts.firstIndex(where: { $0.id == id }) { drafts[index] = newValue }
             }
         )
     }
