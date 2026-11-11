@@ -302,6 +302,12 @@ final class AppModel {
 
     func updateSemester(_ semester: Semester) -> String? {
         var next = document
+        if semester.periods != document.semester.periods {
+            // Insurance: a period table re-maps every class in the book, so
+            // stash the pre-change document in the library first - the old
+            // table stays one tap away if the new one is wrong.
+            next = TimetableLibrary.storingCurrent(next, as: "节次修改前备份")
+        }
         next.semester = semester
         let normalized = StoreCodec.normalized(next)
         let report = StoreCodec.validate(normalized, calendar: calendar)

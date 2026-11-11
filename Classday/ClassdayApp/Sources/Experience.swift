@@ -249,6 +249,15 @@ struct ThemeFieldView: View {
                 blob(color: theme.courseAccents.count > 3 ? theme.courseAccents[3] : theme.glow,
                      size: w * 0.62, blur: 58, opacity: dark ? 0.36 : 0.42,
                      x: w * 0.42 + drift(time, 0.10, 5.2, 22) - tiltX * 36, y: h * 0.88 + drift(time, 0.07, 2.4, 18) - tiltY * 36)
+                // Gravity-up light: one soft source pinned near the edge
+                // the phone tilts away from, shared by every theme so the
+                // tilt always reads somewhere on screen.
+                Ellipse()
+                    .fill(Color.white.opacity((dark ? 0.10 : 0.16) + min(abs(tiltX) + abs(tiltY), 1) * 0.10))
+                    .frame(width: w * 0.95, height: h * 0.30)
+                    .blur(radius: 42)
+                    .position(x: w / 2 - tiltX * w * 0.34, y: -h * 0.03 - tiltY * h * 0.05)
+                    .allowsHitTesting(false)
                 signature(size: size, time: time, tiltX: tiltX, tiltY: tiltY, gravity: grav)
             }
         }
@@ -278,14 +287,15 @@ struct ThemeFieldView: View {
             Rectangle()
                 .fill(LinearGradient(colors: [Color(theme.glow.palette).opacity(0), Color(theme.glow.palette).opacity(0.30), Color(theme.accent.palette).opacity(0.22), Color(theme.glow.palette).opacity(0)], startPoint: .top, endPoint: .bottom))
                 .frame(height: 92)
-                .position(x: w / 2, y: y)
+                .rotationEffect(.degrees(Double(tiltX) * 4))
+                .position(x: w / 2 + tiltX * 40, y: y)
                 .allowsHitTesting(false)
         case "aurora":
             RoundedRectangle(cornerRadius: 90)
                 .fill(LinearGradient(colors: [Color(theme.glow.palette).opacity(0.55), Color(theme.accent.palette).opacity(0.45), Color(theme.glow.palette).opacity(0.1)], startPoint: .leading, endPoint: .trailing))
                 .frame(width: w * 1.3, height: 110)
                 .blur(radius: 26)
-                .rotationEffect(.degrees(-7))
+                .rotationEffect(.degrees(-7 + Double(tiltX) * 5))
                 .position(x: w / 2 + drift(time, 0.07, 0.9, 30), y: h * 0.14)
                 .allowsHitTesting(false)
             if particles {
@@ -307,14 +317,18 @@ struct ThemeFieldView: View {
             }
         case "hud":
             Canvas { context, canvasSize in
+                // The grid pans against the tilt (wrapping every cell), so
+                // the whole lattice feels bolted to the world, not the glass.
+                let gx = (Double(tiltX) * 36).truncatingRemainder(dividingBy: 36)
+                let gy = (Double(tiltY) * 36).truncatingRemainder(dividingBy: 36)
                 var path = Path()
-                var x: CGFloat = 0
+                var x: CGFloat = CGFloat(gx) - 36
                 while x < canvasSize.width {
                     path.move(to: CGPoint(x: x, y: 0))
                     path.addLine(to: CGPoint(x: x, y: canvasSize.height))
                     x += 36
                 }
-                var y: CGFloat = 0
+                var y: CGFloat = CGFloat(gy) - 36
                 while y < canvasSize.height {
                     path.move(to: CGPoint(x: 0, y: y))
                     path.addLine(to: CGPoint(x: canvasSize.width, y: y))
@@ -326,11 +340,11 @@ struct ThemeFieldView: View {
             Circle()
                 .strokeBorder(Color(theme.accent.palette).opacity(0.65), style: StrokeStyle(lineWidth: 1.6, dash: [7, 6]))
                 .frame(width: 86, height: 86)
-                .rotationEffect(.degrees(animated ? time * 9 : 24))
+                .rotationEffect(.degrees((animated ? time * 9 : 24) + Double(tiltX) * 130))
                 .position(x: w - 58, y: 120)
                 .allowsHitTesting(false)
         case "orbit":
-            let center = CGPoint(x: w - 30, y: 26)
+            let center = CGPoint(x: w - 30 - tiltX * 30, y: 26 - tiltY * 30)
             Circle()
                 .stroke(Color(theme.accent.palette).opacity(0.40), lineWidth: 1.4)
                 .frame(width: 218, height: 218)
@@ -391,20 +405,34 @@ struct ThemeFieldView: View {
             .allowsHitTesting(false)
         case "cube":
             Canvas { context, canvasSize in
+                // Holographic lattice: the whole grid shears and slides
+                // with the tilt, like a hologram plate catching the light.
+                let shear = 0.5 + tiltY * 0.45
+                let phase = (Double(tiltX) * 64).truncatingRemainder(dividingBy: 46)
                 var path = Path()
-                var d: CGFloat = -canvasSize.height
+                var d: CGFloat = -canvasSize.height + CGFloat(phase)
                 while d < canvasSize.width {
                     path.move(to: CGPoint(x: d, y: 0))
-                    path.addLine(to: CGPoint(x: d + canvasSize.height * 0.5, y: canvasSize.height))
+                    path.addLine(to: CGPoint(x: d + canvasSize.height * shear, y: canvasSize.height))
                     d += 46
                 }
                 context.stroke(path, with: .color(Color(theme.line.palette).opacity(0.4)), lineWidth: 0.7)
+                // Counter-drift cross lines at a shallower angle: depth.
+                var cross = Path()
+                var e: CGFloat = -canvasSize.width - CGFloat(phase) * 0.6
+                while e < canvasSize.height {
+                    cross.move(to: CGPoint(x: 0, y: e))
+                    cross.addLine(to: CGPoint(x: canvasSize.width, y: e + canvasSize.width * (0.22 + tiltX * 0.10)))
+                    e += 62
+                }
+                context.stroke(cross, with: .color(Color(theme.line.palette).opacity(0.22)), lineWidth: 0.7)
             }
             .allowsHitTesting(false)
         case "mech":
             Rectangle()
                 .fill(LinearGradient(colors: [.clear, Color.white.opacity(0.05), .clear, Color.white.opacity(0.03), .clear], startPoint: .leading, endPoint: .trailing))
-                .rotationEffect(.degrees(18))
+                .rotationEffect(.degrees(18 + Double(tiltX) * 16))
+                .offset(x: tiltX * 30)
                 .scaleEffect(1.6)
                 .allowsHitTesting(false)
         default:
@@ -471,6 +499,7 @@ struct ThemeBackground: View {
 struct ThemeGalleryView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.classdayChrome) private var chrome
+    @Environment(\.motionTracker) private var tracker
 
     var body: some View {
         NavigationStack {
@@ -486,6 +515,7 @@ struct ThemeGalleryView: View {
                             .font(.caption)
                             .foregroundStyle(Color(chrome.theme.secondary.palette))
                     }
+                    tiltReadout
                     ForEach(ClassdayThemes.all) { theme in
                         Button {
                             model.setAppearance(AppearanceChoice(themeID: theme.id, performance: model.document.appearance.performance))
@@ -522,6 +552,45 @@ struct ThemeGalleryView: View {
             .navigationTitle("主题")
             .navigationBarTitleDisplayMode(.inline)
         }
+    }
+
+    /// Live tilt readout: the ground-truth check for the tracking engine.
+    /// If the dot follows the phone in this card, the sensor pipeline is
+    /// alive and any remaining complaint is about effect strength, not
+    /// about tracking itself.
+    private var tiltReadout: some View {
+        let g = tracker.gravity
+        let dx = g.dx
+        let dy = g.dy - 1
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(Color(chrome.theme.line.palette), lineWidth: 1)
+                        .frame(width: 64, height: 64)
+                    Circle()
+                        .fill(Color(chrome.theme.accent.palette))
+                        .frame(width: 12, height: 12)
+                        .offset(x: max(-26, min(26, dx * 44)), y: max(-26, min(26, dy * 44)))
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("倾斜实时读数")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(Color(chrome.theme.ink.palette))
+                    Text("横 \(String(format: "%+.2f", Double(dx))) · 纵 \(String(format: "%+.2f", Double(dy)))")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(Color(chrome.theme.secondary.palette))
+                    Text(chrome.allowsMotion ? "跟踪运行中：斜着拿手机，圆点应该跟着往低的那侧跑。" : "当前主题或档位下跟踪未开启，这张卡只作传感器自检。")
+                        .font(.caption)
+                        .foregroundStyle(Color(chrome.theme.secondary.palette))
+                }
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color(chrome.theme.card.palette).opacity(0.7)))
+        .onAppear { tracker.start() }
+        .onDisappear { if !chrome.allowsMotion { tracker.stop() } }
     }
 
     private func preview(_ theme: ClassdayTheme) -> some View {

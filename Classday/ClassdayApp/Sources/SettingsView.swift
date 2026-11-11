@@ -22,6 +22,7 @@ struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @State private var semester: Semester
     @State private var didLoadSemester = false
+    @State private var lastSyncedSemester: Semester?
     @State private var errorText: String?
     @State private var exporting = false
     @State private var exportDocument = JSONFileDocument(data: Data())
@@ -78,8 +79,10 @@ struct SettingsView: View {
                         } else {
                             errorText = nil
                             semester = model.document.semester
+                            lastSyncedSemester = semester
                         }
                     }
+                    .disabled(!didLoadSemester)
                 }
                 section("上课时间") {
                     ForEach(semester.periods) { period in
@@ -110,9 +113,15 @@ struct SettingsView: View {
                         } else {
                             errorText = nil
                             semester = model.document.semester
+                            lastSyncedSemester = semester
                         }
                     }
-                    noteCard("节次按序号连续排列。删除只允许从最后一节开始，并且不能还有课程占用它。保存会连同学期名称、周数和默认提醒一起写入本机。")
+                    .disabled(!didLoadSemester)
+                    HStack(spacing: 10) {
+                        tintedButton("30 分钟 × 20 节", icon: "rectangle.grid.3x2.fill", color: .blue) { applyPeriodTemplate(minutes: 30, count: 20) }
+                        tintedButton("45 分钟 × 10 节", icon: "rectangle.grid.2x2.fill", color: .gray) { applyPeriodTemplate(minutes: 45, count: 10) }
+                    }
+                    noteCard("节次按序号连续排列。删除只允许从最后一节开始，并且不能还有课程占用它。保存会连同学期名称、周数和默认提醒一起写入本机。上面两个模板从 08:00 起排：30 分钟 × 20 节是里斯本 IST 的节次表，套用后先别保存，核对无误再点保存（保存前 App 会自动把当前课表存进课表库备份）。")
                 }
                 section("提醒") {
                     HStack(spacing: 12) {
@@ -216,12 +225,21 @@ struct SettingsView: View {
         .scrollIndicators(.hidden)
         .background(Theme.background.ignoresSafeArea())
         .onAppear {
-            guard !didLoadSemester else { return }
-            didLoadSemester = true
-            semester = model.document.semester
+            if !didLoadSemester || semester == lastSyncedSemester {
+                semester = model.document.semester
+                lastSyncedSemester = model.document.semester
+                didLoadSemester = true
+            }
         }
         .onChange(of: model.document.semester) { _, newValue in
-            semester = newValue
+            // Sync from the document only while the editor holds no
+            // unsaved edits; otherwise a background document change
+            // (timetable switch, mirror restore) would silently rewrite
+            // what the user is looking at - or the reverse on save.
+            if semester == lastSyncedSemester {
+                semester = newValue
+                lastSyncedSemester = newValue
+            }
         }
         .sheet(isPresented: $showChangelog) { ChangelogView() }
         .sheet(isPresented: $model.showThemeGallery) { ThemeGalleryView() }
@@ -401,7 +419,14 @@ struct SettingsView: View {
         let previousEnd = semester.periods.sorted { $0.index < $1.index }.last?.end ?? "08:00"
         let start = ClockTime.parse(previousEnd) ?? ClockTime(hour: 8, minute: 0)
         let startMinutes = min(start.totalMinutes + 10, 23 * 60)
-        let endMinutes = min(startMinutes + 45, 23 * 60 + 50)
+        // Inherit the previous period's length instead of assuming the
+        // 45-minute mainland default: a 30-minute grid stays 30 minutes.
+        let duration = semester.periods.sorted { $0.index < $1.index }.last.flatMap { last -> Int? in
+            guard let s = ClockTime.parse(last.start), let e = ClockTime.parse(last.end) else { return nil }
+            let d = e.totalMinutes - s.totalMinutes
+            return d > 0 ? d : nil
+        } ?? 45
+        let endMinutes = min(startMinutes + duration, 23 * 60 + 50)
         guard endMinutes > startMinutes else {
             model.banner = "已经排到当天末尾"
             return
@@ -413,6 +438,31 @@ struct SettingsView: View {
                 end: ClockTime(hour: endMinutes / 60, minute: endMinutes % 60).hhmm
             )
         )
+    }
+
+    private func applyPeriodTemplate(minutes: Int, count: Int) {
+        // One-tap period tables, laid out back-to-back from 08:00. Classes
+        // reference periods by index, so re-applying the table a timetable
+        // was built against re-aligns every class to its real clock time.
+        var periods: [PeriodTemplate] = []
+        var cursor = 8 * 60
+        for index in 1...count {
+            let end = cursor + minutes
+            periods.append(PeriodTemplate(
+                index: index,
+                start: ClockTime(hour: cursor / 60, minute: cursor % 60).hhmm,
+                end: ClockTime(hour: end / 60, minute: end % 60).hhmm
+            ))
+            cursor = end
+        }
+        semester.periods = periods
+        let over = model.document.courses.flatMap(\.meetings).filter { $0.endPeriod > count }.count
+        if over > 0 {
+            errorText = "已套用模板（还没保存）。注意：有 \(over) 个上课安排排在第 \(count) 节之后，超出新节次表。"
+        } else {
+            errorText = nil
+            model.banner = "已套用 \(minutes) 分钟 × \(count) 节模板，点保存后生效"
+        }
     }
 
     private func removeLastPeriod() {
