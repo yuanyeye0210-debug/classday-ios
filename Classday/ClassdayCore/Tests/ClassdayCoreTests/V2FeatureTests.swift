@@ -284,7 +284,6 @@ final class SmartImportTests: XCTestCase {
 
     func testDebugDumpImport() {
         let adfCell = "Analog & Digital Filters\nFAD2T01\nWeeks 2–7: Room AM\nWeeks 9–15: Room FA3"
-        let segments = ScheduleTextImporter.weekRoomSegments(in: adfCell)
         let rows: [[String]] = [
             ["Time (时间)", "Monday (周一)", "Tuesday (周二)", "Wednesday (周三)"],
             ["09:00–09:30", "", "", adfCell],
@@ -295,7 +294,7 @@ final class SmartImportTests: XCTestCase {
         高等数学(A210331),陈老师,周一 08:00-09:40 教学楼A301,1-16
         """
         let csvResult = ScheduleTextImporter.parseCSV(csv)
-        XCTFail("DEBUG segments=\(segments) table=\(String(describing: tableResult)) csv=\(csvResult)")
+        XCTFail("DEBUG table=\(String(describing: tableResult)) csv=\(csvResult)")
     }
 
     func testTextLineParsesAllFields() {
