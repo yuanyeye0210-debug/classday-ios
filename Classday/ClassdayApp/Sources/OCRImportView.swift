@@ -150,7 +150,7 @@ struct SmartImportView: View {
 
     static func decode(_ data: Data) -> String {
         if let utf8 = String(data: data, encoding: .utf8) { return utf8 }
-        let gb18030 = String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFEncodings.GB_18030_2000.rawValue)))
+        let gb18030 = String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(kCFStringEncodingGB_18030_2000))
         if let text = String(data: data, encoding: gb18030) { return text }
         return String(data: data, encoding: .utf16) ?? ""
     }
