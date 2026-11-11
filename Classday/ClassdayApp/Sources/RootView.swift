@@ -40,7 +40,13 @@ struct RootView: View {
             ThemeBackground()
         }
         .environment(\.motionTracker, motionTracker)
-        .onAppear { if chrome.tracksMotion { motionTracker.start() } }
+        .onAppear {
+            motionTracker.profile = TiltHapticProfile.make(themeID: chrome.theme.id, layout: chrome.theme.specialLayout)
+            if chrome.tracksMotion { motionTracker.start() }
+        }
+        .onChange(of: chrome.theme.id) { _, _ in
+            motionTracker.profile = TiltHapticProfile.make(themeID: chrome.theme.id, layout: chrome.theme.specialLayout)
+        }
         .onChange(of: chrome.tracksMotion) { _, allowed in
             if allowed { motionTracker.start() } else { motionTracker.stop() }
         }

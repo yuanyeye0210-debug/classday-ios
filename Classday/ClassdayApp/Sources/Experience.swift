@@ -60,7 +60,27 @@ final class MotionTracker {
     // ~34-degree full-scale calibration; gated by a user toggle.
     var hapticsEnabled = true
     private let softTap = UIImpactFeedbackGenerator(style: .soft)
+    private let lightTap = UIImpactFeedbackGenerator(style: .light)
+    private let mediumTap = UIImpactFeedbackGenerator(style: .medium)
+    private let heavyTap = UIImpactFeedbackGenerator(style: .heavy)
     private let rigidTap = UIImpactFeedbackGenerator(style: .rigid)
+    private let selectionTap = UISelectionFeedbackGenerator()
+    private let notifier = UINotificationFeedbackGenerator()
+    /// The active theme's haptic signature; RootView sets it from the
+    /// current theme and re-sets it on every theme change.
+    var profile = TiltHapticProfile.make(themeID: "glass", layout: "glass")
+    /// 0 standard, 1 keen, 2 maximum. Maximum is the factory default:
+    /// finest detents, no settle delay, the loosest dock window.
+    var sensitivity = 2 { didSet { sensitivity = min(2, max(0, sensitivity)) } }
+    private var lastTickTheta: Double = -100
+
+    private var detentStep: Double {
+        max(2.5, profile.detentDegrees * [1.0, 0.6, 0.35][sensitivity])
+    }
+    private var azimuthStep: Double {
+        profile.azimuthDegrees > 0 ? max(15, profile.azimuthDegrees * [1.0, 0.6, 0.35][sensitivity]) : 0
+    }
+    private var tapThrottle: TimeInterval { sensitivity == 2 ? 0.035 : 0.06 }
     private var lastDetent = -1
     private var candidateDetent = -1
     private var candidateSamples = 0
@@ -72,8 +92,10 @@ final class MotionTracker {
         guard !running, manager.isDeviceMotionAvailable else { return }
         running = true
         hapticsEnabled = UserDefaults.standard.object(forKey: "classday.tiltHaptics") as? Bool ?? true
-        softTap.prepare()
-        rigidTap.prepare()
+        sensitivity = UserDefaults.standard.object(forKey: "classday.tiltSensitivity") as? Int ?? 2
+        for g in [softTap, lightTap, mediumTap, heavyTap, rigidTap] { g.prepare() }
+        selectionTap.prepare()
+        notifier.prepare()
         lastDetent = -1
         candidateDetent = -1
         candidateSamples = 0
@@ -114,6 +136,57 @@ final class MotionTracker {
         dockArmed = false
     }
 
+    private func generator(for style: UIImpactFeedbackGenerator.FeedbackStyle) -> UIImpactFeedbackGenerator {
+        switch style {
+        case .soft: return softTap
+        case .light: return lightTap
+        case .medium: return mediumTap
+        case .heavy: return heavyTap
+        case .rigid: return rigidTap
+        @unknown default: return mediumTap
+        }
+    }
+
+    private func fireTick(_ intensity: CGFloat) {
+        if profile.useSelection {
+            selectionTap.selectionChanged()
+            selectionTap.prepare()
+        } else {
+            let g = generator(for: profile.style)
+            g.impactOccurred(intensity: intensity)
+            g.prepare()
+        }
+    }
+
+    private func fireDock() {
+        switch profile.dock {
+        case .impact(let style, let intensity):
+            let g = generator(for: style)
+            g.impactOccurred(intensity: intensity)
+            g.prepare()
+        case .selection:
+            selectionTap.selectionChanged()
+            selectionTap.prepare()
+        case .success:
+            notifier.notificationOccurred(.success)
+            notifier.prepare()
+        }
+    }
+
+    /// Fired by the theme gallery's test button: two detent ticks and a
+    /// dock, so the active theme's signature can be felt on demand
+    /// without tilting the phone around first.
+    func previewHaptics() {
+        fireTick(profile.intensity)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { [weak self] in
+            guard let self else { return }
+            self.fireTick(self.profile.intensity)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.42) { [weak self] in
+            self?.fireDock()
+        }
+    }
+
     private func updateHaptics(now: TimeInterval) {
         guard hapticsEnabled else { return }
         // Tilt angle from upright: the gravity vector is a unit vector,
@@ -122,45 +195,92 @@ final class MotionTracker {
         // Detents every 8 degrees. A new detent must survive two samples
         // before it ticks, so the spring's settle wobble at a boundary
         // does not machine-gun the Taptic Engine.
-        let detent = Int(theta / 8)
+        let step = detentStep
+        let detent = Int(theta / step)
         if detent != candidateDetent {
             candidateDetent = detent
             candidateSamples = 0
         } else {
             candidateSamples += 1
         }
-        if candidateSamples == 1 {
-            if lastDetent >= 0, detent != lastDetent, now - lastTapAt > 0.06 {
-                softTap.impactOccurred(intensity: 0.55)
-                softTap.prepare()
+        // Standard/keen wait one extra sample so the spring's settle does
+        // not double-fire; maximum fires on the crossing sample itself.
+        // All levels share a travel hysteresis (0.4 of a step since the
+        // last tick), which is what actually stops boundary rattle.
+        let stableNeeded = sensitivity == 2 ? 0 : 1
+        if candidateSamples >= stableNeeded, detent != lastDetent, abs(theta - lastTickTheta) >= step * 0.4 {
+            if lastDetent >= 0, now - lastTapAt > tapThrottle {
+                fireTick(profile.intensity)
                 lastTapAt = now
             }
             lastDetent = detent
+            lastTickTheta = theta
         }
         // Azimuth detents every 45 degrees, only once properly tilted,
         // so swinging a steep phone around also has texture.
-        if theta > 15 {
+        if azimuthStep > 0, theta > 15 {
             let phi = atan2(Double(gravity.dx), -(Double(gravity.dy) - 1)) * 180 / .pi
-            let azimuth = Int((phi + 180) / 45)
+            let azimuth = Int((phi + 180) / azimuthStep)
             if azimuth != lastAzimuthDetent {
-                if lastAzimuthDetent >= 0, now - lastTapAt > 0.06 {
-                    softTap.impactOccurred(intensity: 0.35)
-                    softTap.prepare()
+                if lastAzimuthDetent >= 0, now - lastTapAt > tapThrottle {
+                    fireTick(profile.azimuthIntensity)
                     lastTapAt = now
                 }
                 lastAzimuthDetent = azimuth
             }
-            dockArmed = true
         } else if theta < 6 {
             lastAzimuthDetent = -1
         }
+        if theta > (sensitivity == 2 ? 8 : 12) { dockArmed = true }
         // Dock: one firm tap when the phone comes home to upright,
         // latched until it has been properly tilted again.
-        if dockArmed, theta < 2.5 {
-            rigidTap.impactOccurred(intensity: 0.8)
-            rigidTap.prepare()
+        if dockArmed, theta < (sensitivity == 2 ? 4.0 : 2.5) {
+            fireDock()
             dockArmed = false
             lastTapAt = now
+        }
+    }
+}
+
+/// Per-theme tilt haptics: every theme gets its own detent step,
+/// generator voice and dock character, so tilting feels the way the
+/// theme looks. Keyed by theme id.
+struct TiltHapticProfile {
+    var label: String
+    var detentDegrees: Double
+    var style: UIImpactFeedbackGenerator.FeedbackStyle
+    var useSelection: Bool
+    var intensity: CGFloat
+    var azimuthDegrees: Double
+    var azimuthIntensity: CGFloat
+    var dock: DockKind
+
+    enum DockKind {
+        case impact(UIImpactFeedbackGenerator.FeedbackStyle, CGFloat)
+        case selection
+        case success
+    }
+
+    static func make(themeID: String, layout: String) -> TiltHapticProfile {
+        switch themeID {
+        case "neon":
+            return .init(label: "霓虹 · 电流强震", detentDegrees: 6, style: .rigid, useSelection: false, intensity: 1.0, azimuthDegrees: 30, azimuthIntensity: 0.8, dock: .impact(.rigid, 1.0))
+        case "glass":
+            return .init(label: "玻璃 · 水润强震", detentDegrees: 10, style: .medium, useSelection: false, intensity: 1.0, azimuthDegrees: 45, azimuthIntensity: 0.85, dock: .impact(.medium, 1.0))
+        case "hud":
+            return .init(label: "HUD · 仪器强刻度", detentDegrees: 5, style: .rigid, useSelection: false, intensity: 1.0, azimuthDegrees: 45, azimuthIntensity: 0.8, dock: .impact(.heavy, 1.0))
+        case "aurora":
+            return .init(label: "极光 · 饱满漂移", detentDegrees: 12, style: .medium, useSelection: false, intensity: 1.0, azimuthDegrees: 0, azimuthIntensity: 0, dock: .impact(.medium, 1.0))
+        case "mech":
+            return .init(label: "机甲 · 金属重击", detentDegrees: 10, style: .heavy, useSelection: false, intensity: 1.0, azimuthDegrees: 45, azimuthIntensity: 0.9, dock: .impact(.heavy, 1.0))
+        case "orbit":
+            return .init(label: "轨道 · 扣合双震", detentDegrees: 9, style: .heavy, useSelection: false, intensity: 1.0, azimuthDegrees: 36, azimuthIntensity: 0.85, dock: .success)
+        case "cube":
+            return .init(label: "立方 · 玻璃重咔哒", detentDegrees: 8, style: .rigid, useSelection: false, intensity: 1.0, azimuthDegrees: 90, azimuthIntensity: 0.85, dock: .impact(.heavy, 1.0))
+        case "dust":
+            return .init(label: "星尘 · 飘尘强点", detentDegrees: 12, style: .medium, useSelection: false, intensity: 1.0, azimuthDegrees: 60, azimuthIntensity: 0.7, dock: .impact(.medium, 1.0))
+        default:
+            return .init(label: "标准强刻度", detentDegrees: 8, style: .rigid, useSelection: false, intensity: 1.0, azimuthDegrees: 45, azimuthIntensity: 0.8, dock: .impact(.rigid, 1.0))
         }
     }
 }
@@ -636,6 +756,7 @@ struct ThemeGalleryView: View {
     @Environment(\.classdayChrome) private var chrome
     @Environment(\.motionTracker) private var tracker
     @AppStorage("classday.tiltHaptics") private var tiltHaptics = true
+    @AppStorage("classday.tiltSensitivity") private var tiltSensitivity = 2
 
     var body: some View {
         NavigationStack {
@@ -726,22 +847,42 @@ struct ThemeGalleryView: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color(chrome.theme.card.palette).opacity(0.7)))
-        .onAppear { tracker.hapticsEnabled = tiltHaptics; tracker.start() }
+        .onAppear { tracker.hapticsEnabled = tiltHaptics; tracker.sensitivity = tiltSensitivity; tracker.start() }
         .onDisappear { if !chrome.tracksMotion { tracker.stop() } }
     }
 
     private var tiltHapticsToggle: some View {
-        Toggle(isOn: $tiltHaptics) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("倾斜震动反馈")
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(Color(chrome.theme.ink.palette))
-                Text("倾斜每跨 8° 轻震一记，方位每转 45° 也有刻度感，手机摆正时一记稍重的「归位」。省电档不震。")
-                    .font(.caption)
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle(isOn: $tiltHaptics) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("倾斜震动反馈")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(Color(chrome.theme.ink.palette))
+                    Text("每套主题一种震法：倾斜跨刻度震一记，摆正时一记「归位」。省电档不震。")
+                        .font(.caption)
+                        .foregroundStyle(Color(chrome.theme.secondary.palette))
+                }
+            }
+            .tint(Color(chrome.theme.accent.palette))
+            Picker("灵敏度", selection: $tiltSensitivity) {
+                Text("标准").tag(0)
+                Text("灵敏").tag(1)
+                Text("最敏感").tag(2)
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: tiltSensitivity) { _, value in tracker.sensitivity = value }
+            HStack(spacing: 10) {
+                Text("当前震法：\(tracker.profile.label)")
+                    .font(.caption.weight(.bold))
                     .foregroundStyle(Color(chrome.theme.secondary.palette))
+                Spacer()
+                Button("试震一下") { tracker.previewHaptics() }
+                    .font(.caption.weight(.bold))
+                    .buttonStyle(.bordered)
+                    .tint(Color(chrome.theme.accent.palette))
+                    .disabled(!tiltHaptics)
             }
         }
-        .tint(Color(chrome.theme.accent.palette))
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color(chrome.theme.card.palette).opacity(0.7)))
