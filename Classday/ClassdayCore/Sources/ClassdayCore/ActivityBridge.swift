@@ -60,6 +60,11 @@ public enum NextClassSnapshot {
             calendar: calendar,
             context: document.scheduleContext
         ) else { return nil }
+        // Rest-day guard: the Live Activity is a countdown the user watches
+        // all day, so only today's remaining classes qualify. Counting down
+        // to a class tomorrow (or later) keeps the Dynamic Island lit for
+        // 24h+ and reads as a stuck timer on a day off.
+        guard calendar.isDate(next.start, inSameDayAs: now) else { return nil }
         return Value(
             courseID: next.courseID.uuidString,
             title: next.name,
