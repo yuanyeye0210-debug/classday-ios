@@ -242,7 +242,7 @@ func testGridParsesTimetableScreenshotLayout() {
 final class ChangelogStructureTests: XCTestCase {
     func testChangelogIsNewestFirstAndComplete() {
         let versions = AppChangelog.entries.map(\.version)
-        XCTAssertEqual(versions.first, "2.1.2")
+        XCTAssertEqual(versions.first, "2.1.3")
         XCTAssertEqual(Set(versions).count, versions.count)
         let parsed = versions.map { $0.split(separator: ".").compactMap { Int($0) } }
         for index in 1..<parsed.count {
