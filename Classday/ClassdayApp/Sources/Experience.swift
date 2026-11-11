@@ -44,6 +44,7 @@ final class MotionTracker {
     /// filtered at 30 Hz. Stays (0, 1) — straight down — when the phone is
     /// upright, motion is unavailable (simulator), or tracking is stopped.
     var gravity = CGVector(dx: 0, dy: 1)
+    private var velocity = CGVector(dx: 0, dy: 0)
     private let manager = CMMotionManager()
     private var running = false
 
@@ -52,12 +53,22 @@ final class MotionTracker {
         running = true
         manager.deviceMotionUpdateInterval = 1.0 / 30.0
         manager.startDeviceMotionUpdates(to: .main) { [weak self] motion, _ in
-            guard let self, let gravity = motion?.gravity else { return }
+            guard let self, let sample = motion?.gravity else { return }
             // Device frame (x right, y up) -> screen frame (x right, y down).
-            let target = CGVector(dx: -gravity.x, dy: -gravity.y)
+            let target = CGVector(dx: -sample.x, dy: -sample.y)
+            // Spring follow (Wave-style) instead of a fixed low-pass blend:
+            // the value chases the raw gravity with stiffness and damping,
+            // so a tilt lands with a trace of inertia and a soft settle.
+            let dt: CGFloat = 1.0 / 30.0
+            let stiffness: CGFloat = 165
+            let decay = CGFloat(exp(-16.0 * Double(dt)))
+            self.velocity = CGVector(
+                dx: (self.velocity.dx + (target.dx - self.gravity.dx) * stiffness * dt) * decay,
+                dy: (self.velocity.dy + (target.dy - self.gravity.dy) * stiffness * dt) * decay
+            )
             self.gravity = CGVector(
-                dx: self.gravity.dx * 0.72 + target.dx * 0.28,
-                dy: self.gravity.dy * 0.72 + target.dy * 0.28
+                dx: self.gravity.dx + self.velocity.dx * dt,
+                dy: self.gravity.dy + self.velocity.dy * dt
             )
         }
     }
@@ -67,6 +78,7 @@ final class MotionTracker {
         running = false
         manager.stopDeviceMotionUpdates()
         gravity = CGVector(dx: 0, dy: 1)
+        velocity = CGVector(dx: 0, dy: 0)
     }
 }
 
