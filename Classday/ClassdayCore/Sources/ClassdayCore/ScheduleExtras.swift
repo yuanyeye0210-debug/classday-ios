@@ -1059,6 +1059,9 @@ public enum AppChangelog {
     }
 
     public static let entries: [Entry] = [
+        Entry(version: "2.1.1", title: "图片网格识别", changes: [
+            "课表截图按版面识别：网格课表能对齐星期列与时间行，整张表一次读完",
+        ]),
         Entry(version: "2.1.0", title: "智能导入课表", changes: [
             "新增智能导入：课表图片、CSV 文件、粘贴文本都能自动认出课程名、上课时间、教室和老师",
             "导入前逐门确认：每个上课安排的星期、时间、教室、单双周都能单独改，还能自定义上课周",
