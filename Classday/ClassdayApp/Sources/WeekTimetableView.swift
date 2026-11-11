@@ -43,7 +43,6 @@ struct CourseBlockView: View {
 
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var eventToEdit: PersonalEvent?
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
@@ -316,6 +315,7 @@ struct WeekJournalView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var eventToEdit: PersonalEvent?
 
     private var motion: Animation? {
         reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.86)

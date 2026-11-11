@@ -555,12 +555,7 @@ struct ChangelogView: View {
 }
 
 private struct GitHubRelease: Decodable {
-    struct Asset: Decodable {
-        let name: String
-        let browser_download_url: URL
-    }
     let tag_name: String
-    let assets: [Asset]
 }
 
 extension SettingsView {
@@ -580,7 +575,10 @@ extension SettingsView {
             let current = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
             if Self.version(latest, isNewerThan: current) {
                 updateNote = "新版 \(latest)"
-                updateURL = release.assets.first { $0.name.hasSuffix(".ipa") }?.browser_download_url
+                // Release assets can't be attached through the API token
+                // channel (uploads host), so the IPAs live in the public
+                // classday-releases archive repo under predictable names.
+                updateURL = URL(string: "https://raw.githubusercontent.com/yuanyeye0210-debug/classday-releases/main/Classday-v\(latest).ipa")
             } else {
                 updateNote = "已是最新"
             }
