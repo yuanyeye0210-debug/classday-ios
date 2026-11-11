@@ -282,6 +282,22 @@ final class SmartImportTests: XCTestCase {
         XCTAssertEqual(result?.drafts.first?.meetings.first?.location, "教学楼A301")
     }
 
+    func testDebugDumpImport() {
+        let adfCell = "Analog & Digital Filters\nFAD2T01\nWeeks 2–7: Room AM\nWeeks 9–15: Room FA3"
+        let segments = ScheduleTextImporter.weekRoomSegments(in: adfCell)
+        let rows: [[String]] = [
+            ["Time (时间)", "Monday (周一)", "Tuesday (周二)", "Wednesday (周三)"],
+            ["09:00–09:30", "", "", adfCell],
+        ]
+        let tableResult = ScheduleTextImporter.parseRows(rows)
+        let csv = """
+        课程名称(代码),授课教师,上课时间,周次
+        高等数学(A210331),陈老师,周一 08:00-09:40 教学楼A301,1-16
+        """
+        let csvResult = ScheduleTextImporter.parseCSV(csv)
+        XCTFail("DEBUG segments=\(segments) table=\(String(describing: tableResult)) csv=\(csvResult)")
+    }
+
     func testTextLineParsesAllFields() {
         let result = ScheduleTextImporter.parseText("高等数学 周一 08:00-09:40 教学楼A301 陈老师 1-16周")
         XCTAssertEqual(result.drafts.count, 1)
