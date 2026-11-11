@@ -202,6 +202,35 @@ final class SmartImportTests: XCTestCase {
         XCTAssertTrue(result.drafts.first?.issues.contains("教室没认出") ?? false)
     }
 
+func testGridParsesTimetableScreenshotLayout() {
+        func block(_ text: String, _ x: Double, _ y: Double) -> OCRTextBlock {
+            OCRTextBlock(text: text, centerX: x, centerY: y, height: 0.02)
+        }
+        let blocks = [
+            block("周一", 0.30, 0.90), block("周三", 0.55, 0.90), block("周五", 0.80, 0.90),
+            block("08:00-09:40", 0.08, 0.75),
+            block("高等数学 教学楼A301", 0.30, 0.75),
+            block("大学英语 教学楼B205", 0.55, 0.75),
+            block("10:10-11:50", 0.08, 0.55),
+            block("程序设计 实验楼机房3", 0.80, 0.55),
+        ]
+        let result = ScheduleTextImporter.parseGrid(blocks)
+        XCTAssertEqual(result?.drafts.count, 3)
+        let math = result?.drafts.first { $0.name == "高等数学" }
+        XCTAssertEqual(math?.meetings.first?.weekday, 1)
+        XCTAssertEqual(math?.meetings.first?.startMinutes, 480)
+        XCTAssertEqual(math?.meetings.first?.endMinutes, 580)
+        XCTAssertEqual(math?.meetings.first?.location, "教学楼A301")
+        let cs = result?.drafts.first { $0.name == "程序设计" }
+        XCTAssertEqual(cs?.meetings.first?.weekday, 5)
+        XCTAssertEqual(cs?.meetings.first?.startMinutes, 610)
+    }
+
+    func testGridReturnsNilForNonGridText() {
+        let blocks = [OCRTextBlock(text: "高等数学", centerX: 0.5, centerY: 0.5, height: 0.02)]
+        XCTAssertNil(ScheduleTextImporter.parseGrid(blocks))
+    }
+
     func testHeaderRowIsSkippedNotUnparsed() {
         let result = ScheduleTextImporter.parseText("节次 周一 周二 周三 周四 周五")
         XCTAssertTrue(result.drafts.isEmpty)

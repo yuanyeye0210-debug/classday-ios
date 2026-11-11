@@ -168,7 +168,24 @@ struct SmartImportView: View {
         request.recognitionLanguages = ["zh-Hans", "en-US"]
         let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
         try? handler.perform([request])
-        let observations = (request.results ?? []).sorted {
+        let results = request.results ?? []
+        // Grid first: timetable screenshots are tables — read them by layout.
+        let blocks = results.compactMap { observation -> OCRTextBlock? in
+            guard let text = observation.topCandidates(1).first?.string else { return nil }
+            return OCRTextBlock(
+                text: text,
+                centerX: Double(observation.boundingBox.midX),
+                centerY: Double(observation.boundingBox.midY),
+                height: Double(observation.boundingBox.height))
+        }
+        if let grid = ScheduleTextImporter.parseGrid(blocks) {
+            drafts = grid.drafts
+            unparsed = grid.unparsed
+            excluded = []
+            sourceName = "课表图片（网格识别）"
+            return
+        }
+        let observations = results.sorted {
             abs($0.boundingBox.midY - $1.boundingBox.midY) > 0.012
                 ? $0.boundingBox.midY > $1.boundingBox.midY
                 : $0.boundingBox.minX < $1.boundingBox.minX

@@ -1077,3 +1077,142 @@ public enum AppChangelog {
         ]),
     ]
 }
+
+// MARK: - OCR grid mode (timetable screenshots laid out as a table)
+//
+// Input blocks carry Vision-style normalized coordinates (origin at the
+// bottom-left, y grows upward). The parser looks for a weekday header row,
+// clusters the remaining blocks into rows and columns, and reads each cell
+// as one meeting. It returns nil when the image does not look like a grid,
+// so callers can fall back to line mode.
+
+public struct OCRTextBlock: Equatable, Sendable {
+    public var text: String
+    public var centerX: Double
+    public var centerY: Double
+    public var height: Double
+
+    public init(text: String, centerX: Double, centerY: Double, height: Double) {
+        self.text = text
+        self.centerX = centerX
+        self.centerY = centerY
+        self.height = height
+    }
+}
+
+public extension ScheduleTextImporter {
+    static func parseGrid(_ blocks: [OCRTextBlock]) -> (drafts: [ImportedCourseDraft], unparsed: [String])? {
+        // 1. Weekday header blocks define the columns.
+        var headerBlocks: [(weekday: Int, block: OCRTextBlock)] = []
+        for block in blocks {
+            let trimmed = block.text.trimmingCharacters(in: .whitespaces)
+            guard trimmed.count <= 6, let weekday = weekdayNumber(in: trimmed) else { continue }
+            headerBlocks.append((weekday, block))
+        }
+        headerBlocks.sort { $0.block.centerX < $1.block.centerX }
+        var columns: [(weekday: Int, centerX: Double)] = []
+        for header in headerBlocks {
+            if let last = columns.last, abs(last.centerX - header.block.centerX) < 0.05 { continue }
+            columns.append((header.weekday, header.block.centerX))
+        }
+        guard columns.count >= 3, let headerY = headerBlocks.map({ $0.block.centerY }).max() else { return nil }
+        let columnWidth = columns.count > 1
+            ? zip(columns, columns.dropFirst()).map { $1.centerX - $0.centerX }.reduce(0, +) / Double(columns.count - 1)
+            : 0.14
+
+        // 2. Cluster body blocks (below the header) into rows by centerY.
+        let medianHeight = blocks.map(\.height).sorted().dropFirst(blocks.count / 2).first ?? 0.02
+        let tolerance = max(0.012, medianHeight * 0.9)
+        let body = blocks.filter { $0.centerY < headerY - tolerance }
+            .sorted { $0.centerY > $1.centerY }
+        var rows: [[OCRTextBlock]] = []
+        for block in body {
+            if let last = rows.last, let anchor = last.first, abs(anchor.centerY - block.centerY) <= tolerance {
+                rows[rows.count - 1].append(block)
+            } else {
+                rows.append([block])
+            }
+        }
+
+        // 3. Each row: time info may sit in the left gutter or inside a cell.
+        var rawMeetings: [(course: ImportedCourseDraft, meeting: ImportedMeetingDraft)] = []
+        var unparsed: [String] = []
+        var rowIndex = 0
+        for row in rows {
+            rowIndex += 1
+            let gutter = row.filter { $0.centerX < (columns.first?.centerX ?? 0) - columnWidth * 0.45 }
+            var rowStart: Int?, rowEnd: Int?, rowStartPeriod: Int?, rowEndPeriod: Int?
+            for block in gutter {
+                if let range = timeRange(in: block.text) { rowStart = range.0; rowEnd = range.1 }
+                let periods = periodRange(in: block.text)
+                if periods.0 != nil { rowStartPeriod = periods.0; rowEndPeriod = periods.1 }
+            }
+            var cells: [Int: [OCRTextBlock]] = [:]
+            for block in row where !gutter.contains(block) {
+                var best: (index: Int, distance: Double)?
+                for (index, column) in columns.enumerated() {
+                    let distance = abs(column.centerX - block.centerX)
+                    if distance < columnWidth * 0.62, distance < (best?.distance ?? .greatestFiniteMagnitude) {
+                        best = (index, distance)
+                    }
+                }
+                if let best { cells[best.index, default: []].append(block) }
+            }
+            for (columnIndex, cellBlocks) in cells {
+                let cellText = cellBlocks
+                    .sorted { abs($0.centerY - $1.centerY) > 0.008 ? $0.centerY > $1.centerY : $0.centerX < $1.centerX }
+                    .map(\.text).joined(separator: " ")
+                guard let parsed = parseCell(cellText, weekday: columns[columnIndex].weekday,
+                                              rowStart: rowStart, rowEnd: rowEnd,
+                                              rowStartPeriod: rowStartPeriod, rowEndPeriod: rowEndPeriod,
+                                              rowIndex: rowIndex) else {
+                    unparsed.append(cellText)
+                    continue
+                }
+                rawMeetings.append(parsed)
+            }
+        }
+        guard !rawMeetings.isEmpty else { return nil }
+        return (group(rawMeetings), unparsed)
+    }
+
+    private static func parseCell(_ cellText: String, weekday: Int,
+                                  rowStart: Int?, rowEnd: Int?,
+                                  rowStartPeriod: Int?, rowEndPeriod: Int?,
+                                  rowIndex: Int) -> (course: ImportedCourseDraft, meeting: ImportedMeetingDraft)? {
+        let trimmed = cellText.trimmingCharacters(in: .whitespaces)
+        guard trimmed.count >= 2 else { return nil }
+        var meeting = ImportedMeetingDraft(weekday: weekday)
+        if let range = timeRange(in: trimmed) {
+            meeting.startMinutes = range.0
+            meeting.endMinutes = range.1
+        } else {
+            meeting.startMinutes = rowStart
+            meeting.endMinutes = rowEnd
+            let periods = periodRange(in: trimmed)
+            meeting.startPeriod = periods.0 ?? rowStartPeriod
+            meeting.endPeriod = periods.1 ?? rowEndPeriod
+        }
+        let weeks = weekRange(in: trimmed)
+        meeting.parity = weeks.2
+        if let location = locationToken(in: trimmed) { meeting.location = location }
+        var teacher = ""
+        if let match = firstMatch(#"(?:教师|老师|任课教师)[:：]?\s*([一-龥]{2,4})"#, in: trimmed) {
+            teacher = match.groups[0]
+        }
+        var name = stripExtracted(trimmed)
+        if let location = Optional(meeting.location), !location.isEmpty {
+            name = name.replacingOccurrences(of: location, with: " ")
+        }
+        name = name.trimmingCharacters(in: .whitespaces.union(.punctuationCharacters))
+        guard !name.isEmpty else { return nil }
+        var issues: [String] = []
+        if meeting.startMinutes == nil && meeting.startPeriod == nil { issues.append("时间没认出") }
+        if meeting.location.isEmpty { issues.append("教室没认出") }
+        let course = ImportedCourseDraft(
+            name: name, teacher: teacher, location: meeting.location,
+            firstWeek: weeks.0, lastWeek: weeks.1,
+            meetings: [], issues: issues, sourceLine: trimmed)
+        return (course, meeting)
+    }
+}
