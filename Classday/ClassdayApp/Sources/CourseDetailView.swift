@@ -139,7 +139,15 @@ struct CourseDetailView: View {
                 Text("成绩")
                     .font(.system(size: 12.5, weight: .bold, design: .rounded))
                     .foregroundStyle(Theme.secondary)
-                if let grade = course.grade {
+                if let scheme = course.gradeScheme, let final = scheme.finalGrade, let normalized = scheme.normalizedFinal {
+                    Text("\(Self.numberText(final)) / \(Self.numberText(scheme.scale)) 分 · 绩点 \(String(format: "%.1f", AppModel.gradePoint(for: normalized))) · \(Self.creditsText(course.credits))")
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .foregroundStyle(Theme.ink)
+                } else if course.gradeScheme != nil {
+                    Text("已设计分规则 · 还差分项成绩 · \(Self.creditsText(course.credits))")
+                        .font(.system(size: 14, design: .rounded))
+                        .foregroundStyle(Theme.secondary)
+                } else if let grade = course.grade {
                     Text("\(Self.numberText(grade)) 分 · 绩点 \(String(format: "%.1f", AppModel.gradePoint(for: grade))) · \(Self.creditsText(course.credits))")
                         .font(.system(size: 15, weight: .bold, design: .rounded))
                         .foregroundStyle(Theme.ink)
@@ -530,30 +538,17 @@ struct GradeEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var gradeText: String = ""
     @State private var loaded = false
+    @State private var useScheme = false
+    @State private var scheme = GradeScheme()
 
     var body: some View {
         let course = model.course(courseID)
         NavigationStack {
             Form {
-                Section("成绩（0–100）") {
-                    TextField("如 92", text: $gradeText)
-                        .keyboardType(.decimalPad)
-                    if let value = parsed, let course {
-                        LabeledContent("绩点") {
-                            Text(String(format: "%.1f", AppModel.gradePoint(for: value)))
-                        }
-                        LabeledContent("学分") {
-                            Text(CourseDetailView.creditsText(course.credits))
-                        }
-                    }
-                }
-                if course?.grade != nil {
-                    Section {
-                        Button("清除成绩", role: .destructive) {
-                            model.setCourseGrade(courseID, grade: nil)
-                            dismiss()
-                        }
-                    }
+                if useScheme {
+                    schemeSections
+                } else {
+                    simpleSections(course: course)
                 }
             }
             .navigationTitle(course?.name ?? "成绩")
@@ -563,24 +558,245 @@ struct GradeEditorView: View {
                     Button("取消") { dismiss() }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("保存") {
-                        if let value = parsed {
-                            model.setCourseGrade(courseID, grade: value)
-                        }
-                        dismiss()
-                    }
-                    .disabled(parsed == nil)
+                    Button("保存") { save(course: course) }
+                        .disabled(!useScheme && parsed == nil)
                 }
             }
             .onAppear {
                 if !loaded {
                     loaded = true
-                    if let grade = course?.grade {
-                        gradeText = CourseDetailView.numberText(grade)
+                    if let course {
+                        if let existing = course.gradeScheme {
+                            scheme = existing
+                            useScheme = true
+                        }
+                        if let grade = course.grade {
+                            gradeText = CourseDetailView.numberText(grade)
+                        }
                     }
                 }
             }
         }
+    }
+
+    // MARK: 直接填总分（无规则）
+
+    @ViewBuilder
+    private func simpleSections(course: Course?) -> some View {
+        Section("成绩（0–100）") {
+            TextField("如 92", text: $gradeText)
+                .keyboardType(.decimalPad)
+            if let value = parsed, let course {
+                LabeledContent("绩点") {
+                    Text(String(format: "%.1f", AppModel.gradePoint(for: value)))
+                }
+                LabeledContent("学分") {
+                    Text(CourseDetailView.creditsText(course.credits))
+                }
+            }
+        }
+        Section {
+            Button("设置记分规则") { startScheme() }
+        } footer: {
+            Text("这门课有自己的算法（分项按权重算、两次考试取高之类）时，在这里设规则；之后只录分项成绩，总成绩自动算。")
+        }
+        if course?.grade != nil {
+            Section {
+                Button("清除成绩", role: .destructive) {
+                    model.setCourseGrade(courseID, grade: nil)
+                    dismiss()
+                }
+            }
+        }
+    }
+
+    // MARK: 记分规则
+
+    private var schemeSections: some View {
+        Group {
+            Section("满分标准") {
+                Picker("满分", selection: $scheme.scale) {
+                    Text("20 分制").tag(20.0)
+                    Text("100 分制").tag(100.0)
+                }
+                .pickerStyle(.segmented)
+            }
+            Section("分项成绩") {
+                ForEach(Array(scheme.components.enumerated()), id: \.element.id) { index, component in
+                    HStack(spacing: 10) {
+                        TextField("分项名", text: nameBinding(index))
+                        TextField("成绩", value: scoreBinding(component.id), format: .number.precision(.fractionLength(0...2)))
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 72)
+                        Text("/ \(CourseDetailView.numberText(scheme.scale))")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        Button(role: .destructive) { deleteComponent(component.id) } label: {
+                            Image(systemName: "minus.circle.fill")
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.red)
+                    }
+                }
+                Button("添加分项") { addComponent() }
+            }
+            ForEach(Array(scheme.branches.enumerated()), id: \.offset) { branchIndex, branch in
+                Section {
+                    ForEach(Array(branch.enumerated()), id: \.offset) { termIndex, term in
+                        HStack(spacing: 10) {
+                            Text(componentName(term.componentID))
+                            Spacer()
+                            Text("×")
+                                .foregroundStyle(.secondary)
+                            TextField("权重", value: weightBinding(branch: branchIndex, term: termIndex), format: .number.precision(.fractionLength(0...2)))
+                                .keyboardType(.decimalPad)
+                                .multilineTextAlignment(.trailing)
+                                .frame(width: 60)
+                            Button(role: .destructive) { scheme.branches[branchIndex].remove(at: termIndex) } label: {
+                                Image(systemName: "minus.circle.fill")
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.red)
+                        }
+                    }
+                    Menu("添加分项到本算法") {
+                        ForEach(scheme.components.filter { comp in !branch.contains { $0.componentID == comp.id } }) { comp in
+                            Button(comp.name) { scheme.branches[branchIndex].append(GradeTerm(componentID: comp.id, weight: 0)) }
+                        }
+                    }
+                    Button("删除这条算法", role: .destructive) { scheme.branches.remove(at: branchIndex) }
+                } header: {
+                    HStack {
+                        Text("候选算法 \(branchIndex + 1)")
+                        Spacer()
+                        if scheme.bestBranchIndex == branchIndex {
+                            Text("取这条")
+                                .font(.caption.weight(.bold))
+                        }
+                        if let value = scheme.value(of: branch) {
+                            Text(CourseDetailView.numberText(value))
+                                .fontWeight(.bold)
+                        }
+                    }
+                } footer: {
+                    let sum = branch.reduce(0) { $0 + $1.weight }
+                    Text("权重合计 \(CourseDetailView.numberText(sum))\(abs(sum - 1) > 0.001 ? "（不等于 1，请确认这门课的算法）" : "")")
+                }
+            }
+            Section {
+                Button("添加候选算法") { addBranch() }
+            } footer: {
+                Text("多条算法时总成绩取最高的一条——比如第一次考试和补考哪条高取哪条。")
+            }
+            Section("总成绩") {
+                if let final = scheme.finalGrade, let normalized = scheme.normalizedFinal {
+                    LabeledContent("总成绩") {
+                        Text("\(CourseDetailView.numberText(final)) / \(CourseDetailView.numberText(scheme.scale))")
+                            .fontWeight(.bold)
+                    }
+                    LabeledContent("折合百分制") {
+                        Text(CourseDetailView.numberText(normalized))
+                    }
+                    LabeledContent("绩点") {
+                        Text(String(format: "%.1f", AppModel.gradePoint(for: normalized)))
+                    }
+                } else {
+                    Text("把任意一条候选算法里的分项都填上，这里就会算出总成绩。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Section {
+                Button("移除记分规则", role: .destructive) {
+                    if let normalized = scheme.normalizedFinal {
+                        gradeText = CourseDetailView.numberText(normalized)
+                    }
+                    useScheme = false
+                }
+            } footer: {
+                Text("移除后回到直接填总分；已算出的总成绩会保留在直接录入的输入框里。")
+            }
+        }
+    }
+
+    // MARK: 草稿操作
+
+    private func startScheme() {
+        if scheme.components.isEmpty {
+            let exam = GradeComponent(name: "期末考试")
+            scheme = GradeScheme(scale: 100, components: [exam], scores: [:], branches: [[GradeTerm(componentID: exam.id, weight: 1.0)]])
+        }
+        useScheme = true
+    }
+
+    private func addComponent() {
+        scheme.components.append(GradeComponent(name: "分项\(scheme.components.count + 1)"))
+    }
+
+    private func deleteComponent(_ id: String) {
+        scheme.components.removeAll { $0.id == id }
+        scheme.scores[id] = nil
+        for index in scheme.branches.indices {
+            scheme.branches[index].removeAll { $0.componentID == id }
+        }
+    }
+
+    private func addBranch() {
+        if let first = scheme.components.first {
+            scheme.branches.append([GradeTerm(componentID: first.id, weight: 1.0)])
+        } else {
+            scheme.branches.append([])
+        }
+    }
+
+    private func componentName(_ id: String) -> String {
+        scheme.components.first { $0.id == id }?.name ?? "（已删除的分项）"
+    }
+
+    private func nameBinding(_ index: Int) -> Binding<String> {
+        Binding(
+            get: { scheme.components[index].name },
+            set: { scheme.components[index].name = $0 }
+        )
+    }
+
+    private func scoreBinding(_ id: String) -> Binding<Double?> {
+        Binding(
+            get: { scheme.scores[id] },
+            set: { scheme.scores[id] = $0 }
+        )
+    }
+
+    private func weightBinding(branch: Int, term: Int) -> Binding<Double> {
+        Binding(
+            get: { scheme.branches[branch][term].weight },
+            set: { scheme.branches[branch][term].weight = $0 }
+        )
+    }
+
+    private func save(course: Course?) {
+        if useScheme {
+            var cleaned = scheme
+            cleaned.components = cleaned.components.filter { !$0.name.trimmingCharacters(in: .whitespaces).isEmpty }
+            let validIDs = Set(cleaned.components.map(\.id))
+            cleaned.scores = cleaned.scores.filter { validIDs.contains($0.key) }
+            for key in Array(cleaned.scores.keys) {
+                cleaned.scores[key] = min(max(cleaned.scores[key] ?? 0, 0), cleaned.scale)
+            }
+            for index in cleaned.branches.indices {
+                cleaned.branches[index] = cleaned.branches[index].filter { validIDs.contains($0.componentID) }
+            }
+            model.setCourseGradeScheme(courseID, scheme: cleaned)
+        } else {
+            if course?.gradeScheme != nil {
+                model.setCourseGradeScheme(courseID, scheme: nil)
+            }
+            if let value = parsed {
+                model.setCourseGrade(courseID, grade: value)
+            }
+        }
+        dismiss()
     }
 
     private var parsed: Double? {

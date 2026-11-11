@@ -82,7 +82,8 @@ public enum StoreCodec {
                 },
                 reminderLeadMinutes: course.reminderLeadMinutes,
                 credits: course.credits,
-                grade: course.grade
+                grade: course.grade,
+                gradeScheme: course.gradeScheme
             )
         }
         return StoreDocument(

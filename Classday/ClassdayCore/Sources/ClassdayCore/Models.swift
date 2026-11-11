@@ -149,6 +149,90 @@ public struct Meeting: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var periodCount: Int { endPeriod - startPeriod + 1 }
 }
 
+/// 记分规则里的一个分项（如 P、TEST60、EX1）：id 是稳定键，改名不影响引用。
+public struct GradeComponent: Codable, Equatable, Hashable, Sendable, Identifiable {
+    public var id: String
+    public var name: String
+
+    public init(id: String = UUID().uuidString, name: String) {
+        self.id = id
+        self.name = name
+    }
+}
+
+/// 候选算法里的一项：某个分项 × 权重。
+public struct GradeTerm: Codable, Equatable, Hashable, Sendable {
+    public var componentID: String
+    public var weight: Double
+
+    public init(componentID: String, weight: Double) {
+        self.componentID = componentID
+        self.weight = weight
+    }
+}
+
+/// 每门课自己的记分规则：总成绩 = 各候选算法（分项加权和）里最高的一条。
+/// 例（优化与算法，0–20 分制）：G = 0.25P + max(0.25·TEST60 + 0.50·EX1, 0.75·EX1, 0.75·EX2)。
+public struct GradeScheme: Codable, Equatable, Hashable, Sendable {
+    public var scale: Double
+    public var components: [GradeComponent]
+    public var scores: [String: Double]
+    public var branches: [[GradeTerm]]
+
+    public init(scale: Double = 100, components: [GradeComponent] = [], scores: [String: Double] = [:], branches: [[GradeTerm]] = []) {
+        self.scale = scale
+        self.components = components
+        self.scores = scores
+        self.branches = branches
+    }
+
+    private enum CodingKeys: String, CodingKey { case scale, components, scores, branches }
+
+    /// 手写解码：字段缺失给默认值，规则结构以后加字段也不炸旧存档。
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            scale: try container.decodeIfPresent(Double.self, forKey: .scale) ?? 100,
+            components: try container.decodeIfPresent([GradeComponent].self, forKey: .components) ?? [],
+            scores: try container.decodeIfPresent([String: Double].self, forKey: .scores) ?? [:],
+            branches: try container.decodeIfPresent([[GradeTerm]].self, forKey: .branches) ?? []
+        )
+    }
+
+    /// 一条候选算法的值；任一分项还没录分（或分项已被删）返回 nil，不参与取最高。
+    public func value(of branch: [GradeTerm]) -> Double? {
+        guard !branch.isEmpty else { return nil }
+        var total = 0.0
+        for term in branch {
+            guard let score = scores[term.componentID] else { return nil }
+            total += term.weight * score
+        }
+        return total
+    }
+
+    public var bestBranchIndex: Int? {
+        var best: Int?
+        var bestValue = -Double.infinity
+        for (index, branch) in branches.enumerated() {
+            guard let value = value(of: branch) else { continue }
+            if value > bestValue { bestValue = value; best = index }
+        }
+        return best
+    }
+
+    /// 总成绩（规则自己的分制）。
+    public var finalGrade: Double? {
+        guard let index = bestBranchIndex else { return nil }
+        return value(of: branches[index])
+    }
+
+    /// 折合百分制：写进 Course.grade、进 GPA 的口径。
+    public var normalizedFinal: Double? {
+        guard let final = finalGrade, scale > 0 else { return nil }
+        return final / scale * 100
+    }
+}
+
 public struct Course: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var id: UUID
     public var name: String
@@ -163,6 +247,7 @@ public struct Course: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var reminderLeadMinutes: Int?
     public var credits: Double
     public var grade: Double?
+    public var gradeScheme: GradeScheme?
 
     public init(
         id: UUID,
@@ -177,7 +262,8 @@ public struct Course: Codable, Equatable, Hashable, Identifiable, Sendable {
         meetings: [Meeting],
         reminderLeadMinutes: Int? = nil,
         credits: Double = 0,
-        grade: Double? = nil
+        grade: Double? = nil,
+        gradeScheme: GradeScheme? = nil
     ) {
         self.id = id
         self.name = name
@@ -192,12 +278,13 @@ public struct Course: Codable, Equatable, Hashable, Identifiable, Sendable {
         self.reminderLeadMinutes = reminderLeadMinutes
         self.credits = credits
         self.grade = grade
+        self.gradeScheme = gradeScheme
     }
 }
 
 extension Course {
     private enum CodingKeys: String, CodingKey {
-        case id, name, teacher, location, department, note, colorID, kind, weeks, meetings, reminderLeadMinutes, credits, grade
+        case id, name, teacher, location, department, note, colorID, kind, weeks, meetings, reminderLeadMinutes, credits, grade, gradeScheme
     }
 
     /// 手写解码：credits / grade 是后加字段，旧数据没有这两个键时给默认值，不能让老课表解码失败。
@@ -216,7 +303,8 @@ extension Course {
             meetings: try container.decode([Meeting].self, forKey: .meetings),
             reminderLeadMinutes: try container.decodeIfPresent(Int.self, forKey: .reminderLeadMinutes),
             credits: try container.decodeIfPresent(Double.self, forKey: .credits) ?? 0,
-            grade: try container.decodeIfPresent(Double.self, forKey: .grade)
+            grade: try container.decodeIfPresent(Double.self, forKey: .grade),
+            gradeScheme: try container.decodeIfPresent(GradeScheme.self, forKey: .gradeScheme)
         )
     }
 }

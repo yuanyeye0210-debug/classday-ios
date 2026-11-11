@@ -688,6 +688,16 @@ final class AppModel {
         persist(markUserEdited: true)
     }
 
+    /// 设置/移除一门课的记分规则；有规则时总成绩由规则算出，折合百分制写回 grade 进 GPA。
+    func setCourseGradeScheme(_ courseID: UUID, scheme: GradeScheme?) {
+        guard let index = document.courses.firstIndex(where: { $0.id == courseID }) else { return }
+        document.courses[index].gradeScheme = scheme
+        if let scheme {
+            document.courses[index].grade = scheme.normalizedFinal
+        }
+        persist(markUserEdited: true)
+    }
+
     var gradedCourses: [Course] {
         document.courses.filter { $0.grade != nil }
     }

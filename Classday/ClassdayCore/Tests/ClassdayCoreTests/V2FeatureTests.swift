@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 import ClassdayCore
 
@@ -351,7 +352,7 @@ func testGridParsesTimetableScreenshotLayout() {
 final class ChangelogStructureTests: XCTestCase {
     func testChangelogIsNewestFirstAndComplete() {
         let versions = AppChangelog.entries.map(\.version)
-        XCTAssertEqual(versions.first, "2.3.9")
+        XCTAssertEqual(versions.first, "2.4.0")
         XCTAssertEqual(Set(versions).count, versions.count)
         let parsed = versions.map { $0.split(separator: ".").compactMap { Int($0) } }
         for index in 1..<parsed.count {
@@ -368,5 +369,52 @@ final class ChangelogStructureTests: XCTestCase {
             XCTAssertFalse(entry.changes.isEmpty)
             XCTAssertTrue(entry.changes.allSatisfy { !$0.isEmpty })
         }
+    }
+
+    /// 记分规则：优化与算法官方公式 G = 0.25P + max(0.25·TEST60 + 0.50·EX1, 0.75·EX1, 0.75·EX2)，20 分制。
+    func testGradeSchemePicksBestBranchOA() {
+        var scheme = GradeScheme(
+            scale: 20,
+            components: [
+                GradeComponent(id: "P", name: "P"),
+                GradeComponent(id: "TEST60", name: "TEST60"),
+                GradeComponent(id: "EX1", name: "EX1"),
+                GradeComponent(id: "EX2", name: "EX2"),
+            ],
+            scores: ["P": 16, "TEST60": 14, "EX1": 15],
+            branches: [
+                [GradeTerm(componentID: "P", weight: 0.25), GradeTerm(componentID: "TEST60", weight: 0.25), GradeTerm(componentID: "EX1", weight: 0.5)],
+                [GradeTerm(componentID: "P", weight: 0.25), GradeTerm(componentID: "EX1", weight: 0.75)],
+                [GradeTerm(componentID: "P", weight: 0.25), GradeTerm(componentID: "EX2", weight: 0.75)],
+            ]
+        )
+        // EX2 还没考：第三条不完整不参与；第二条 4 + 11.25 = 15.25 胜过第一条 15.0
+        XCTAssertEqual(scheme.finalGrade ?? 0, 15.25, accuracy: 0.001)
+        XCTAssertEqual(scheme.normalizedFinal ?? 0, 76.25, accuracy: 0.001)
+        XCTAssertEqual(scheme.bestBranchIndex, 1)
+        // 补考 18 分：第三条 4 + 13.5 = 17.5 反超
+        scheme.scores["EX2"] = 18
+        XCTAssertEqual(scheme.finalGrade ?? 0, 17.5, accuracy: 0.001)
+        XCTAssertEqual(scheme.bestBranchIndex, 2)
+    }
+
+    /// 记分规则随课程存档：带规则的课程编解码不丢规则；旧数据没有 gradeScheme 键必须照常解码。
+    func testCourseGradeSchemeCodableRoundtripAndLegacy() throws {
+        var course = DemoData.makeDocument().courses[0]
+        course.gradeScheme = GradeScheme(
+            scale: 20,
+            components: [GradeComponent(id: "EX1", name: "EX1")],
+            scores: ["EX1": 15],
+            branches: [[GradeTerm(componentID: "EX1", weight: 1)]]
+        )
+        let data = try JSONEncoder().encode(course)
+        let decoded = try JSONDecoder().decode(Course.self, from: data)
+        XCTAssertEqual(decoded, course)
+        XCTAssertEqual(decoded.gradeScheme?.finalGrade ?? 0, 15, accuracy: 0.001)
+
+        let legacy = "{\"id\":\"\(course.id.uuidString)\",\"name\":\"旧课\",\"teacher\":\"\",\"location\":\"\",\"colorID\":\"blue\",\"weeks\":[1],\"meetings\":[]}"
+        let old = try JSONDecoder().decode(Course.self, from: Data(legacy.utf8))
+        XCTAssertNil(old.gradeScheme)
+        XCTAssertEqual(old.credits, 0)
     }
 }
