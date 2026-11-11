@@ -32,9 +32,6 @@ struct RootView: View {
         }
         .background {
             ThemeBackground()
-            if model.document.appearance.theme.specialLayout == "glass" {
-                ThemeBackground().modifier(MotionParallax())
-            }
         }
         .toolbar(model.presented == nil ? .visible : .hidden, for: .tabBar)
         .animation(reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.86), value: model.presented?.id)

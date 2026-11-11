@@ -110,40 +110,180 @@ struct MotionParallax: ViewModifier {
     }
 }
 
-struct ThemeBackground: View {
-    @Environment(\.classdayChrome) private var chrome
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+struct ThemeFieldView: View {
+    var theme: ClassdayTheme
+    var active: Bool
+    var animated: Bool
+    var particles: Bool
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: chrome.allowsShader ? 1 / 30 : 1, paused: !chrome.allowsShader || reduceMotion)) { timeline in
-            let time = timeline.date.timeIntervalSinceReferenceDate
-            ZStack {
-                Color(chrome.theme.background.palette)
-                if chrome.allowsShader {
-                    Rectangle()
-                        .fill(Color(chrome.theme.glow.palette).opacity(0.35))
-                        .colorEffect(shader(time: time))
-                        .blendMode(.plusLighter)
-                        .allowsHitTesting(false)
-                } else if chrome.theme.specialLayout == "glass" {
-                    Rectangle().fill(.ultraThinMaterial)
+        GeometryReader { geo in
+            if animated {
+                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+                    field(size: geo.size, time: timeline.date.timeIntervalSinceReferenceDate)
                 }
+            } else {
+                field(size: geo.size, time: 3.7)
             }
         }
-        .ignoresSafeArea()
     }
 
-    private func shader(time: TimeInterval) -> Shader {
-        switch chrome.theme.specialLayout {
+    private func drift(_ time: Double, _ speed: Double, _ phase: Double, _ amp: Double) -> CGFloat {
+        animated ? CGFloat(sin(time * speed + phase) * amp) : 0
+    }
+
+    private func field(size: CGSize, time: Double) -> some View {
+        let w = max(size.width, 1)
+        let h = max(size.height, 1)
+        let dark = theme.prefersDark
+        return ZStack {
+            Color(theme.background.palette)
+            if active {
+                blob(color: theme.glow, size: w * 0.85, blur: 55, opacity: dark ? 0.50 : 0.55,
+                     x: w * 0.16 + drift(time, 0.11, 0.0, 26), y: h * 0.10 + drift(time, 0.09, 1.7, 20))
+                blob(color: theme.accent, size: w * 0.70, blur: 60, opacity: dark ? 0.42 : 0.45,
+                     x: w * 0.86 + drift(time, 0.08, 3.1, 30), y: h * 0.34 + drift(time, 0.12, 0.6, 24))
+                blob(color: theme.courseAccents.count > 3 ? theme.courseAccents[3] : theme.glow,
+                     size: w * 0.62, blur: 58, opacity: dark ? 0.36 : 0.42,
+                     x: w * 0.42 + drift(time, 0.10, 5.2, 22), y: h * 0.88 + drift(time, 0.07, 2.4, 18))
+                signature(size: size, time: time)
+            }
+        }
+        .frame(width: w, height: h)
+    }
+
+    private func blob(color: ThemeColor, size: CGFloat, blur: CGFloat, opacity: Double, x: Double, y: Double) -> some View {
+        Ellipse()
+            .fill(Color(color.palette))
+            .frame(width: size, height: size * 0.78)
+            .blur(radius: blur)
+            .opacity(opacity)
+            .blendMode(theme.prefersDark ? .screen : .normal)
+            .position(x: x, y: y)
+            .allowsHitTesting(false)
+    }
+
+    @ViewBuilder
+    private func signature(size: CGSize, time: Double) -> some View {
+        let w = size.width
+        let h = size.height
+        switch theme.specialLayout {
+        case "neon":
+            let travel = Double(h) + 200
+            let y = animated ? CGFloat((time * 52).truncatingRemainder(dividingBy: travel) - 100) : h * 0.30
+            Rectangle()
+                .fill(LinearGradient(colors: [Color(theme.glow.palette).opacity(0), Color(theme.glow.palette).opacity(0.30), Color(theme.accent.palette).opacity(0.22), Color(theme.glow.palette).opacity(0)], startPoint: .top, endPoint: .bottom))
+                .frame(height: 92)
+                .position(x: w / 2, y: y)
+                .allowsHitTesting(false)
         case "aurora":
-            ShaderLibrary.auroraFlow(.float(time))
-        case "glass":
-            ShaderLibrary.glassWarp(.float(time))
+            RoundedRectangle(cornerRadius: 90)
+                .fill(LinearGradient(colors: [Color(theme.glow.palette).opacity(0.55), Color(theme.accent.palette).opacity(0.45), Color(theme.glow.palette).opacity(0.1)], startPoint: .leading, endPoint: .trailing))
+                .frame(width: w * 1.3, height: 110)
+                .blur(radius: 26)
+                .rotationEffect(.degrees(-7))
+                .position(x: w / 2 + drift(time, 0.07, 0.9, 30), y: h * 0.14)
+                .allowsHitTesting(false)
+            if particles {
+                Canvas { context, canvasSize in
+                    for i in 0..<26 {
+                        let seed = Double(i) * 1.6180339887
+                        let frac = seed.truncatingRemainder(dividingBy: 1)
+                        let period = 8 + frac * 7
+                        let progress = (time / period + frac * 3.7).truncatingRemainder(dividingBy: 1)
+                        let x = frac * canvasSize.width + sin(time * 0.7 + seed) * 9
+                        let y = canvasSize.height - progress * (canvasSize.height + 24)
+                        let r = 1.4 + (seed * 0.53).truncatingRemainder(dividingBy: 1) * 2.2
+                        let fade = sin(progress * Double.pi)
+                        let rect = CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2)
+                        context.fill(Path(ellipseIn: rect), with: .color(.white.opacity(0.85 * fade)))
+                    }
+                }
+                .allowsHitTesting(false)
+            }
+        case "hud":
+            Canvas { context, canvasSize in
+                var path = Path()
+                var x: CGFloat = 0
+                while x < canvasSize.width {
+                    path.move(to: CGPoint(x: x, y: 0))
+                    path.addLine(to: CGPoint(x: x, y: canvasSize.height))
+                    x += 36
+                }
+                var y: CGFloat = 0
+                while y < canvasSize.height {
+                    path.move(to: CGPoint(x: 0, y: y))
+                    path.addLine(to: CGPoint(x: canvasSize.width, y: y))
+                    y += 36
+                }
+                context.stroke(path, with: .color(Color(theme.line.palette).opacity(0.55)), lineWidth: 0.6)
+            }
+            .allowsHitTesting(false)
+            Circle()
+                .strokeBorder(Color(theme.accent.palette).opacity(0.65), style: StrokeStyle(lineWidth: 1.6, dash: [7, 6]))
+                .frame(width: 86, height: 86)
+                .rotationEffect(.degrees(animated ? time * 9 : 24))
+                .position(x: w - 58, y: 120)
+                .allowsHitTesting(false)
+        case "orbit":
+            let center = CGPoint(x: w - 30, y: 26)
+            Circle()
+                .stroke(Color(theme.accent.palette).opacity(0.40), lineWidth: 1.4)
+                .frame(width: 218, height: 218)
+                .position(x: center.x, y: center.y)
+                .allowsHitTesting(false)
+            Circle()
+                .stroke(Color(theme.glow.palette).opacity(0.30), lineWidth: 1.2)
+                .frame(width: 138, height: 138)
+                .position(x: center.x, y: center.y)
+                .allowsHitTesting(false)
+            let angle = animated ? time * 0.45 : 0.8
+            Circle()
+                .fill(Color(theme.accent.palette))
+                .frame(width: 11, height: 11)
+                .shadow(color: Color(theme.accent.palette), radius: 7)
+                .position(x: center.x + CGFloat(cos(angle)) * 109, y: center.y + CGFloat(sin(angle)) * 109)
+                .allowsHitTesting(false)
+        case "cube":
+            Canvas { context, canvasSize in
+                var path = Path()
+                var d: CGFloat = -canvasSize.height
+                while d < canvasSize.width {
+                    path.move(to: CGPoint(x: d, y: 0))
+                    path.addLine(to: CGPoint(x: d + canvasSize.height * 0.5, y: canvasSize.height))
+                    d += 46
+                }
+                context.stroke(path, with: .color(Color(theme.line.palette).opacity(0.4)), lineWidth: 0.7)
+            }
+            .allowsHitTesting(false)
+        case "mech":
+            Rectangle()
+                .fill(LinearGradient(colors: [.clear, Color.white.opacity(0.05), .clear, Color.white.opacity(0.03), .clear], startPoint: .leading, endPoint: .trailing))
+                .rotationEffect(.degrees(18))
+                .scaleEffect(1.6)
+                .allowsHitTesting(false)
         default:
-            ShaderLibrary.neonScan(.float(time))
+            EmptyView()
         }
     }
 }
+
+struct ThemeBackground: View {
+    @Environment(\.classdayChrome) private var chrome
+
+    var body: some View {
+        ThemeFieldView(
+            theme: chrome.theme,
+            active: chrome.tier != .saver,
+            animated: chrome.tier == .high,
+            particles: chrome.allowsParticles
+        )
+        .scaleEffect(chrome.allowsMotion ? 1.07 : 1)
+        .modifier(MotionParallax())
+        .ignoresSafeArea()
+    }
+}
+
 
 struct ThemeGalleryView: View {
     @Environment(AppModel.self) private var model
@@ -155,9 +295,14 @@ struct ThemeGalleryView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     Text("外观")
                         .font(.system(size: 34, weight: .bold))
-                    Text("小组件、锁屏和灵动岛跟这里同一套主题。省电和低电量会自动关掉着色器。")
+                    Text("选一套主题，App、桌面小组件、锁屏小组件和上课时的灵动岛会同时换成这套配色，不用分别设置。性能档决定这些特效开多少。")
                         .font(.subheadline)
                         .foregroundStyle(Color(chrome.theme.secondary.palette))
+                    if chrome.tier != model.document.appearance.performance {
+                        Text("你选的是「\(model.document.appearance.performance.title)」，但当前实际生效「\(chrome.tier.title)」：系统低电量模式或「减弱动态效果」开着时会自动降档。")
+                            .font(.caption)
+                            .foregroundStyle(Color(chrome.theme.secondary.palette))
+                    }
                     ForEach(ClassdayThemes.all) { theme in
                         Button {
                             model.setAppearance(AppearanceChoice(themeID: theme.id, performance: model.document.appearance.performance))
@@ -217,7 +362,13 @@ struct ThemeGalleryView: View {
         }
         .padding(14)
         .foregroundStyle(Color(theme.ink.palette))
-        .background(RoundedRectangle(cornerRadius: 18).fill(Color(theme.card.palette)))
+        .background {
+            ZStack {
+                ThemeFieldView(theme: theme, active: true, animated: selected && chrome.tier == .high, particles: selected && chrome.allowsParticles)
+                Color(theme.card.palette).opacity(0.74)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color(theme.glow.palette), lineWidth: selected ? 2 : 0))
     }
 }
