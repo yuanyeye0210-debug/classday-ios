@@ -630,6 +630,19 @@ final class AppModel {
         persist(markUserEdited: true)
     }
 
+    func deleteHomework(_ id: UUID) {
+        document.homework.removeAll { $0.id == id }
+        persist(markUserEdited: true)
+    }
+
+    func updateHomework(_ id: UUID, title: String, courseName: String, due: Date) {
+        guard let index = document.homework.firstIndex(where: { $0.id == id }) else { return }
+        document.homework[index].title = title
+        document.homework[index].courseName = courseName
+        document.homework[index].dueISO = CivilStamp.string(from: due, calendar: calendar)
+        persist(markUserEdited: true)
+    }
+
     func addExam(courseName: String, location: String, start: Date, end: Date) {
         document.exams.append(ExamEvent(
             courseName: courseName,

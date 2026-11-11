@@ -50,6 +50,12 @@ final class MotionTracker {
     /// filtered at 30 Hz. Stays (0, 1) — straight down — when the phone is
     /// upright, motion is unavailable (simulator), or tracking is stopped.
     var gravity = CGVector(dx: 0, dy: 1)
+    /// Visual twin of the spring tilt, quantized to 0.01 steps and
+    /// refreshed at most every other sample: views read this one, so a
+    /// phone lying still produces zero background/card re-renders while
+    /// the haptics keep the full-rate raw channel.
+    private(set) var visualTilt = CGVector(dx: 0, dy: 1)
+    private var visualTick = 0
     private var velocity = CGVector(dx: 0, dy: 0)
     private let manager = CMMotionManager()
     private var running = false
@@ -120,6 +126,14 @@ final class MotionTracker {
                 dx: self.gravity.dx + self.velocity.dx * dt,
                 dy: self.gravity.dy + self.velocity.dy * dt
             )
+            self.visualTick += 1
+            if self.visualTick % 2 == 0 {
+                let qx = (self.gravity.dx * 100).rounded() / 100
+                let qy = (self.gravity.dy * 100).rounded() / 100
+                if abs(qx - self.visualTilt.dx) > 0.004 || abs(qy - self.visualTilt.dy) > 0.004 {
+                    self.visualTilt = CGVector(dx: qx, dy: qy)
+                }
+            }
             self.updateHaptics(now: Date().timeIntervalSinceReferenceDate)
         }
     }
@@ -437,43 +451,46 @@ struct ThemeFieldView: View {
         let h = max(size.height, 1)
         let dark = theme.prefersDark
         let grav = tracker.gravity
+        let visual = tracker.visualTilt
         // Deviation of the gravity vector from straight-down: zero when the
         // phone is upright, grows as it tilts. Background layers parallax
         // against it; loose particles integrate the raw vector instead.
-        let tiltX = CGFloat(grav.dx)
-        let tiltY = CGFloat(grav.dy - 1)
+        let tiltX = CGFloat(visual.dx)
+        let tiltY = CGFloat(visual.dy - 1)
         return ZStack {
             Color(theme.background.palette)
             if active {
-                blob(color: theme.glow, size: w * 0.85, blur: 55, opacity: dark ? 0.50 : 0.55,
+                ZStack {
+                blob(color: theme.glow, size: w * 0.85, opacity: dark ? 0.50 : 0.55,
                      x: w * 0.16 + drift(time, 0.11, 0.0, 26) - tiltX * 30, y: h * 0.10 + drift(time, 0.09, 1.7, 20) - tiltY * 30)
-                blob(color: theme.accent, size: w * 0.70, blur: 60, opacity: dark ? 0.42 : 0.45,
+                blob(color: theme.accent, size: w * 0.70, opacity: dark ? 0.42 : 0.45,
                      x: w * 0.86 + drift(time, 0.08, 3.1, 30) - tiltX * 46, y: h * 0.34 + drift(time, 0.12, 0.6, 24) - tiltY * 46)
                 blob(color: theme.courseAccents.count > 3 ? theme.courseAccents[3] : theme.glow,
-                     size: w * 0.62, blur: 58, opacity: dark ? 0.36 : 0.42,
+                     size: w * 0.62, opacity: dark ? 0.36 : 0.42,
                      x: w * 0.42 + drift(time, 0.10, 5.2, 22) - tiltX * 36, y: h * 0.88 + drift(time, 0.07, 2.4, 18) - tiltY * 36)
                 // Gravity-up light: one soft source pinned near the edge
                 // the phone tilts away from, shared by every theme so the
                 // tilt always reads somewhere on screen.
                 Ellipse()
-                    .fill(Color.white.opacity((dark ? 0.10 : 0.16) + min(abs(tiltX) + abs(tiltY), 1) * 0.10))
+                    .fill(RadialGradient(colors: [Color.white.opacity((dark ? 0.10 : 0.16) + min(abs(tiltX) + abs(tiltY), 1) * 0.10), Color.white.opacity(0)], center: .center, startRadius: 0, endRadius: w * 0.47))
                     .frame(width: w * 0.95, height: h * 0.30)
-                    .blur(radius: 42)
                     .position(x: w / 2 - tiltX * w * 0.34, y: -h * 0.03 - tiltY * h * 0.05)
                     .allowsHitTesting(false)
                 signature(size: size, time: time, tiltX: tiltX, tiltY: tiltY, gravity: grav)
+                }
+                .modifier(ThemeShaderModifier(layout: theme.specialLayout, active: active, animated: animated, size: size, tiltX: tiltX, tiltY: tiltY, time: time))
             }
         }
         .frame(width: w, height: h)
-        .modifier(ThemeShaderModifier(layout: theme.specialLayout, active: active, animated: animated, size: size, tiltX: tiltX, tiltY: tiltY, time: time))
     }
 
-    private func blob(color: ThemeColor, size: CGFloat, blur: CGFloat, opacity: Double, x: Double, y: Double) -> some View {
+    private func blob(color: ThemeColor, size: CGFloat, opacity: Double, x: Double, y: Double) -> some View {
+        // Radial-gradient falloff instead of a live Gaussian blur: the
+        // same soft pool of light, rasterized directly by the GPU. The
+        // blurred layers were the field's biggest per-frame cost.
         Ellipse()
-            .fill(Color(color.palette))
+            .fill(RadialGradient(colors: [Color(color.palette).opacity(opacity), Color(color.palette).opacity(opacity * 0.55), Color(color.palette).opacity(0)], center: .center, startRadius: 0, endRadius: size * 0.52))
             .frame(width: size, height: size * 0.78)
-            .blur(radius: blur)
-            .opacity(opacity)
             .blendMode(theme.prefersDark ? .screen : .normal)
             .position(x: x, y: y)
             .allowsHitTesting(false)
@@ -497,7 +514,7 @@ struct ThemeFieldView: View {
             RoundedRectangle(cornerRadius: 90)
                 .fill(LinearGradient(colors: [Color(theme.glow.palette).opacity(0.55), Color(theme.accent.palette).opacity(0.45), Color(theme.glow.palette).opacity(0.1)], startPoint: .leading, endPoint: .trailing))
                 .frame(width: w * 1.3, height: 110)
-                .blur(radius: 26)
+                .mask(LinearGradient(colors: [.clear, .black, .clear], startPoint: .top, endPoint: .bottom))
                 .rotationEffect(.degrees(-7 + Double(tiltX) * 5))
                 .position(x: w / 2 + drift(time, 0.07, 0.9, 30), y: h * 0.14)
                 .allowsHitTesting(false)
@@ -691,11 +708,14 @@ private struct ThemeShaderModifier: ViewModifier {
 struct TiltCardFX: ViewModifier {
     var cornerRadius: CGFloat
     var strength: CGFloat = 1
+    /// List rows skip the per-card shader foil (an offscreen pass each);
+    /// the hero card keeps the full kit.
+    var lite: Bool = false
     @Environment(\.motionTracker) private var tracker
     @Environment(\.classdayChrome) private var chrome
 
     func body(content: Content) -> some View {
-        let g = tracker.gravity
+        let g = tracker.visualTilt
         let tx = g.dx
         let ty = g.dy - 1
         let on = chrome.tracksMotion
@@ -709,7 +729,7 @@ struct TiltCardFX: ViewModifier {
                                 startPoint: UnitPoint(x: 0.5 - tx * 0.8, y: 0),
                                 endPoint: UnitPoint(x: 0.5 + tx * 0.8, y: 1)
                             ))
-                        if chrome.theme.specialLayout == "glass" {
+                        if !lite, chrome.theme.specialLayout == "glass" {
                             GeometryReader { geo in
                                 // Foil stays a whisper: soft-light blend at
                                 // low strength, so it can tint the card
@@ -738,13 +758,14 @@ struct TiltCardFX: ViewModifier {
 
 struct ThemeBackground: View {
     @Environment(\.classdayChrome) private var chrome
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ThemeFieldView(
             theme: chrome.theme,
             active: chrome.tier != .saver,
-            animated: chrome.tier == .high,
-            particles: chrome.allowsParticles
+            animated: chrome.tier == .high && scenePhase == .active,
+            particles: chrome.allowsParticles && scenePhase == .active
         )
         .ignoresSafeArea()
     }
@@ -1055,7 +1076,8 @@ struct CountdownDial: View {
 
 struct StudyDeskView: View {
     @Environment(AppModel.self) private var model
-    @State private var homeworkTitle = ""
+    @State private var editingTask: HomeworkTask?
+    @State private var importNote: String?
     @State private var icsURL = ""
     @State private var fenixID = FenixConfig.clientID
     @State private var fenixSecret = FenixConfig.clientSecret
@@ -1082,12 +1104,6 @@ struct StudyDeskView: View {
                     }
                 }
                 Section("作业") {
-                    TextField("作业标题", text: $homeworkTitle)
-                    Button("添加作业") {
-                        guard !homeworkTitle.isEmpty else { return }
-                        model.addHomework(title: homeworkTitle, courseName: "", due: Date().addingTimeInterval(86_400))
-                        homeworkTitle = ""
-                    }
                     ForEach(model.document.homework) { task in
                         Button {
                             model.toggleHomework(task.id)
@@ -1100,6 +1116,18 @@ struct StudyDeskView: View {
                                 }
                             }
                         }
+                        .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                            Button(role: .destructive) {
+                                model.deleteHomework(task.id)
+                            } label: { Label("删除", systemImage: "trash") }
+                            Button {
+                                editingTask = task
+                            } label: { Label("编辑", systemImage: "pencil") }
+                            .tint(.orange)
+                        }
+                    }
+                    if model.document.homework.isEmpty {
+                        Text("暂无作业").font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 Section("多课表") {
@@ -1125,6 +1153,9 @@ struct StudyDeskView: View {
                     }
                     Text("在 Fénix → Personal → Manage Applications 新建应用，redirect URI 填 classday://fenix。免费 Apple ID 也能走这个网页登录。")
                         .font(.caption)
+                    if let importNote {
+                        Text(importNote).font(.caption).foregroundStyle(.secondary)
+                    }
                 }
                 Section("分享") {
                     ShareLink(item: ShareCodec.url(for: model.document)) {
@@ -1154,17 +1185,25 @@ struct StudyDeskView: View {
                 if case let .success(url) = result { read(url) }
             }
             .sheet(isPresented: $showOCR) { SmartImportView() }
+            .sheet(item: $editingTask) { task in
+                HomeworkEditor(task: task) { title, course, due in
+                    model.updateHomework(task.id, title: title, courseName: course, due: due)
+                }
+            }
         }
     }
 
     private func subscribe() async {
-        guard let url = URL(string: icsURL) else { model.banner = "地址无效"; return }
+        guard let url = URL(string: icsURL), url.scheme != nil else { importNote = "地址无效，粘贴完整的 iCal 订阅地址再试"; return }
+        importNote = "正在下载…"
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
             let text = String(data: data, encoding: .utf8) ?? ""
-            model.importCalendar(ICSImporter.parse(text, calendar: model.calendar, totalWeeks: model.document.semester.totalWeeks), subscribeURL: icsURL)
+            let parsed = ICSImporter.parse(text, calendar: model.calendar, totalWeeks: model.document.semester.totalWeeks)
+            model.importCalendar(parsed, subscribeURL: icsURL)
+            importNote = "已导入：课程 \(parsed.courses.count) 门 · 考试 \(parsed.exams.count) 场 · 作业 \(parsed.homework.count) 条"
         } catch {
-            model.banner = "没有下载到日历"
+            importNote = "没有下载到日历，检查地址和网络再试"
         }
     }
 
@@ -1220,5 +1259,43 @@ enum RoomNavigator {
         }
         item.name = pin?.query ?? location
         item.openInMaps(launchOptions: [MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeWalking])
+    }
+}
+
+/// Homework editor opened from the study desk's swipe action: title,
+/// course and due date, all editable before anything is written back.
+struct HomeworkEditor: View {
+    var task: HomeworkTask
+    var onSave: (String, String, Date) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var title: String
+    @State private var courseName: String
+    @State private var due: Date
+
+    init(task: HomeworkTask, onSave: @escaping (String, String, Date) -> Void) {
+        self.task = task
+        self.onSave = onSave
+        _title = State(initialValue: task.title)
+        _courseName = State(initialValue: task.courseName)
+        _due = State(initialValue: CivilStamp.date(from: task.dueISO) ?? Date())
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                TextField("作业标题", text: $title)
+                TextField("课程（可空）", text: $courseName)
+                DatePicker("截止时间", selection: $due, displayedComponents: [.date, .hourAndMinute])
+            }
+            .navigationTitle("编辑作业")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存") { onSave(title, courseName, due); dismiss() }
+                        .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
     }
 }

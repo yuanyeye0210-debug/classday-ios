@@ -36,9 +36,6 @@ struct RootView: View {
                     .zIndex(2)
             }
         }
-        .background {
-            ThemeBackground()
-        }
         .environment(\.motionTracker, motionTracker)
         .onAppear {
             motionTracker.profile = TiltHapticProfile.make(themeID: chrome.theme.id, layout: chrome.theme.specialLayout)
@@ -853,7 +850,7 @@ struct CoursesView: View {
             .padding(14)
             .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Theme.elevated))
             .shadow(color: .black.opacity(scheme == .dark ? 0 : 0.05), radius: 10, x: 0, y: 4)
-            .modifier(TiltCardFX(cornerRadius: 20, strength: 0.7))
+            .modifier(TiltCardFX(cornerRadius: 20, strength: 0.7, lite: true))
         }
         .buttonStyle(JournalPressStyle())
     }
