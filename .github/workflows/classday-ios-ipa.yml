@@ -59,7 +59,7 @@ jobs:
           # still see the App Group the entitlements declare.
           cp Classday/Config/Classday.entitlements "$APP/archived-expanded-entitlements.xcent"
           cp Classday/Config/ClassdayWidget.entitlements "$APP/PlugIns/ClassdayWidget.appex/archived-expanded-entitlements.xcent"
-          VERSION="$(tr -d '[:space:]' < Classday/VERSION)"
+          VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Payload/Classday.app/Info.plist)"
           mkdir -p dist/Payload
           cp -R "$APP" dist/Payload/Classday.app
           (cd dist && zip -r -y "Classday-v${VERSION}.ipa" Payload)
