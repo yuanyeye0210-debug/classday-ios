@@ -543,7 +543,7 @@ private struct ThemeShaderModifier: ViewModifier {
                 .float2(Float(size.width), Float(size.height)),
                 .float2(Float(tiltX), Float(tiltY)),
                 .float(Float(time)),
-                .float(0.55)
+                .float(0.30)
             ))
         } else if layout == "mech", active {
             content.colorEffect(ShaderLibrary.mechSheen(
@@ -591,14 +591,18 @@ struct TiltCardFX: ViewModifier {
                             ))
                         if chrome.theme.specialLayout == "glass" {
                             GeometryReader { geo in
+                                // Foil stays a whisper: soft-light blend at
+                                // low strength, so it can tint the card
+                                // surface but never paint over the text.
                                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                                    .fill(.white.opacity(0.10))
+                                    .fill(.white.opacity(0.08))
                                     .colorEffect(ShaderLibrary.iridescentFilm(
                                         .float2(Float(geo.size.width), Float(geo.size.height)),
                                         .float2(Float(tx), Float(ty)),
                                         .float(0),
-                                        .float(0.38)
+                                        .float(0.12)
                                     ))
+                                    .blendMode(.softLight)
                             }
                         }
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
