@@ -764,120 +764,75 @@ struct TodayView: View {
     }
 }
 
-/// 左滑露出删除按钮的行容器：横向拖动跟手、松手弹簧吸附开/合；
-/// 行已打开（或刚拖过）时点按只负责合上，删除走外部的确认流程。
-private struct SwipeRevealRow<Content: View>: View {
-    var onDelete: () -> Void
-    @ViewBuilder var content: (_ isOpen: Bool, _ offset: CGFloat, _ close: @escaping () -> Void) -> Content
-    @State private var offset: CGFloat = 0
-    @State private var isOpen = false
-
-    var body: some View {
-        ZStack(alignment: .trailing) {
-            Button(role: .destructive) {
-                onDelete()
-            } label: {
-                VStack(spacing: 3) {
-                    Image(systemName: "trash.fill").font(.system(size: 15))
-                    Text("删除").font(.system(size: 11, weight: .bold, design: .rounded))
-                }
-                .foregroundStyle(.white)
-                .frame(width: 66)
-                .frame(maxHeight: .infinity)
-                .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Color.red))
-            }
-            .buttonStyle(.plain)
-            .opacity(offset < -6 ? 1 : 0)
-
-            content(isOpen, offset) { close() }
-                .offset(x: offset)
-                .simultaneousGesture(dragGesture)
-        }
-    }
-
-    private func close() {
-        withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
-            offset = 0
-            isOpen = false
-        }
-    }
-
-    private var dragGesture: some Gesture {
-        DragGesture(minimumDistance: 14, coordinateSpace: .local)
-            .onChanged { value in
-                guard abs(value.translation.width) > abs(value.translation.height) * 1.4 else { return }
-                let base: CGFloat = isOpen ? -78 : 0
-                offset = min(0, max(-78, base + value.translation.width))
-            }
-            .onEnded { _ in
-                withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
-                    if offset < -39 {
-                        offset = -78
-                        isOpen = true
-                    } else {
-                        offset = 0
-                        isOpen = false
-                    }
-                }
-            }
-    }
-}
-
 struct CoursesView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text("全部课程")
-                        .font(.system(size: 27, weight: .heavy, design: .rounded))
-                        .foregroundStyle(Theme.ink)
-                    Text("\(model.document.courses.count) 门")
-                        .font(.system(size: 13.5, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Theme.secondary)
-                    Spacer()
-                }
-                if let average = model.weightedScoreAverage, let gpa = model.gpaAverage {
-                    gradesSummaryCard(average: average, gpa: gpa)
-                        .padding(.top, 14)
-                }
-                if model.document.courses.isEmpty {
-                    Text("还没有课程，从「今日」页右上角 + 添加。")
-                        .font(.system(size: 14, design: .rounded))
-                        .foregroundStyle(Theme.secondary)
-                        .padding(.top, 24)
-                } else {
-                    VStack(spacing: 10) {
-                        ForEach(model.document.courses.sorted { $0.name < $1.name }, id: \.id) { course in
-                            courseCard(course)
-                        }
-                    }
-                    .padding(.top, 16)
-                }
+        List {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text("全部课程")
+                    .font(.system(size: 27, weight: .heavy, design: .rounded))
+                    .foregroundStyle(Theme.ink)
+                Text("\(model.document.courses.count) 门")
+                    .font(.system(size: 13.5, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Theme.secondary)
+                Spacer()
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 10)
-            .padding(.bottom, 28)
+            .listRowInsets(EdgeInsets(top: 10, leading: 20, bottom: 2, trailing: 20))
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+
+            if let average = model.weightedScoreAverage, let gpa = model.gpaAverage {
+                gradesSummaryCard(average: average, gpa: gpa)
+                    .listRowInsets(EdgeInsets(top: 12, leading: 20, bottom: 2, trailing: 20))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            }
+
+            if model.document.courses.isEmpty {
+                Text("还没有课程，从「今日」页右上角 + 添加。")
+                    .font(.system(size: 14, design: .rounded))
+                    .foregroundStyle(Theme.secondary)
+                    .listRowInsets(EdgeInsets(top: 24, leading: 20, bottom: 28, trailing: 20))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            } else {
+                ForEach(model.document.courses.sorted { $0.name < $1.name }, id: \.id) { course in
+                    courseCard(course)
+                        .listRowInsets(EdgeInsets(top: 5, leading: 20, bottom: 5, trailing: 20))
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button(role: .destructive) {
+                                model.confirmDeleteCourseID = course.id
+                            } label: {
+                                Label("删除", systemImage: "trash.fill")
+                            }
+                            .tint(.red)
+                        }
+                }
+                Color.clear
+                    .frame(height: 18)
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            }
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
         .scrollIndicators(.hidden)
         .toolbar(model.presented == nil ? .visible : .hidden, for: .tabBar)
     }
 
     private func courseCard(_ course: Course) -> some View {
         let next = nextOccurrence(course: course)
-        return SwipeRevealRow(onDelete: { model.confirmDeleteCourseID = course.id }) { isOpen, offset, close in
-            Button {
-                if isOpen || offset < -10 {
-                    close()
-                    return
-                }
-                let meetingID = next?.meetingID ?? course.meetings.first?.id
-                if let meetingID {
-                    model.present(courseID: course.id, meetingID: meetingID)
-                }
-            } label: {
+        return Button {
+            let meetingID = next?.meetingID ?? course.meetings.first?.id
+            if let meetingID {
+                model.present(courseID: course.id, meetingID: meetingID)
+            }
+        } label: {
             HStack(spacing: 13) {
                 CourseGlyphTile(name: course.name, colorID: course.colorID, size: 54)
                 VStack(alignment: .leading, spacing: 3) {
@@ -923,9 +878,8 @@ struct CoursesView: View {
             .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Theme.elevated))
             .shadow(color: .black.opacity(scheme == .dark ? 0 : 0.05), radius: 10, x: 0, y: 4)
             .modifier(TiltCardFX(cornerRadius: 20, strength: 0.7, lite: true))
-            }
-            .buttonStyle(JournalPressStyle())
         }
+        .buttonStyle(JournalPressStyle())
     }
 
     private func nextOccurrence(course: Course) -> Occurrence? {

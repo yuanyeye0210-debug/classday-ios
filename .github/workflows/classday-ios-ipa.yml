@@ -62,6 +62,22 @@ jobs:
           VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist")"
           mkdir -p dist/Payload
           cp -R "$APP" dist/Payload/Classday.app
+          # SideStore registration rejects non-ASCII appIdName: ship an ASCII base
+          # display name and carry the Chinese name via zh-Hans localization.
+          python3 - <<'PYEOF'
+          import plistlib, os
+          app = "dist/Payload/Classday.app"
+          for sub, name in [("", "Classday"), ("PlugIns/ClassdayWidget.appex", "Classday Widget")]:
+              info = os.path.join(app, sub, "Info.plist")
+              d = plistlib.load(open(info, "rb"))
+              d["CFBundleDisplayName"] = name
+              plistlib.dump(d, open(info, "wb"), fmt=plistlib.FMT_BINARY)
+              loc = os.path.join(app, sub, "zh-Hans.lproj")
+              os.makedirs(loc, exist_ok=True)
+              with open(os.path.join(loc, "InfoPlist.strings"), "w", encoding="utf-8") as f:
+                  f.write('"CFBundleDisplayName" = "\u8bfe\u66dc";\n"CFBundleName" = "\u8bfe\u66dc";\n')
+          print("patched display names for SideStore")
+          PYEOF
           (cd dist && zip -r -y "Classday-v${VERSION}.ipa" Payload)
           bash Classday/Tools/verify-device-ipa.sh "dist/Classday-v${VERSION}.ipa" | tee dist/verify.txt
           shasum -a 256 "dist/Classday-v${VERSION}.ipa" | tee dist/SHA256SUMS
