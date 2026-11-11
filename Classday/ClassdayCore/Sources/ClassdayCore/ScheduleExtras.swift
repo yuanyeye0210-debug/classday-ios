@@ -733,8 +733,8 @@ public enum ScheduleTextImporter {
     /// Shared pipeline for every tabular source (CSV rows, HTML tables, XLSX
     /// and DOCX grids): a weekday-header row means grid layout, a synonym
     /// header row means list layout. Returns nil when neither fits.
-    public static func parseRows(_ rows: [[String]]) -> (drafts: [ImportedCourseDraft], unparsed: [String])? {
-        if let table = parseTable(rows) { return table }
+    public static func parseRows(_ rows: [[String]], spans: [String: Int] = [:]) -> (drafts: [ImportedCourseDraft], unparsed: [String])? {
+        if let table = parseTable(rows, spans: spans) { return table }
         return listFromRows(rows)
     }
 
@@ -841,7 +841,7 @@ public enum ScheduleTextImporter {
     /// lists like "1,3,5,7周" (which become an exact custom-weeks list).
     private static func explicitWeeks(in text: String) -> (first: Int, last: Int, custom: [Int], parity: Int) {
         let base = weekRange(in: text)
-        let numbers = allMatches(#"\d{1,2}"#, in: text).compactMap { Int($0.groups[0]) }.filter { (1...40).contains($0) }
+        let numbers = allMatches(#"(\d{1,2})"#, in: text).compactMap { Int($0.groups[0]) }.filter { (1...40).contains($0) }
         if (text.contains(",") || text.contains("，") || text.contains("、")) && numbers.count >= 2 {
             let custom = Array(Set(numbers)).sorted()
             return (custom.first ?? base.0, custom.last ?? base.1, custom, base.2)
@@ -941,11 +941,55 @@ public enum ScheduleTextImporter {
             #"(?:教室|地点)[:：]?\s*[^\s，,；;]+"#,
             #"(?:教师|老师|任课教师)[:：]?\s*[一-龥]{2,4}"#,
             #"[^\s，,；;]*(?:楼|室|馆|机房|实验室)[^\s，,；;]*"#,
+            #"(?i)every\s+2\s+weeks?\s*\(starting\s+week\s+\d+\)"#,
+            #"(?i)weeks?\s+[\d\s,–—\-]+"#,
+            #"(?i)\broom\s+[A-Za-z0-9.]+"#,
+            #"\b[A-Za-z]{1,5}-[A-Za-z]*\d+\b"#,
+            #"(?i)\b[A-Z]{2,}[A-Z]*\d[A-Z0-9]*\b"#,
+            #"\s*[·•]\s*"#,
         ]
         for pattern in patterns {
             result = replaceAll(pattern, in: result)
         }
         return result
+    }
+
+    /// English week specs found in international timetables:
+    /// "Weeks 1–4, 6–7, 9–15" (disjoint ranges become an exact week list)
+    /// and "Every 2 weeks (starting Week 2)".
+    static func englishWeeks(in text: String) -> (first: Int, last: Int, custom: [Int])? {
+        guard text.lowercased().contains("week") else { return nil }
+        if let match = firstMatch(#"(?i)every\s+2\s+weeks?\s*\(starting\s+week\s+(\d{1,2})\)"#, in: text),
+           let start = Int(match.groups[0]) {
+            let custom = Array(stride(from: start, through: 16, by: 2))
+            return (start, custom.last ?? start, custom)
+        }
+        var weeks = Set<Int>()
+        for match in allMatches(#"(\d{1,2})\s*[-–—]\s*(\d{1,2})"#, in: text) {
+            if let a = Int(match.groups[0]), let b = Int(match.groups[1]), a <= b, b <= 40 {
+                for week in a...b { weeks.insert(week) }
+            }
+        }
+        if let keyword = text.lowercased().range(of: "week") {
+            let tail = String(text[keyword.upperBound...])
+            let tailNoRanges = replaceAll(#"\d{1,2}\s*[-–—]\s*\d{1,2}"#, in: tail)
+            for match in allMatches(#"(?<![A-Za-z0-9])(\d{1,2})(?![A-Za-z0-9])"#, in: tailNoRanges) {
+                if let number = Int(match.groups[0]), (1...40).contains(number) { weeks.insert(number) }
+            }
+        }
+        guard let first = weeks.min(), let last = weeks.max() else { return nil }
+        let sorted = weeks.sorted()
+        return (first, last, sorted == Array(first...last) ? [] : sorted)
+    }
+
+    /// "Weeks 2–7: Room AM" style segments — one course meeting in
+    /// different rooms for different week ranges.
+    static func weekRoomSegments(in text: String) -> [(first: Int, last: Int, room: String)] {
+        allMatchesDotAll(#"(?i)weeks?\s+(\d{1,2})\s*[-–—]\s*(\d{1,2})\s*[:：]?\s*room\s+([A-Za-z0-9.]+)"#, in: text)
+            .compactMap { match in
+                guard let first = Int(match.groups[0]), let last = Int(match.groups[1]) else { return nil }
+                return (first, last, match.groups[2])
+            }
     }
 
     // MARK: grouping
@@ -973,6 +1017,15 @@ public enum ScheduleTextImporter {
     // MARK: field extractors
 
     static func weekdayNumber(in text: String) -> Int? {
+        let lowered = text.trimmingCharacters(in: .whitespaces).lowercased()
+        let englishNames: [(String, Int)] = [("monday", 1), ("tuesday", 2), ("wednesday", 3),
+                                             ("thursday", 4), ("friday", 5), ("saturday", 6), ("sunday", 7),
+                                             ("mon", 1), ("tue", 2), ("wed", 3), ("thu", 4),
+                                             ("fri", 5), ("sat", 6), ("sun", 7)]
+        for (word, value) in englishNames
+        where lowered == word || lowered.hasPrefix(word + " ") || lowered.hasPrefix(word + "(") {
+            return value
+        }
         if let match = firstMatch(#"(?:周|星期)\s*([一二三四五六日天1-7])"#, in: text) {
             return weekdayValue(match.groups[0])
         }
@@ -1055,7 +1108,12 @@ public enum ScheduleTextImporter {
 
     private static func locationToken(in segment: String) -> String? {
         if let match = firstMatch(#"(?:教室|地点)[:：]?\s*([^\s，,；;]+)"#, in: segment) {
-            return match.groups[0]
+            let value = match.groups[0]
+            if !value.hasPrefix("未定") { return value }
+        }
+        if let match = firstMatch(#"(?i)\broom\s+([A-Za-z0-9][A-Za-z0-9.]*)"#, in: segment) {
+            let code = match.groups[0]
+            if code.lowercased() != "tba" { return "Room \(code)" }
         }
         let tokens = segment.components(separatedBy: CharacterSet(charactersIn: " \t，,；;、（）()【】"))
         for token in tokens {
@@ -1141,35 +1199,72 @@ public extension ScheduleTextImporter {
     /// Grid layout from cell rows: a header row of weekday names, time or
     /// period labels in the leading columns, one course per cell. Used by
     /// CSV grids, HTML tables, XLSX and DOCX alike.
-    static func parseTable(_ rows: [[String]]) -> (drafts: [ImportedCourseDraft], unparsed: [String])? {
+    static func parseTable(_ rows: [[String]], spans: [String: Int] = [:]) -> (drafts: [ImportedCourseDraft], unparsed: [String])? {
         // Find the header row: at least three weekday-labelled cells.
         var header: (index: Int, columns: [Int: Int])?
         for (index, row) in rows.prefix(6).enumerated() {
             var columns: [Int: Int] = [:]
             for (column, cell) in row.enumerated() {
                 let trimmed = cell.trimmingCharacters(in: .whitespaces)
-                guard trimmed.count <= 8 else { continue }
+                guard trimmed.count <= 16 else { continue }
                 if let weekday = weekdayNumber(in: trimmed) { columns[column] = weekday }
             }
             if columns.count >= 3 { header = (index, columns); break }
         }
         guard let headerRow = header else { return nil }
+        let firstWeekdayColumn = headerRow.columns.keys.min() ?? 0
         var rawMeetings: [(course: ImportedCourseDraft, meeting: ImportedMeetingDraft)] = []
         var unparsed: [String] = []
         for (rowOffset, row) in rows.dropFirst(headerRow.index + 1).enumerated() {
-            let labelCells = row.prefix(headerRow.columns.keys.min() ?? 0)
-            let label = labelCells.joined(separator: " ")
+            let absoluteRow = headerRow.index + 1 + rowOffset
+            // A legend/explainer section ends the timetable proper.
+            if let first = row.first, first.contains("Legend") || first.contains("图例") { break }
+            let label = row.prefix(firstWeekdayColumn).joined(separator: " ")
             let rowTimes = timeRange(in: label)
             let rowPeriods = periodRange(in: label)
+            // Rows with no time/period label and no in-cell clock time are
+            // not class rows (legend entries live in cells like these).
+            let rowHasOwnTimes = row.enumerated().contains { column, cell in
+                headerRow.columns[column] != nil && timeRange(in: cell) != nil
+            }
+            if rowTimes == nil && rowPeriods.0 == nil && !rowHasOwnTimes { continue }
             for (column, weekday) in headerRow.columns.sorted(by: { $0.key < $1.key }) {
                 guard column < row.count else { continue }
                 let cell = row[column].trimmingCharacters(in: .whitespacesAndNewlines)
                 if cell.isEmpty { continue }
                 if ["周一", "周二", "周三", "周四", "周五", "周六", "周日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"].contains(cell) { continue }
+                // Merged cells (XLSX) stretch this meeting to a later row.
+                let endRow = spans["\(absoluteRow),\(column)"] ?? absoluteRow
+                let endLabel = endRow < rows.count && endRow != absoluteRow
+                    ? rows[endRow].prefix(firstWeekdayColumn).joined(separator: " ")
+                    : label
+                let effectiveEnd = timeRange(in: endLabel)?.1 ?? rowTimes?.1
+                let effectiveEndPeriod = periodRange(in: endLabel).1 ?? rowPeriods.1
+                // Split-room courses: one draft per week-range segment.
+                let segments = weekRoomSegments(in: cell)
+                if segments.count >= 2 {
+                    let rawName = cell.components(separatedBy: "Week").first ?? cell
+                    let name = stripExtracted(rawName)
+                        .trimmingCharacters(in: .whitespaces.union(.punctuationCharacters))
+                    for segment in segments {
+                        var meeting = ImportedMeetingDraft(weekday: weekday, location: "Room \(segment.room)")
+                        meeting.startMinutes = rowTimes?.0
+                        meeting.endMinutes = effectiveEnd
+                        meeting.startPeriod = rowPeriods.0
+                        meeting.endPeriod = effectiveEndPeriod
+                        let issues = meeting.startMinutes == nil && meeting.startPeriod == nil ? ["时间没认出"] : []
+                        let course = ImportedCourseDraft(
+                            name: name, location: meeting.location,
+                            firstWeek: segment.first, lastWeek: segment.last,
+                            meetings: [], issues: issues, sourceLine: cell)
+                        rawMeetings.append((course, meeting))
+                    }
+                    continue
+                }
                 let folded = cell.replacingOccurrences(of: "\n", with: " ")
                 if let parsed = parseCell(folded, weekday: weekday,
-                                          rowStart: rowTimes?.0, rowEnd: rowTimes?.1,
-                                          rowStartPeriod: rowPeriods.0, rowEndPeriod: rowPeriods.1,
+                                          rowStart: rowTimes?.0, rowEnd: effectiveEnd,
+                                          rowStartPeriod: rowPeriods.0, rowEndPeriod: effectiveEndPeriod,
                                           rowIndex: rowOffset) {
                     rawMeetings.append(parsed)
                 } else {
@@ -1271,8 +1366,20 @@ public extension ScheduleTextImporter {
                 shared.append(xmlUnescape(runs.map { $0.groups[0] }.joined()))
             }
         }
-        var rows: [[String]] = []
+        // Merged ranges: a course cell stretched over several time rows.
+        var merges: [(startRow: Int, startCol: Int, endRow: Int)] = []
+        for match in allMatchesDotAll(#"<mergeCell ref="([A-Z]+)(\d+):([A-Z]+)(\d+)""#, in: sheetXML) {
+            func columnIndex(_ letters: String) -> Int {
+                letters.reduce(0) { $0 * 26 + (Int($1.unicodeScalars.first!.value) - 64) } - 1
+            }
+            if let startRow = Int(match.groups[1]), let endRow = Int(match.groups[3]) {
+                merges.append((startRow, columnIndex(match.groups[0]), endRow))
+            }
+        }
+        var rowsByNumber: [Int: [String]] = [:]
         for rowChunk in sheetXML.components(separatedBy: "<row").dropFirst() {
+            let rowNumber = firstMatch(#"^\s*r="(\d+)""#, in: rowChunk).flatMap { Int($0.groups[0]) }
+                ?? ((rowsByNumber.keys.max() ?? 0) + 1)
             var cells: [String] = []
             for cellMatch in allMatchesDotAll(#"<c\s([^>]*?)(/>|>(.*?)</c>)"#, in: rowChunk) {
                 let attributes = cellMatch.groups[0]
@@ -1286,7 +1393,6 @@ public extension ScheduleTextImporter {
                 } else if let v = firstMatchDotAll(#"<v>([^<]*)</v>"#, in: inner) {
                     value = xmlUnescape(v.groups[0])
                 }
-                // Column from the r attribute (B3 -> 1) keeps sparse rows aligned.
                 var column = cells.count
                 if let ref = firstMatch(#"r=\"([A-Z]+)\d+\""#, in: attributes) {
                     column = ref.groups[0].reduce(0) { $0 * 26 + (Int($1.unicodeScalars.first!.value) - 64) } - 1
@@ -1294,9 +1400,17 @@ public extension ScheduleTextImporter {
                 while cells.count < column { cells.append("") }
                 if cells.count == column { cells.append(value) } else if column < cells.count { cells[column] = value }
             }
-            rows.append(cells)
+            rowsByNumber[rowNumber] = cells
         }
-        if let parsed = parseRows(rows) { return parsed }
+        var rows: [[String]] = []
+        var spans: [String: Int] = [:]
+        if let firstRow = rowsByNumber.keys.min(), let lastRow = rowsByNumber.keys.max() {
+            for number in firstRow...lastRow { rows.append(rowsByNumber[number] ?? []) }
+            for merge in merges where merge.endRow > merge.startRow {
+                spans["\(merge.startRow - firstRow),\(merge.startCol)"] = merge.endRow - firstRow
+            }
+        }
+        if let parsed = parseRows(rows, spans: spans) { return parsed }
         let joined = rows.map { $0.filter { !$0.isEmpty }.joined(separator: " ") }.filter { !$0.isEmpty }
         return parseText(joined.joined(separator: "\n"))
     }
@@ -1409,6 +1523,11 @@ public enum AppChangelog {
     }
 
     public static let entries: [Entry] = [
+        Entry(version: "2.2.1", title: "拿真实课表校准识别", changes: [
+            "修好了一个会让导入直接崩溃的 bug（周次写成列表时触发）",
+            "Excel 里跨了好几行的合并课程，结束时间现在按最后一行算准；英文课表全支持：Monday 表头、Weeks 周次列表、分段换教室、每两周一次的课都认了",
+            "课表下方的课程图例不再被误认成课程；图片识别改成按左侧时间栏分行，跨格的大课不再被切碎",
+        ]),
         Entry(version: "2.2.0", title: "所有文件都能导入，识别更准", changes: [
             "智能导入的文件入口打通了：Excel(.xlsx)、Word(.docx)、PDF、网页表格文件（教务系统导出的那种）、日历 .ics 都能直接选进来识别，老式 .xls 会给出另存提示",
             "识别引擎重做：网格课表（横着星期、竖着节次）现在 CSV、Excel、Word、PDF 都能按格子对位；表头不在第一行、列名带后缀、时间地点挤在一格的情况也认了",
@@ -1470,7 +1589,7 @@ public extension ScheduleTextImporter {
         var headerBlocks: [(weekday: Int, block: OCRTextBlock)] = []
         for block in blocks {
             let trimmed = block.text.trimmingCharacters(in: .whitespaces)
-            guard trimmed.count <= 6, let weekday = weekdayNumber(in: trimmed) else { continue }
+            guard trimmed.count <= 12, let weekday = weekdayNumber(in: trimmed) else { continue }
             headerBlocks.append((weekday, block))
         }
         headerBlocks.sort { $0.block.centerX < $1.block.centerX }
@@ -1484,9 +1603,93 @@ public extension ScheduleTextImporter {
             ? zip(columns, columns.dropFirst()).map { $1.centerX - $0.centerX }.reduce(0, +) / Double(columns.count - 1)
             : 0.14
 
-        // 2. Cluster body blocks (below the header) into rows by centerY.
+        // 2. Gutter time labels define row bands. A course cell in a real
+        // timetable spans several bands and holds several text lines, so
+        // blocks are grouped per column by vertical proximity and the
+        // meeting time comes from every band the merged cell touches.
         let medianHeight = blocks.map(\.height).sorted().dropFirst(blocks.count / 2).first ?? 0.02
         let tolerance = max(0.012, medianHeight * 0.9)
+        let gutterLimit = (columns.first?.centerX ?? 0) - columnWidth * 0.45
+        let timedGutter = blocks
+            .filter { $0.centerX < gutterLimit && $0.centerY < headerY && (timeRange(in: $0.text) != nil || periodRange(in: $0.text).0 != nil) }
+            .sorted { $0.centerY > $1.centerY }
+        struct Band {
+            var top: Double
+            var bottom: Double
+            var start: Int?
+            var end: Int?
+            var startPeriod: Int?
+            var endPeriod: Int?
+        }
+        var bands: [Band] = []
+        if timedGutter.count >= 2 {
+            for (index, block) in timedGutter.enumerated() {
+                let top = index == 0
+                    ? block.centerY + block.height * 1.6
+                    : (timedGutter[index - 1].centerY + block.centerY) / 2
+                let bottom = index == timedGutter.count - 1
+                    ? block.centerY - block.height * 1.6
+                    : (block.centerY + timedGutter[index + 1].centerY) / 2
+                let range = timeRange(in: block.text)
+                let periods = periodRange(in: block.text)
+                bands.append(Band(top: top, bottom: bottom, start: range?.0, end: range?.1,
+                                  startPeriod: periods.0, endPeriod: periods.1))
+            }
+        }
+        if !bands.isEmpty {
+            var rawMeetings: [(course: ImportedCourseDraft, meeting: ImportedMeetingDraft)] = []
+            var unparsed: [String] = []
+            let bodyBlocks = blocks.filter { $0.centerY < headerY - tolerance && $0.centerX >= gutterLimit }
+            var perColumn: [Int: [OCRTextBlock]] = [:]
+            for block in bodyBlocks {
+                var best: (index: Int, distance: Double)?
+                for (index, column) in columns.enumerated() {
+                    let distance = abs(column.centerX - block.centerX)
+                    if distance < columnWidth * 0.62, distance < (best?.distance ?? .greatestFiniteMagnitude) {
+                        best = (index, distance)
+                    }
+                }
+                if let best { perColumn[best.index, default: []].append(block) }
+            }
+            for (columnIndex, columnBlocks) in perColumn {
+                let sorted = columnBlocks.sorted { $0.centerY > $1.centerY }
+                var cells: [[OCRTextBlock]] = []
+                for block in sorted {
+                    if let previous = cells.last?.last {
+                        let gap = (previous.centerY - previous.height / 2) - (block.centerY + block.height / 2)
+                        if gap <= max(0.015, medianHeight * 0.9) {
+                            cells[cells.count - 1].append(block)
+                            continue
+                        }
+                    }
+                    cells.append([block])
+                }
+                for (cellIndex, cell) in cells.enumerated() {
+                    let cellText = cell.map(\.text).joined(separator: " ")
+                    if cellText.contains("Legend") || cellText.contains("图例") { continue }
+                    let top = cell.map { $0.centerY + $0.height / 2 }.max() ?? 0
+                    let bottom = cell.map { $0.centerY - $0.height / 2 }.min() ?? 0
+                    let hit = bands.filter { $0.top > bottom && $0.bottom < top }
+                    if hit.isEmpty && timeRange(in: cellText) == nil {
+                        unparsed.append(cellText)
+                        continue
+                    }
+                    guard let parsed = parseCell(cellText, weekday: columns[columnIndex].weekday,
+                                                  rowStart: hit.first?.start, rowEnd: hit.last?.end,
+                                                  rowStartPeriod: hit.first?.startPeriod, rowEndPeriod: hit.last?.endPeriod,
+                                                  rowIndex: cellIndex) else {
+                        unparsed.append(cellText)
+                        continue
+                    }
+                    rawMeetings.append(parsed)
+                }
+            }
+            guard !rawMeetings.isEmpty else { return nil }
+            return (group(rawMeetings), unparsed)
+        }
+
+        // Fallback: cluster body blocks into rows by centerY (no usable
+        // gutter), the original line-up behaviour.
         let body = blocks.filter { $0.centerY < headerY - tolerance }
             .sorted { $0.centerY > $1.centerY }
         var rows: [[OCRTextBlock]] = []
@@ -1497,8 +1700,6 @@ public extension ScheduleTextImporter {
                 rows.append([block])
             }
         }
-
-        // 3. Each row: time info may sit in the left gutter or inside a cell.
         var rawMeetings: [(course: ImportedCourseDraft, meeting: ImportedMeetingDraft)] = []
         var unparsed: [String] = []
         var rowIndex = 0
@@ -1558,7 +1759,8 @@ public extension ScheduleTextImporter {
             meeting.endPeriod = periods.1 ?? rowEndPeriod
         }
         let weeks = weekRange(in: trimmed)
-        meeting.parity = weeks.2
+        let english = englishWeeks(in: trimmed)
+        meeting.parity = english == nil ? weeks.2 : 0
         if let location = locationToken(in: trimmed) { meeting.location = location }
         var teacher = ""
         if let match = firstMatch(#"(?:教师|老师|任课教师)[:：]?\s*([一-龥]{2,4})"#, in: trimmed) {
@@ -1575,7 +1777,8 @@ public extension ScheduleTextImporter {
         if meeting.location.isEmpty { issues.append("教室没认出") }
         let course = ImportedCourseDraft(
             name: name, teacher: teacher, location: meeting.location,
-            firstWeek: weeks.0, lastWeek: weeks.1,
+            firstWeek: english?.first ?? weeks.0, lastWeek: english?.last ?? weeks.1,
+            customWeeks: english?.custom ?? [],
             meetings: [], issues: issues, sourceLine: trimmed)
         return (course, meeting)
     }

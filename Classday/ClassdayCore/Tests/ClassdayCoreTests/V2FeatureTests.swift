@@ -199,7 +199,7 @@ final class SmartImportTests: XCTestCase {
         课程名称(代码),授课教师,上课时间,周次
         高等数学(A210331),陈老师,周一 08:00-09:40 教学楼A301,1-16
         ,陈老师,周三 10:10-11:50 教学楼A302,1-16
-        大学英语,王老师,周五 14:00-15:40,1,3,5,7周
+        大学英语,王老师,周五 14:00-15:40,"1,3,5,7周"
         """
         let result = ScheduleTextImporter.parseCSV(csv)
         let math = result.drafts.first { $0.name == "高等数学" }
@@ -238,6 +238,48 @@ final class SmartImportTests: XCTestCase {
         XCTAssertNotNil(result)
         XCTAssertEqual(Set(result?.drafts.map(\.name) ?? []), ["线性代数", "体育"])
         XCTAssertEqual(result?.drafts.first { $0.name == "线性代数" }?.meetings.first?.weekday, 2)
+    }
+
+    func testEnglishTableLayoutWithSpansAndLegend() {
+        let rows: [[String]] = [
+            ["MEEC · Full Semester Timetable"],
+            ["MEEC-SHU Joint Master Degree"],
+            ["Time (时间)", "Monday (周一)", "Tuesday (周二)", "Wednesday (周三)", "Thursday (周四)", "Friday (周五)"],
+            ["08:00–08:30", "Image Processing & Vision\nPIVT01 · Room PA1\nWeeks 1–4, 6–7, 9–15", "", "", "", ""],
+            ["08:30–09:00", "", "", "", "", ""],
+            ["09:00–09:30", "", "", "Analog & Digital Filters\nFAD2T01\nWeeks 2–7: Room AM\nWeeks 9–15: Room FA3", "", ""],
+            ["09:30–10:00", "", "", "", "", ""],
+            ["10:00–10:30", "", "", "Power Conversion & Storage\nRoom TBA (教室未定)\nEvery 2 weeks (starting Week 2)", "", ""],
+            ["Course Legend (课程图例说明)", "", "", "", "", ""],
+            ["IPV", "Image Processing and Vision  (图像处理与视觉)", "", "", "", ""],
+        ]
+        let result = ScheduleTextImporter.parseRows(rows, spans: ["3,1": 6])
+        XCTAssertNotNil(result)
+        let drafts = result?.drafts ?? []
+        XCTAssertEqual(drafts.count, 4)
+        let ipv = drafts.first { $0.name == "Image Processing & Vision" }
+        XCTAssertEqual(ipv?.meetings.first?.weekday, 1)
+        XCTAssertEqual(ipv?.meetings.first?.startMinutes, 480)
+        XCTAssertEqual(ipv?.meetings.first?.endMinutes, 600)
+        XCTAssertEqual(ipv?.meetings.first?.location, "Room PA1")
+        XCTAssertEqual(ipv?.customWeeks, [1, 2, 3, 4, 6, 7, 9, 10, 11, 12, 13, 14, 15])
+        let filters = drafts.filter { $0.name == "Analog & Digital Filters" }
+        XCTAssertEqual(filters.count, 2)
+        XCTAssertEqual(Set(filters.map { $0.meetings.first?.location ?? "" }), ["Room AM", "Room FA3"])
+        XCTAssertEqual(Set(filters.map { $0.firstWeek }), [2, 9])
+        let power = drafts.first { $0.name == "Power Conversion & Storage" }
+        XCTAssertEqual(power?.customWeeks, [2, 4, 6, 8, 10, 12, 14, 16])
+        XCTAssertEqual(power?.meetings.first?.location, "")
+    }
+
+    func testXLSXMergedCellSpan() {
+        let data = Data(base64Encoded: "UEsDBBQAAAAIAGINa130ryk77QAAAFcBAAAUAAAAeGwvc2hhcmVkU3RyaW5ncy54bWxtkMFKAzEQhu8+RZh7m9SFUkuSIoJPoA8QdmN3YTNZd7KiN6+CFw+lSs+KIAUPIiI+jrvStzAiIpS9zPB/P/MdRs7OXcnObE2FRwWjoQBmMfVZgXMFx0eHgwkwCgYzU3q0Ci4swUzvSKLA4imSgjyEaso5pbl1hoa+shibE187E2Ks55yq2pqMcmuDK/muEGPuTIHAUt9gUDAG1mBx2tiDv6wlFVoG3S1fN8sXyYOW/If80vbm8fPtso++X/fQdrXapmIyFWIQZyK2q83T7df6qls8t+sH1i3u4uruP/YTMeqRJFGyF1X/FY+f0d9QSwMEFAAAAAgAYg1rXVfUfGXtAAAA5QEAABgAAAB4bC93b3Jrc2hlZXRzL3NoZWV0MS54bWxtkd1OAyEQhe99CjL3lv3RxjRAY9v4BPoAhJ3ubsrPBuhW315aK9LGO2a+M2dOBrb+NJrM6MPoLId6UQFBq1w32p7Dx/vb4wuQEKXtpHYWOXxhgLV4YCfnD2FAjCQZ2MBhiHFaURrUgEaGhZvQJrJ33siYSt/TMHmU3WXIaNpU1ZIaOVoQ7NLbySgF8+5EfAqSuur8eK2BRA4h1bOoGJ0Fo+rKNiWrb9m2ZM0t25WszYym3TlAkwM0hfjpLkDJnv83arNRW4iXd0Yt0N85WlzDoO9xi1oHotzRxp/D5C7xuD+nWF3n/+SpyD8kvgFQSwECFAMUAAAACABiDWtd9K8pO+0AAABXAQAAFAAAAAAAAAAAAAAAgAEAAAAAeGwvc2hhcmVkU3RyaW5ncy54bWxQSwECFAMUAAAACABiDWtdV9R8Ze0AAADlAQAAGAAAAAAAAAAAAAAAgAEfAQAAeGwvd29ya3NoZWV0cy9zaGVldDEueG1sUEsFBgAAAAACAAIAiAAAAEICAAAAAA==")!
+        let result = ScheduleTextImporter.parseFileData(data)
+        XCTAssertEqual(result?.drafts.count, 1)
+        XCTAssertEqual(result?.drafts.first?.name, "高等数学")
+        XCTAssertEqual(result?.drafts.first?.meetings.first?.startMinutes, 480)
+        XCTAssertEqual(result?.drafts.first?.meetings.first?.endMinutes, 540)
+        XCTAssertEqual(result?.drafts.first?.meetings.first?.location, "教学楼A301")
     }
 
     func testTextLineParsesAllFields() {
@@ -309,7 +351,7 @@ func testGridParsesTimetableScreenshotLayout() {
 final class ChangelogStructureTests: XCTestCase {
     func testChangelogIsNewestFirstAndComplete() {
         let versions = AppChangelog.entries.map(\.version)
-        XCTAssertEqual(versions.first, "2.2.0")
+        XCTAssertEqual(versions.first, "2.2.1")
         XCTAssertEqual(Set(versions).count, versions.count)
         let parsed = versions.map { $0.split(separator: ".").compactMap { Int($0) } }
         for index in 1..<parsed.count {
