@@ -822,19 +822,40 @@ public enum ScheduleTextImporter {
     /// Course names in exports carry serial numbers and bracketed course
     /// codes / credit notes ("(A210331)", "（3学分）"); strip them.
     private static func cleanCourseName(_ raw: String) -> String {
-        var name = raw.trimmingCharacters(in: .whitespaces)
-        name = replaceAll(#"^\d{1,3}[.、．]\s*"#, in: name).trimmingCharacters(in: .whitespaces)
-        if let regex = try? NSRegularExpression(pattern: #"[\(\[（【][^\)\]）】*[\)\]）】]"#) {
-            let ns = name as NSString
-            for match in regex.matches(in: name, range: NSRange(location: 0, length: ns.length)).reversed() {
-                let inner = ns.substring(with: match.range)
-                if inner.range(of: #"\d"#, options: .regularExpression) != nil
-                    || inner.contains("学分") || inner.contains("代码") || inner.contains("英文") {
-                    if let range = Range(match.range, in: name) { name.removeSubrange(range) }
+        var name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Leading serial numbers like "1. " / "2、"
+        if let first = name.first, first.isNumber {
+            let digits = name.prefix { $0.isNumber }
+            if digits.count <= 3 {
+                let rest = name.dropFirst(digits.count)
+                if let marker = rest.first, marker == "." || marker == "、" || marker == "．" {
+                    name = String(rest.dropFirst()).trimmingCharacters(in: .whitespaces)
                 }
             }
         }
-        return name.trimmingCharacters(in: .whitespaces)
+        // Bracketed chunks carrying a course code or credit note are cut;
+        // anything else in brackets stays part of the name.
+        let openers: [Character: Character] = ["(": ")", "（": "）", "[": "]", "【": "】"]
+        var output = ""
+        var index = name.startIndex
+        while index < name.endIndex {
+            let character = name[index]
+            if let closer = openers[character] {
+                let contentStart = name.index(after: index)
+                if contentStart < name.endIndex,
+                   let closeIndex = name[contentStart...].firstIndex(of: closer) {
+                    let inner = name[contentStart..<closeIndex]
+                    if inner.contains(where: { $0.isNumber }) || inner.contains("学分")
+                        || inner.contains("代码") || inner.contains("英文") {
+                        index = name.index(after: closeIndex)
+                        continue
+                    }
+                }
+            }
+            output.append(character)
+            index = name.index(after: index)
+        }
+        return output.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Week info beyond weekRange's basics: bare "1-16" ranges and explicit
@@ -1243,9 +1264,13 @@ public extension ScheduleTextImporter {
                 // Split-room courses: one draft per week-range segment.
                 let segments = weekRoomSegments(in: cell)
                 if segments.count >= 2 {
-                    let rawName = cell.components(separatedBy: "Week").first ?? cell
+                    let rawName = (cell.components(separatedBy: "Week").first ?? cell)
+                        .replacingOccurrences(of: "\n", with: " ")
                     let name = stripExtracted(rawName)
-                        .trimmingCharacters(in: .whitespaces.union(.punctuationCharacters))
+                        .components(separatedBy: .whitespacesAndNewlines)
+                        .filter { !$0.isEmpty }
+                        .joined(separator: " ")
+                        .trimmingCharacters(in: .punctuationCharacters)
                     for segment in segments {
                         var meeting = ImportedMeetingDraft(weekday: weekday, location: "Room \(segment.room)")
                         meeting.startMinutes = rowTimes?.0
