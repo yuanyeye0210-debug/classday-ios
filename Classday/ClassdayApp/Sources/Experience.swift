@@ -14,6 +14,12 @@ struct ClassdayChrome: Equatable {
     var allowsMotion: Bool
     var allowsParticles: Bool
 
+    /// The tracker itself runs on every non-saver tier, whatever the
+    /// theme: signature layers and cards in all eight themes read the
+    /// gravity vector (2.3.2 batch 3/4). `allowsMotion` stays as the
+    /// narrower per-theme flag for legacy consumers.
+    var tracksMotion: Bool { tier != .saver }
+
     static func resolve(choice: AppearanceChoice, reduceMotion: Bool, lowPower: Bool) -> ClassdayChrome {
         let tier = ClassdayThemes.effectiveTier(selected: choice.performance, lowPower: lowPower, reduceMotion: reduceMotion)
         let rich = tier != .saver
@@ -48,9 +54,31 @@ final class MotionTracker {
     private let manager = CMMotionManager()
     private var running = false
 
+    // Tilt haptics: detent ticks as the tilt angle steps, a firmer dock
+    // tap when the phone returns to upright. Pattern after the levelpro
+    // level app (prepare-after-impact, latched zones) with murmur's
+    // ~34-degree full-scale calibration; gated by a user toggle.
+    var hapticsEnabled = true
+    private let softTap = UIImpactFeedbackGenerator(style: .soft)
+    private let rigidTap = UIImpactFeedbackGenerator(style: .rigid)
+    private var lastDetent = -1
+    private var candidateDetent = -1
+    private var candidateSamples = 0
+    private var lastAzimuthDetent = -1
+    private var dockArmed = false
+    private var lastTapAt: TimeInterval = 0
+
     func start() {
         guard !running, manager.isDeviceMotionAvailable else { return }
         running = true
+        hapticsEnabled = UserDefaults.standard.object(forKey: "classday.tiltHaptics") as? Bool ?? true
+        softTap.prepare()
+        rigidTap.prepare()
+        lastDetent = -1
+        candidateDetent = -1
+        candidateSamples = 0
+        lastAzimuthDetent = -1
+        dockArmed = false
         manager.deviceMotionUpdateInterval = 1.0 / 30.0
         manager.startDeviceMotionUpdates(to: .main) { [weak self] motion, _ in
             guard let self, let sample = motion?.gravity else { return }
@@ -70,6 +98,7 @@ final class MotionTracker {
                 dx: self.gravity.dx + self.velocity.dx * dt,
                 dy: self.gravity.dy + self.velocity.dy * dt
             )
+            self.updateHaptics(now: Date().timeIntervalSinceReferenceDate)
         }
     }
 
@@ -79,6 +108,60 @@ final class MotionTracker {
         manager.stopDeviceMotionUpdates()
         gravity = CGVector(dx: 0, dy: 1)
         velocity = CGVector(dx: 0, dy: 0)
+        lastDetent = -1
+        candidateDetent = -1
+        lastAzimuthDetent = -1
+        dockArmed = false
+    }
+
+    private func updateHaptics(now: TimeInterval) {
+        guard hapticsEnabled else { return }
+        // Tilt angle from upright: the gravity vector is a unit vector,
+        // so its y component is cos(theta) directly.
+        let theta = acos(min(1, max(-1, Double(gravity.dy)))) * 180 / .pi
+        // Detents every 8 degrees. A new detent must survive two samples
+        // before it ticks, so the spring's settle wobble at a boundary
+        // does not machine-gun the Taptic Engine.
+        let detent = Int(theta / 8)
+        if detent != candidateDetent {
+            candidateDetent = detent
+            candidateSamples = 0
+        } else {
+            candidateSamples += 1
+        }
+        if candidateSamples == 1 {
+            if lastDetent >= 0, detent != lastDetent, now - lastTapAt > 0.06 {
+                softTap.impactOccurred(intensity: 0.55)
+                softTap.prepare()
+                lastTapAt = now
+            }
+            lastDetent = detent
+        }
+        // Azimuth detents every 45 degrees, only once properly tilted,
+        // so swinging a steep phone around also has texture.
+        if theta > 15 {
+            let phi = atan2(Double(gravity.dx), -(Double(gravity.dy) - 1)) * 180 / .pi
+            let azimuth = Int((phi + 180) / 45)
+            if azimuth != lastAzimuthDetent {
+                if lastAzimuthDetent >= 0, now - lastTapAt > 0.06 {
+                    softTap.impactOccurred(intensity: 0.35)
+                    softTap.prepare()
+                    lastTapAt = now
+                }
+                lastAzimuthDetent = azimuth
+            }
+            dockArmed = true
+        } else if theta < 6 {
+            lastAzimuthDetent = -1
+        }
+        // Dock: one firm tap when the phone comes home to upright,
+        // latched until it has been properly tilted again.
+        if dockArmed, theta < 2.5 {
+            rigidTap.impactOccurred(intensity: 0.8)
+            rigidTap.prepare()
+            dockArmed = false
+            lastTapAt = now
+        }
     }
 }
 
@@ -481,6 +564,54 @@ private struct ThemeShaderModifier: ViewModifier {
     }
 }
 
+/// Glass card kit (2.3.2): the card leans in 3D with the phone, a light
+/// sweep stays pinned to the gravity-up side, and under the glass theme
+/// the surface itself gets the thin-film foil. Angles stay small on
+/// purpose - a card is a physical object on the desk, not a weather vane.
+struct TiltCardFX: ViewModifier {
+    var cornerRadius: CGFloat
+    var strength: CGFloat = 1
+    @Environment(\.motionTracker) private var tracker
+    @Environment(\.classdayChrome) private var chrome
+
+    func body(content: Content) -> some View {
+        let g = tracker.gravity
+        let tx = g.dx
+        let ty = g.dy - 1
+        let on = chrome.tracksMotion
+        content
+            .overlay {
+                if on {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .fill(LinearGradient(
+                                colors: [.white.opacity(0.14), .clear, .white.opacity(0.04)],
+                                startPoint: UnitPoint(x: 0.5 - tx * 0.8, y: 0),
+                                endPoint: UnitPoint(x: 0.5 + tx * 0.8, y: 1)
+                            ))
+                        if chrome.theme.specialLayout == "glass" {
+                            GeometryReader { geo in
+                                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                                    .fill(.white.opacity(0.10))
+                                    .colorEffect(ShaderLibrary.iridescentFilm(
+                                        .float2(Float(geo.size.width), Float(geo.size.height)),
+                                        .float2(Float(tx), Float(ty)),
+                                        .float(0),
+                                        .float(0.38)
+                                    ))
+                            }
+                        }
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .strokeBorder(LinearGradient(colors: [.white.opacity(0.35), .white.opacity(0.05)], startPoint: .top, endPoint: .bottom), lineWidth: 1)
+                    }
+                    .allowsHitTesting(false)
+                }
+            }
+            .rotation3DEffect(.degrees(on ? Double(ty) * -5.5 * Double(strength) : 0), axis: (x: 1, y: 0, z: 0), anchor: .center, perspective: 0.55)
+            .rotation3DEffect(.degrees(on ? Double(tx) * 5.5 * Double(strength) : 0), axis: (x: 0, y: 1, z: 0), anchor: .center, perspective: 0.55)
+    }
+}
+
 struct ThemeBackground: View {
     @Environment(\.classdayChrome) private var chrome
 
@@ -500,6 +631,7 @@ struct ThemeGalleryView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.classdayChrome) private var chrome
     @Environment(\.motionTracker) private var tracker
+    @AppStorage("classday.tiltHaptics") private var tiltHaptics = true
 
     var body: some View {
         NavigationStack {
@@ -516,6 +648,7 @@ struct ThemeGalleryView: View {
                             .foregroundStyle(Color(chrome.theme.secondary.palette))
                     }
                     tiltReadout
+                    tiltHapticsToggle
                     ForEach(ClassdayThemes.all) { theme in
                         Button {
                             model.setAppearance(AppearanceChoice(themeID: theme.id, performance: model.document.appearance.performance))
@@ -580,7 +713,7 @@ struct ThemeGalleryView: View {
                     Text("横 \(String(format: "%+.2f", Double(dx))) · 纵 \(String(format: "%+.2f", Double(dy)))")
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(Color(chrome.theme.secondary.palette))
-                    Text(chrome.allowsMotion ? "跟踪运行中：斜着拿手机，圆点应该跟着往低的那侧跑。" : "当前主题或档位下跟踪未开启，这张卡只作传感器自检。")
+                    Text(chrome.tracksMotion ? "跟踪运行中：斜着拿手机，圆点应该跟着往低的那侧跑。" : "当前是省电档，跟踪未开启，这张卡只作传感器自检。")
                         .font(.caption)
                         .foregroundStyle(Color(chrome.theme.secondary.palette))
                 }
@@ -589,8 +722,26 @@ struct ThemeGalleryView: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color(chrome.theme.card.palette).opacity(0.7)))
-        .onAppear { tracker.start() }
-        .onDisappear { if !chrome.allowsMotion { tracker.stop() } }
+        .onAppear { tracker.hapticsEnabled = tiltHaptics; tracker.start() }
+        .onDisappear { if !chrome.tracksMotion { tracker.stop() } }
+    }
+
+    private var tiltHapticsToggle: some View {
+        Toggle(isOn: $tiltHaptics) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("倾斜震动反馈")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(Color(chrome.theme.ink.palette))
+                Text("倾斜每跨 8° 轻震一记，方位每转 45° 也有刻度感，手机摆正时一记稍重的「归位」。省电档不震。")
+                    .font(.caption)
+                    .foregroundStyle(Color(chrome.theme.secondary.palette))
+            }
+        }
+        .tint(Color(chrome.theme.accent.palette))
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color(chrome.theme.card.palette).opacity(0.7)))
+        .onChange(of: tiltHaptics) { _, value in tracker.hapticsEnabled = value }
     }
 
     private func preview(_ theme: ClassdayTheme) -> some View {

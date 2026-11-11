@@ -40,8 +40,8 @@ struct RootView: View {
             ThemeBackground()
         }
         .environment(\.motionTracker, motionTracker)
-        .onAppear { if chrome.allowsMotion { motionTracker.start() } }
-        .onChange(of: chrome.allowsMotion) { _, allowed in
+        .onAppear { if chrome.tracksMotion { motionTracker.start() } }
+        .onChange(of: chrome.tracksMotion) { _, allowed in
             if allowed { motionTracker.start() } else { motionTracker.stop() }
         }
         .onDisappear { motionTracker.stop() }
@@ -356,6 +356,7 @@ struct TodayView: View {
             )
             .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
             .shadow(color: bg.opacity(0.3), radius: 14, x: 0, y: 8)
+            .modifier(TiltCardFX(cornerRadius: 26, strength: 1))
         }
         .buttonStyle(JournalPressStyle())
         .accessibilityLabel("\(occ.name)，\(ScheduleCopy.hhmm(occ.start, calendar: model.calendar))，\(occ.location)")
@@ -846,6 +847,7 @@ struct CoursesView: View {
             .padding(14)
             .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Theme.elevated))
             .shadow(color: .black.opacity(scheme == .dark ? 0 : 0.05), radius: 10, x: 0, y: 4)
+            .modifier(TiltCardFX(cornerRadius: 20, strength: 0.7))
         }
         .buttonStyle(JournalPressStyle())
     }
