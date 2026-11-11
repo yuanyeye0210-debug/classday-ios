@@ -28,7 +28,11 @@ using namespace metal;
     float film = d * 3.1 + tilt.x * 2.4 - tilt.y * 1.5 + time * 0.10 + uv.x * 0.8;
     half3 iri = half3(0.5 + 0.5 * cos(6.28318 * (film + float3(0.0, 0.33, 0.67))));
     float fres = pow(min(d * 1.35, 1.2), 2.0);
-    return half4(color.rgb + iri * half(fres * strength), color.a);
+    // The added film must scale with the source alpha: SwiftUI colors
+    // are premultiplied, so adding rgb into transparent pixels breaks
+    // the premultiply invariant and the compositor leaks each layer's
+    // rectangular bounds as a visible tile (the 2.3.5-2.3.8 glow frames).
+    return half4(color.rgb + iri * half(fres * strength) * color.a, color.a);
 }
 
 // Mech specular band (2.3.2): one hard sheen whose position rides the
@@ -37,7 +41,7 @@ using namespace metal;
     float2 uv = position / max(size, float2(1.0));
     float cx = (uv.x - 0.5) + tiltX * 0.55 + uv.y * 0.35;
     float band = exp(-pow(cx * 4.2, 2.0));
-    return half4(color.rgb + half3(half(band * 0.32)), color.a);
+    return half4(color.rgb + half3(half(band * 0.32)) * color.a, color.a);
 }
 
 // Gravitational lens (2.3.2): bends the sampled position around a centre
