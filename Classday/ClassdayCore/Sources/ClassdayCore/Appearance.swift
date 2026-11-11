@@ -94,7 +94,7 @@ public struct ClassdayTheme: Equatable, Hashable, Sendable, Identifiable {
     }
 
     public var usesShader: Bool { specialLayout == "neon" || specialLayout == "aurora" || specialLayout == "glass" }
-    public var usesMotion: Bool { specialLayout == "glass" || specialLayout == "aurora" || specialLayout == "orbit" }
+    public var usesMotion: Bool { specialLayout == "glass" || specialLayout == "aurora" || specialLayout == "orbit" || specialLayout == "dust" }
     public var usesOrbit: Bool { specialLayout == "orbit" }
     public var usesCube: Bool { specialLayout == "cube" }
     public var usesFan: Bool { specialLayout == "aurora" }
@@ -158,6 +158,13 @@ public enum ClassdayThemes {
             accent: (150, 190, 255), card: (16, 20, 36), line: (60, 80, 120), glow: (180, 210, 255),
             courses: [(140, 180, 255), (120, 210, 230), (180, 160, 255), (100, 170, 255), (200, 210, 255), (90, 150, 220)],
             haptic: "glass", layout: "cube"
+        ),
+        theme(
+            "dust", "星尘引力", "Stardust Gravity", "星尘受重力牵引，手机往哪倾往哪流",
+            dark: true, bg: (7, 9, 26), ink: (232, 238, 255), secondary: (150, 160, 200),
+            accent: (255, 196, 92), card: (13, 17, 40), line: (52, 64, 110), glow: (120, 150, 255),
+            courses: [(255, 196, 92), (120, 170, 255), (170, 140, 255), (90, 210, 200), (255, 150, 120), (150, 200, 255)],
+            haptic: "glide", layout: "dust"
         ),
     ]
 
