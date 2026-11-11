@@ -1549,6 +1549,10 @@ public enum AppChangelog {
     }
 
     public static let entries: [Entry] = [
+        Entry(version: "2.4.1", title: "更新安装改走 SideStore", changes: [
+            "「检查更新」下载后的安装说明改为 SideStore 流程：下载 IPA 到「文件」→ 打开 LocalDevVPN 连接 → 打开 SideStore 点 + 选中 IPA 安装，之后更新不用再回电脑用 Sideloadly",
+            "还没装 SideStore 的，说明里写了首次需要在电脑上用 iloader 装一次",
+        ]),
         Entry(version: "2.4.0", title: "每门课的记分规则", changes: [
             "成绩录入加入记分规则：每门课可设自己的分项（项目/小测/考试…）与权重，总成绩自动算，随时可改",
             "支持多条候选算法取最高：像优化与算法的 G = 0.25P + max(0.25·TEST60 + 0.50·EX1, 0.75·EX1, 0.75·EX2)，第一次考试与补考哪条高取哪条",

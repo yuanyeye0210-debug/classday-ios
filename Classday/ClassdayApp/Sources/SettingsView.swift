@@ -244,7 +244,7 @@ struct SettingsView: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        Text("侧载版没法在 App 内直接安装：下载后用 Sideloadly 覆盖安装即可，课表数据不会丢。")
+                        Text("安装步骤（SideStore）：① 点上面下载，IPA 会存进「文件」；② 打开 LocalDevVPN 点连接；③ 打开 SideStore，点 + 选中刚下载的 IPA，签好自动装上，课表数据不会丢。还没装 SideStore 的话，首次需要在电脑上用 iloader 装一次，装好后以后更新都不用电脑。")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
