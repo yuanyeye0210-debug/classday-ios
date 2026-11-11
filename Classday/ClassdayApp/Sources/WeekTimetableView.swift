@@ -43,6 +43,7 @@ struct CourseBlockView: View {
 
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var eventToEdit: PersonalEvent?
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
@@ -338,6 +339,9 @@ struct WeekJournalView: View {
         .scrollIndicators(.hidden)
         .toolbar(model.presented == nil ? .visible : .hidden, for: .tabBar)
         .sensoryFeedback(.selection, trigger: model.weekIndex)
+        .sheet(item: $eventToEdit) { event in
+            EventEditorView(existing: event)
+        }
     }
 
     private var header: some View {
@@ -491,7 +495,10 @@ struct WeekJournalView: View {
         let end = CivilStamp.date(from: event.endISO, calendar: cal)
         let bar = Theme.courseBackground("purple", scheme: scheme)
         let ink = Theme.courseInk("purple", scheme: scheme)
-        return HStack(spacing: 10) {
+        return Button {
+            eventToEdit = event
+        } label: {
+            HStack(spacing: 10) {
             Capsule()
                 .fill(bar)
                 .frame(width: 5, height: 34)
@@ -525,6 +532,8 @@ struct WeekJournalView: View {
                 .stroke(ink.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
         )
         .accessibilityElement(children: .combine)
+        }
+        .buttonStyle(JournalPressStyle())
     }
 
     private var summaryCard: some View {

@@ -27,6 +27,9 @@ struct SettingsView: View {
     @State private var exporting = false
     @State private var exportDocument = JSONFileDocument(data: Data())
     @State private var showChangelog = false
+    @State private var updateNote: String?
+    @State private var updateURL: URL?
+    @State private var checkingUpdate = false
 
     init() {
         _semester = State(initialValue: DemoData.makeSemester())
@@ -217,6 +220,33 @@ struct SettingsView: View {
                     settingsRow(icon: "newspaper.fill", color: .indigo,
                                 title: "更新日志", value: AppChangelog.entries.first?.version) {
                         showChangelog = true
+                    }
+                    Divider().padding(.leading, 58)
+                    settingsRow(icon: "arrow.down.circle.fill", color: .teal,
+                                title: "检查更新", value: checkingUpdate ? "检查中…" : updateNote) {
+                        Task { await checkForUpdate() }
+                    }
+                    if let updateURL {
+                        Divider().padding(.leading, 58)
+                        Link(destination: updateURL) {
+                            HStack(spacing: 12) {
+                                iconBadge("square.and.arrow.down.fill", color: .green)
+                                Text("下载新版 IPA")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundStyle(Theme.ink)
+                                Spacer()
+                                Image(systemName: "arrow.up.forward.app")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundStyle(Theme.secondary.opacity(0.6))
+                            }
+                            .padding(.vertical, 9)
+                            .padding(.horizontal, 4)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        Text("侧载版没法在 App 内直接安装：下载后用 Sideloadly 覆盖安装即可，课表数据不会丢。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -521,5 +551,52 @@ struct ChangelogView: View {
                 }
             }
         }
+    }
+}
+
+private struct GitHubRelease: Decodable {
+    struct Asset: Decodable {
+        let name: String
+        let browser_download_url: URL
+    }
+    let tag_name: String
+    let assets: [Asset]
+}
+
+extension SettingsView {
+    /// Compares the app's own version against the latest GitHub release
+    /// of the (public) repo; releases are published alongside each IPA
+    /// delivery, so this is the sideload-friendly update channel.
+    func checkForUpdate() async {
+        checkingUpdate = true
+        updateURL = nil
+        defer { checkingUpdate = false }
+        do {
+            var request = URLRequest(url: URL(string: "https://api.github.com/repos/yuanyeye0210-debug/classday-ios/releases/latest")!)
+            request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+            let (data, _) = try await URLSession.shared.data(for: request)
+            let release = try JSONDecoder().decode(GitHubRelease.self, from: data)
+            let latest = release.tag_name.hasPrefix("v") ? String(release.tag_name.dropFirst()) : release.tag_name
+            let current = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+            if Self.version(latest, isNewerThan: current) {
+                updateNote = "新版 \(latest)"
+                updateURL = release.assets.first { $0.name.hasSuffix(".ipa") }?.browser_download_url
+            } else {
+                updateNote = "已是最新"
+            }
+        } catch {
+            updateNote = "检查失败"
+        }
+    }
+
+    static func version(_ a: String, isNewerThan b: String) -> Bool {
+        let pa = a.split(separator: ".").map { Int($0) ?? 0 }
+        let pb = b.split(separator: ".").map { Int($0) ?? 0 }
+        for i in 0..<max(pa.count, pb.count) {
+            let x = i < pa.count ? pa[i] : 0
+            let y = i < pb.count ? pb[i] : 0
+            if x != y { return x > y }
+        }
+        return false
     }
 }
