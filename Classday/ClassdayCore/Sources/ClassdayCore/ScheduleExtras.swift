@@ -1059,6 +1059,9 @@ public enum AppChangelog {
     }
 
     public static let entries: [Entry] = [
+        Entry(version: "2.1.2", title: "智能导入按预览改版", changes: [
+            "智能导入页重做成预览的样子：来源是带图标的卡片、每门课一张带颜色的确认卡（星期做成色块徽章）、修改页每个上课安排一张独立卡，不再是满屏文字表单",
+        ]),
         Entry(version: "2.1.1", title: "图片网格识别", changes: [
             "课表截图按版面识别：网格课表能对齐星期列与时间行，整张表一次读完",
         ]),

@@ -7,9 +7,13 @@ import ClassdayCore
 
 /// Smart import: photos, CSV files and pasted text are parsed into editable
 /// drafts first. Nothing reaches the timetable until the user confirms.
+/// Presentation follows the approved preview: source cards with icon tiles,
+/// one designed card per drafted course, and a card-based editor — no bare
+/// form rows.
 struct SmartImportView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var scheme
 
     @State private var drafts: [ImportedCourseDraft] = []
     @State private var excluded: Set<UUID> = []
@@ -20,6 +24,8 @@ struct SmartImportView: View {
     @State private var showFileImporter = false
     @State private var pasteText = ""
     @State private var analyzing = false
+
+    static let palette = ["blue", "orange", "purple", "green", "pink", "sage"]
 
     private static let sampleCSV = """
     课程名称,星期,开始时间,结束时间,教室,教师,周次
@@ -32,11 +38,23 @@ struct SmartImportView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                sourceSection
-                if !drafts.isEmpty { confirmSection }
-                if !unparsed.isEmpty { unparsedSection }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    sourceCard
+                    pasteCard
+                    if analyzing {
+                        HStack(spacing: 10) {
+                            ProgressView()
+                            Text("正在识别…").font(.subheadline.weight(.medium)).foregroundStyle(Theme.secondary)
+                        }
+                        .padding(.horizontal, 6)
+                    }
+                    if !drafts.isEmpty { confirmSection }
+                    if !unparsed.isEmpty { unparsedCard }
+                }
+                .padding(18)
             }
+            .background(Theme.elevated)
             .navigationTitle("智能导入课表")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -48,14 +66,22 @@ struct SmartImportView: View {
                     Button {
                         importSelected()
                     } label: {
-                        Text("导入选中的 \(selectedCount) 门课")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 6)
+                        HStack(spacing: 8) {
+                            Image(systemName: "square.and.arrow.down.fill")
+                            Text("导入选中的 \(selectedCount) 门课")
+                        }
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 54)
+                        .background(RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(selectedCount == 0 ? Theme.secondary : Theme.accent))
+                        .shadow(color: Theme.accent.opacity(selectedCount == 0 ? 0 : 0.35), radius: 12, y: 5)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(JournalPressStyle())
                     .disabled(selectedCount == 0)
-                    .padding()
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 10)
                     .background(.ultraThinMaterial)
                 }
             }
@@ -78,37 +104,87 @@ struct SmartImportView: View {
 
     // MARK: sections
 
-    private var sourceSection: some View {
-        Section("选择来源") {
+    private var sourceCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionHeader("选择来源", caption: "三种方式，识别完先确认再导入")
             PhotosPicker(selection: $pickerItem, matching: .images) {
-                Label("课表图片（截图或照片）", systemImage: "photo.on.rectangle.angled")
+                sourceRow(icon: "photo.on.rectangle.angled",
+                          colors: [Color(red: 0.45, green: 0.35, blue: 0.95), Color(red: 0.25, green: 0.55, blue: 0.98)],
+                          title: "课表图片",
+                          subtitle: "截图或照片 · 网格和文字版都能认")
             }
+            .buttonStyle(.plain)
+            Divider().padding(.leading, 66)
             Button {
                 showFileImporter = true
             } label: {
-                Label("CSV / 表格文件", systemImage: "tablecells")
+                sourceRow(icon: "tablecells.fill",
+                          colors: [Color(red: 0.15, green: 0.68, blue: 0.38), Color(red: 0.05, green: 0.55, blue: 0.55)],
+                          title: "CSV / 表格文件",
+                          subtitle: "学校导出的课表 · Excel 另存为 CSV 也行")
             }
-            TextEditor(text: $pasteText)
-                .frame(minHeight: 84)
+            .buttonStyle(.plain)
+            if !sourceName.isEmpty {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                    Text("来源：\(sourceName)")
+                }
+                .font(.caption.weight(.medium))
+                .foregroundStyle(Theme.secondary)
+                .padding(.top, 12)
+            }
+        }
+        .importCard()
+    }
+
+    private var pasteCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                iconTile(icon: "text.viewfinder",
+                         colors: [Color(red: 0.98, green: 0.55, blue: 0.20), Color(red: 0.95, green: 0.35, blue: 0.35)],
+                         size: 38)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("粘贴文本").font(.system(size: 16, weight: .bold))
+                    Text("把课表文字粘进来，一行一节课也行")
+                        .font(.caption).foregroundStyle(Theme.secondary)
+                }
+            }
+            ZStack(alignment: .topLeading) {
+                RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.elevated)
+                TextEditor(text: $pasteText)
+                    .frame(minHeight: 84)
+                    .scrollContentBackground(.hidden)
+                    .padding(6)
+                if pasteText.isEmpty {
+                    Text("例如：高等数学 周一 08:00-09:40 教学楼A301 陈老师 1-16周")
+                        .font(.footnote).foregroundStyle(Theme.secondary.opacity(0.7))
+                        .padding(.horizontal, 14).padding(.vertical, 14)
+                        .allowsHitTesting(false)
+                }
+            }
             Button {
                 load(text: pasteText, source: "粘贴的文本", isCSV: pasteText.contains(",") || pasteText.contains(";") || pasteText.contains("\t"))
             } label: {
-                Label("解析粘贴的文本", systemImage: "text.viewfinder")
+                Text("解析这段文本")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
+                    .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(pasteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Theme.secondary : Theme.accent))
             }
+            .buttonStyle(JournalPressStyle())
             .disabled(pasteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            if analyzing {
-                HStack { ProgressView(); Text("正在识别…").foregroundStyle(.secondary) }
-            }
-            if !sourceName.isEmpty {
-                Text("来源：\(sourceName)").font(.caption).foregroundStyle(.secondary)
-            }
         }
+        .importCard()
     }
 
     private var confirmSection: some View {
-        Section("确认识别结果（点开可改）") {
-            ForEach(drafts) { draft in
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("确认识别结果", caption: "点开任意一门课就能改，勾选的才会导入")
+            ForEach(Array(drafts.enumerated()), id: \.element.id) { index, draft in
                 DraftCard(draft: draft,
+                          colorID: Self.palette[index % Self.palette.count],
                           included: !excluded.contains(draft.id),
                           duplicate: model.document.courses.contains { $0.name == draft.name && !draft.name.isEmpty },
                           onToggle: {
@@ -119,12 +195,54 @@ struct SmartImportView: View {
         }
     }
 
-    private var unparsedSection: some View {
-        Section("没认出的内容（不会导入）") {
+    private var unparsedCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader("没认出的内容", caption: "这些不会导入，你可以对照原文手动加课")
             ForEach(unparsed, id: \.self) { line in
-                Text(line).font(.footnote).foregroundStyle(.secondary)
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange).font(.caption)
+                    Text(line).font(.footnote).foregroundStyle(Theme.secondary)
+                }
             }
         }
+        .importCard()
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
+            .strokeBorder(Theme.secondary.opacity(0.45), style: StrokeStyle(lineWidth: 1.2, dash: [6, 5])))
+    }
+
+    private func sectionHeader(_ title: String, caption: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.system(size: 19, weight: .heavy, design: .rounded)).foregroundStyle(Theme.ink)
+            Text(caption).font(.caption).foregroundStyle(Theme.secondary)
+        }
+        .padding(.bottom, 12)
+    }
+
+    private func sourceRow(icon: String, colors: [Color], title: String, subtitle: String) -> some View {
+        HStack(spacing: 14) {
+            iconTile(icon: icon, colors: colors, size: 52)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 17, weight: .bold)).foregroundStyle(Theme.ink)
+                Text(subtitle).font(.caption).foregroundStyle(Theme.secondary)
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(Theme.secondary)
+        }
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
+    }
+
+    private func iconTile(icon: String, colors: [Color], size: CGFloat) -> some View {
+        Image(systemName: icon)
+            .font(.system(size: size * 0.42, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: size, height: size)
+            .background(RoundedRectangle(cornerRadius: size * 0.3, style: .continuous)
+                .fill(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)))
+            .shadow(color: colors.first?.opacity(0.4) ?? .clear, radius: 6, y: 3)
     }
 
     // MARK: loading sources
@@ -235,7 +353,6 @@ struct SmartImportView: View {
     private func buildCourses() -> (courses: [Course], parities: [(meetingID: UUID, parity: WeekParity)]) {
         let periods = model.document.semester.periods
         let totalWeeks = model.document.semester.totalWeeks
-        let palette = ["blue", "orange", "purple", "green", "pink", "sage"]
         var built: [Course] = []
         var parities: [(meetingID: UUID, parity: WeekParity)] = []
         for (offset, draft) in drafts.enumerated() {
@@ -265,7 +382,7 @@ struct SmartImportView: View {
             guard !meetings.isEmpty else { continue }
             built.append(Course(
                 id: UUID(), name: draft.name, teacher: draft.teacher, location: draft.location,
-                colorID: palette[offset % palette.count], weeks: weeks, meetings: meetings))
+                colorID: Self.palette[offset % Self.palette.count], weeks: weeks, meetings: meetings))
         }
         return (built, parities)
     }
@@ -291,59 +408,73 @@ struct SmartImportView: View {
     }
 }
 
+extension View {
+    func importCard() -> some View {
+        self
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Theme.card))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Theme.line, lineWidth: 1))
+            .shadow(color: .black.opacity(0.05), radius: 10, y: 4)
+    }
+}
+
 private struct DraftCard: View {
     var draft: ImportedCourseDraft
+    var colorID: String
     var included: Bool
     var duplicate: Bool
     var onToggle: () -> Void
     var onEdit: () -> Void
+    @Environment(\.colorScheme) private var scheme
+
+    private var courseBG: Color { Theme.courseBackground(colorID, scheme: scheme) }
+    private var courseInk: Color { Theme.courseInk(colorID, scheme: scheme) }
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.accentColor.opacity(0.14))
-                Text(String(draft.name.first ?? "课"))
-                    .font(.headline)
-            }
-            .frame(width: 42, height: 42)
-            VStack(alignment: .leading, spacing: 3) {
+            CourseGlyphTile(name: draft.name.isEmpty ? "课" : draft.name, colorID: colorID, size: 50)
+            VStack(alignment: .leading, spacing: 7) {
                 HStack(spacing: 6) {
-                    Text(draft.name.isEmpty ? "课程名待补" : draft.name).font(.headline)
-                    if duplicate {
-                        badge("已有同名课", color: .orange)
-                    }
+                    Text(draft.name.isEmpty ? "课程名待补" : draft.name)
+                        .font(.system(size: 17, weight: .bold)).foregroundStyle(Theme.ink)
+                    if duplicate { badge("已有同名课", color: .orange) }
                     ForEach(draft.issues, id: \.self) { issue in
-                        badge(issue, color: .orange)
+                        badge(issue, color: .red)
                     }
                 }
                 ForEach(draft.meetings) { meeting in
-                    Text(meetingLine(meeting)).font(.subheadline).foregroundStyle(.secondary)
+                    meetingLine(meeting)
                 }
-                Text(weeksLine).font(.caption).foregroundStyle(.secondary)
+                HStack(spacing: 5) {
+                    Image(systemName: "calendar").font(.caption2)
+                    Text(weeksLine).font(.caption)
+                }
+                .foregroundStyle(Theme.secondary)
             }
-            Spacer()
+            Spacer(minLength: 4)
             Button(action: onToggle) {
                 Image(systemName: included ? "checkmark.circle.fill" : "circle")
-                    .font(.title3)
-                    .foregroundStyle(included ? Color.accentColor : .secondary)
+                    .font(.system(size: 26))
+                    .foregroundStyle(included ? Theme.accent : Theme.secondary.opacity(0.5))
             }
             .buttonStyle(.plain)
         }
+        .importCard()
         .contentShape(Rectangle())
         .onTapGesture { onEdit() }
-        .opacity(included ? 1 : 0.4)
+        .opacity(included ? 1 : 0.45)
     }
 
     private func badge(_ text: String, color: Color) -> some View {
         Text(text)
             .font(.caption2.weight(.bold))
-            .padding(.horizontal, 6).padding(.vertical, 2)
-            .background(color.opacity(0.16), in: Capsule())
+            .padding(.horizontal, 7).padding(.vertical, 3)
+            .background(color.opacity(0.15), in: Capsule())
             .foregroundStyle(color)
     }
 
-    private func meetingLine(_ meeting: ImportedMeetingDraft) -> String {
+    private func meetingLine(_ meeting: ImportedMeetingDraft) -> some View {
         let day = ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"]
         let weekday = (0...7).contains(meeting.weekday) ? day[meeting.weekday] : "星期待选"
         var time = "时间待补"
@@ -353,8 +484,24 @@ private struct DraftCard: View {
             time = "第 \(start)–\(meeting.endPeriod ?? start) 节"
         }
         let location = meeting.location.isEmpty ? draft.location : meeting.location
-        let parity = meeting.parity == 1 ? "单周" : meeting.parity == 2 ? "双周" : ""
-        return [weekday, time, location, parity].filter { !$0.isEmpty }.joined(separator: " · ")
+        return HStack(spacing: 6) {
+            Text(weekday)
+                .font(.caption.weight(.heavy))
+                .padding(.horizontal, 7).padding(.vertical, 3)
+                .background(Capsule().fill(courseBG))
+                .foregroundStyle(courseInk)
+            Text(time).font(.subheadline.weight(.medium)).foregroundStyle(Theme.ink)
+            if !location.isEmpty {
+                HStack(spacing: 2) {
+                    Image(systemName: "mappin").font(.caption2)
+                    Text(location).font(.subheadline)
+                }
+                .foregroundStyle(Theme.secondary)
+            }
+            if meeting.parity != 0 {
+                badge(meeting.parity == 1 ? "单周" : "双周", color: .purple)
+            }
+        }
     }
 
     private var weeksLine: String {
@@ -383,88 +530,192 @@ private struct DraftEditorView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("课程") {
-                    TextField("课程名称", text: $draft.name)
-                    TextField("老师", text: $draft.teacher)
-                    TextField("默认教室", text: $draft.location)
-                }
-                Section("上课周") {
-                    Picker("方式", selection: isCustom) {
-                        Text("按周范围").tag(false)
-                        Text("自定义周").tag(true)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    courseCard
+                    weeksCard
+                    ForEach($draft.meetings.indices, id: \.self) { index in
+                        meetingCard(index: index, meeting: $draft.meetings[index])
                     }
-                    .pickerStyle(.segmented)
-                    .onChange(of: isCustom.wrappedValue) { _, custom in
-                        if custom, draft.customWeeks.isEmpty {
-                            draft.customWeeks = Array(draft.firstWeek...max(draft.firstWeek, draft.lastWeek))
+                    Button {
+                        draft.meetings.append(ImportedMeetingDraft(weekday: 1, startMinutes: 480, endMinutes: 580, location: draft.location))
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "plus.circle.fill")
+                            Text("再加一个上课安排")
                         }
-                        if !custom { draft.customWeeks = [] }
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(Theme.accent)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Theme.accent.opacity(0.08)))
+                        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .strokeBorder(Theme.accent.opacity(0.45), style: StrokeStyle(lineWidth: 1.2, dash: [7, 5])))
                     }
-                    if isCustom.wrappedValue {
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 6), spacing: 8) {
-                            ForEach(1...max(1, model.document.semester.totalWeeks), id: \.self) { week in
-                                Button("\(week)") {
-                                    if draft.customWeeks.contains(week) {
-                                        draft.customWeeks.removeAll { $0 == week }
-                                    } else {
-                                        draft.customWeeks.append(week)
-                                        draft.customWeeks.sort()
-                                    }
-                                }
-                                .buttonStyle(.bordered)
-                                .tint(draft.customWeeks.contains(week) ? .accentColor : .secondary)
-                            }
-                        }
-                        Text("点选这门课真正上课的周，其余周不上。")
-                            .font(.caption).foregroundStyle(.secondary)
-                    } else {
-                        Stepper("起始周：第 \(draft.firstWeek) 周", value: $draft.firstWeek, in: 1...30)
-                        Stepper("结束周：第 \(draft.lastWeek) 周", value: $draft.lastWeek, in: 1...30)
-                    }
+                    .buttonStyle(JournalPressStyle())
                 }
-                ForEach($draft.meetings) { $meeting in
-                    Section("上课安排（各自独立）") {
-                        HStack(spacing: 6) {
-                            ForEach(1...7, id: \.self) { day in
-                                Button(["一", "二", "三", "四", "五", "六", "日"][day - 1]) {
-                                    meeting.weekday = day
-                                    normalize(&meeting)
-                                }
-                                .buttonStyle(.bordered)
-                                .tint(meeting.weekday == day ? .accentColor : .secondary)
-                            }
-                        }
-                        DatePicker("开始", selection: timeBinding($meeting, isStart: true), displayedComponents: .hourAndMinute)
-                        DatePicker("结束", selection: timeBinding($meeting, isStart: false), displayedComponents: .hourAndMinute)
-                        Picker("这个安排的单双周", selection: $meeting.parity) {
-                            Text("每周").tag(0)
-                            Text("单周").tag(1)
-                            Text("双周").tag(2)
-                        }
-                        .pickerStyle(.segmented)
-                        TextField("教室", text: $meeting.location)
-                        Button("删除这个安排", role: .destructive) {
-                            draft.meetings.removeAll { $0.id == meeting.id }
-                        }
-                    }
-                }
-                Button {
-                    draft.meetings.append(ImportedMeetingDraft(weekday: 1, startMinutes: 480, endMinutes: 580, location: draft.location))
-                } label: {
-                    Label("再加一个上课安排", systemImage: "plus.circle")
-                }
+                .padding(18)
             }
+            .background(Theme.elevated)
             .navigationTitle("修改识别结果")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("完成") { dismiss() }
+                    Button("完成") { dismiss() }.fontWeight(.bold)
                 }
             }
             .onAppear {
                 for index in draft.meetings.indices { normalize(&draft.meetings[index]) }
             }
         }
+    }
+
+    private var courseCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            cardTitle("课程", icon: "book.fill", color: Theme.accent)
+            field("课程名称", placeholder: "例如 高等数学", text: $draft.name)
+            field("老师", placeholder: "例如 陈老师", text: $draft.teacher)
+            field("默认教室", placeholder: "各安排没单独写时用这个", text: $draft.location)
+        }
+        .importCard()
+    }
+
+    private var weeksCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            cardTitle("上课周", icon: "calendar", color: .purple)
+            Picker("方式", selection: isCustom) {
+                Text("按周范围").tag(false)
+                Text("自定义周").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: isCustom.wrappedValue) { _, custom in
+                if custom, draft.customWeeks.isEmpty {
+                    draft.customWeeks = Array(draft.firstWeek...max(draft.firstWeek, draft.lastWeek))
+                }
+                if !custom { draft.customWeeks = [] }
+            }
+            if isCustom.wrappedValue {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 6), spacing: 8) {
+                    ForEach(1...max(1, model.document.semester.totalWeeks), id: \.self) { week in
+                        let selected = draft.customWeeks.contains(week)
+                        Button {
+                            if selected {
+                                draft.customWeeks.removeAll { $0 == week }
+                            } else {
+                                draft.customWeeks.append(week)
+                                draft.customWeeks.sort()
+                            }
+                        } label: {
+                            Text("\(week)")
+                                .font(.system(size: 15, weight: .bold))
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 38)
+                                .background(RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                    .fill(selected ? Theme.accent : Theme.segment))
+                                .foregroundStyle(selected ? .white : Theme.ink)
+                        }
+                        .buttonStyle(JournalPressStyle())
+                    }
+                }
+                Text("点选这门课真正上课的周，其余周不上。")
+                    .font(.caption).foregroundStyle(Theme.secondary)
+            } else {
+                Stepper("起始周：第 \(draft.firstWeek) 周", value: $draft.firstWeek, in: 1...30)
+                    .font(.system(size: 16, weight: .medium))
+                Stepper("结束周：第 \(draft.lastWeek) 周", value: $draft.lastWeek, in: 1...30)
+                    .font(.system(size: 16, weight: .medium))
+            }
+        }
+        .importCard()
+    }
+
+    private func meetingCard(index: Int, meeting: Binding<ImportedMeetingDraft>) -> some View {
+        let value = meeting.wrappedValue
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                cardTitle("上课安排 \(index + 1)", icon: "clock.fill", color: .orange)
+                Spacer()
+                Button(role: .destructive) {
+                    draft.meetings.removeAll { $0.id == value.id }
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.red)
+                        .frame(width: 34, height: 34)
+                        .background(Circle().fill(Color.red.opacity(0.1)))
+                }
+                .buttonStyle(.plain)
+            }
+            HStack(spacing: 6) {
+                ForEach(1...7, id: \.self) { day in
+                    let selected = value.weekday == day
+                    Button {
+                        meeting.wrappedValue.weekday = day
+                        var copy = meeting.wrappedValue
+                        normalize(&copy)
+                        meeting.wrappedValue = copy
+                    } label: {
+                        Text(["一", "二", "三", "四", "五", "六", "日"][day - 1])
+                            .font(.system(size: 15, weight: .bold))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 38)
+                            .background(RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                .fill(selected ? Theme.accent : Theme.segment))
+                            .foregroundStyle(selected ? .white : Theme.ink)
+                    }
+                    .buttonStyle(JournalPressStyle())
+                }
+            }
+            HStack(spacing: 12) {
+                timeField("开始", binding: timeBinding(meeting, isStart: true))
+                timeField("结束", binding: timeBinding(meeting, isStart: false))
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                Text("这个安排的单双周").font(.caption.weight(.bold)).foregroundStyle(Theme.secondary)
+                Picker("单双周", selection: meeting.parity) {
+                    Text("每周").tag(0)
+                    Text("单周").tag(1)
+                    Text("双周").tag(2)
+                }
+                .pickerStyle(.segmented)
+            }
+            field("教室", placeholder: "例如 教学楼A301", text: meeting.location)
+        }
+        .importCard()
+    }
+
+    private func cardTitle(_ title: String, icon: String, color: Color) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 26, height: 26)
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(color))
+            Text(title).font(.system(size: 17, weight: .heavy, design: .rounded)).foregroundStyle(Theme.ink)
+        }
+    }
+
+    private func field(_ label: String, placeholder: String, text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label).font(.caption.weight(.bold)).foregroundStyle(Theme.secondary)
+            TextField(placeholder, text: text)
+                .font(.system(size: 16, weight: .medium))
+                .padding(.horizontal, 12)
+                .frame(height: 44)
+                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.elevated))
+        }
+    }
+
+    private func timeField(_ label: String, binding: Binding<Date>) -> some View {
+        HStack {
+            Text(label).font(.system(size: 15, weight: .bold)).foregroundStyle(Theme.secondary)
+            Spacer()
+            DatePicker(label, selection: binding, displayedComponents: .hourAndMinute)
+                .labelsHidden()
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 48)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.elevated))
+        .frame(maxWidth: .infinity)
     }
 
     /// Period-based drafts are converted to clock times for editing, using the
