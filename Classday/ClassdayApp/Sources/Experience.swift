@@ -479,9 +479,10 @@ struct ThemeFieldView: View {
                 // Gravity-up light: one soft source pinned near the edge
                 // the phone tilts away from, shared by every theme so the
                 // tilt always reads somewhere on screen.
-                Ellipse()
-                    .fill(RadialGradient(colors: [Color.white.opacity((dark ? 0.10 : 0.16) + min(abs(tiltX) + abs(tiltY), 1) * 0.10), Color.white.opacity(0)], center: .center, startRadius: 0, endRadius: w * 0.47))
-                    .frame(width: w * 0.95, height: h * 0.30)
+                Circle()
+                    .fill(RadialGradient(colors: [Color.white.opacity((dark ? 0.10 : 0.16) + min(abs(tiltX) + abs(tiltY), 1) * 0.10), Color.white.opacity(0)], center: .center, startRadius: 0, endRadius: w * 0.475))
+                    .frame(width: w * 0.95, height: w * 0.95)
+                    .scaleEffect(x: 1, y: (h * 0.30) / (w * 0.95))
                     .position(x: w / 2 - tiltX * w * 0.34, y: -h * 0.03 - tiltY * h * 0.05)
                     .allowsHitTesting(false)
                 signature(size: size, time: time, tiltX: tiltX, tiltY: tiltY, gravity: grav)
@@ -496,9 +497,15 @@ struct ThemeFieldView: View {
         // Radial-gradient falloff instead of a live Gaussian blur: the
         // same soft pool of light, rasterized directly by the GPU. The
         // blurred layers were the field's biggest per-frame cost.
-        Ellipse()
-            .fill(RadialGradient(colors: [Color(color.palette).opacity(opacity), Color(color.palette).opacity(opacity * 0.55), Color(color.palette).opacity(0)], center: .center, startRadius: 0, endRadius: size * 0.52))
-            .frame(width: size, height: size * 0.78)
+        // The gradient is circular and ends exactly at the rim, so its
+        // alpha reaches zero at the edge in every direction; the flat
+        // ellipse comes from scaling the finished circle. Filling an
+        // Ellipse directly left ~25% alpha standing along the short
+        // axis, which drew a visible rim (and frame) around each glow.
+        Circle()
+            .fill(RadialGradient(colors: [Color(color.palette).opacity(opacity), Color(color.palette).opacity(opacity * 0.55), Color(color.palette).opacity(0)], center: .center, startRadius: 0, endRadius: size / 2))
+            .frame(width: size, height: size)
+            .scaleEffect(x: 1, y: 0.78)
             .blendMode(theme.prefersDark ? .screen : .normal)
             .position(x: x, y: y)
             .allowsHitTesting(false)
