@@ -27,6 +27,7 @@ struct ClassdayApp: App {
                     if phase == .active {
                         model.reloadFromDiskIfChanged()
                         model.refreshLiveActivityIfNeeded()
+                        model.triggerDailyAutoCheck()
                     }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .classdayOpenCourse)) { note in

@@ -33,9 +33,9 @@ struct SettingsView: View {
     @State private var exporting = false
     @State private var exportDocument = JSONFileDocument(data: Data())
     @State private var showChangelog = false
-    @State private var updateNote: String?
-    @State private var updateURL: URL?
     @State private var checkingUpdate = false
+    // Download state lives in AppModel (shared with RootView's alert
+    // button); this view only reads it.
 
     init() {
         _semester = State(initialValue: DemoData.makeSemester())
@@ -326,16 +326,67 @@ struct SettingsView: View {
                     }
                     Divider().padding(.leading, 58)
                     settingsRow(icon: "arrow.down.circle.fill", color: .teal,
-                                title: "检查更新", value: checkingUpdate ? "检查中…" : updateNote,
-                                showsChevron: updateURL != nil) {
+                                title: "检查更新", value: checkingUpdate ? "检查中…" : model.lastUpdateNote,
+                                showsChevron: model.lastUpdateDownloadURL != nil) {
                         Task { await checkForUpdate() }
                     }
-                    if let updateURL {
+                    if let updateURL = model.lastUpdateDownloadURL {
                         Divider().padding(.leading, 58)
+                        if let release = downloadableRelease {
+                            // Manifest path: size + SHA-256 are known, so the
+                            // IPA can be downloaded in-app with resume and
+                            // verification. The fallback path (decision nil)
+                            // keeps the Safari Link below instead.
+                            if let downloadedIPA = model.downloadedIPA {
+                                Divider().padding(.leading, 58)
+                                ShareLink(item: downloadedIPA) {
+                                    HStack(spacing: 12) {
+                                        iconBadge("square.and.arrow.up.fill", color: .green)
+                                        Text("分享 IPA，在 SideStore 中打开")
+                                            .font(.system(size: 16, weight: .medium))
+                                            .foregroundStyle(Theme.ink)
+                                        Spacer()
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 12, weight: .bold))
+                                            .foregroundStyle(Theme.secondary.opacity(0.6))
+                                    }
+                                    .padding(.vertical, 9)
+                                    .padding(.horizontal, 4)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                            } else if model.downloadingUpdate {
+                                Divider().padding(.leading, 58)
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack(spacing: 12) {
+                                        iconBadge("arrow.down.circle.fill", color: .teal)
+                                        Text(downloadProgressText)
+                                            .font(.system(size: 16, weight: .medium))
+                                            .foregroundStyle(Theme.ink)
+                                    }
+                                    ProgressView(value: model.downloadProgress ?? 0)
+                                        .padding(.leading, 42)
+                                }
+                                .padding(.vertical, 9)
+                                .padding(.horizontal, 4)
+                            } else {
+                                Divider().padding(.leading, 58)
+                                settingsRow(icon: "arrow.down.circle.fill", color: .green,
+                                            title: "下载新版 IPA", value: nil) {
+                                    Task { await downloadUpdate(release: release) }
+                                }
+                                if let downloadError = model.downloadError {
+                                    Text("下载失败（\(downloadError)），也可以点下面的链接用浏览器下载。")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            Divider().padding(.leading, 58)
+                        }
                         Link(destination: updateURL) {
                             HStack(spacing: 12) {
                                 iconBadge("square.and.arrow.down.fill", color: .green)
-                                Text("下载新版 IPA")
+                                Text("在浏览器中下载")
                                     .font(.system(size: 16, weight: .medium))
                                     .foregroundStyle(Theme.ink)
                                 Spacer()
@@ -715,48 +766,59 @@ struct ChangelogView: View {
     }
 }
 
-private struct GitHubRelease: Decodable {
-    let tag_name: String
-}
-
 extension SettingsView {
-    /// Compares the app's own version against the latest GitHub release
-    /// of the (public) repo; releases are published alongside each IPA
-    /// delivery, so this is the sideload-friendly update channel.
+    /// Drives the "检查更新" row from `UpdateService`: the `latest.json`
+    /// manifest first, the GitHub Releases API path on any manifest failure.
+    /// The result is applied to the shared `AppModel` state (row note,
+    /// download link, blocking alert) so a silent auto-check surfaces the
+    /// same way a manual tap does. The row itself is unchanged — "新版 X" +
+    /// download link, "已是最新版", or "检查失败".
     func checkForUpdate() async {
         checkingUpdate = true
-        updateURL = nil
+        // A manual re-check must not wipe a finished download: keep the
+        // IPA when the new check returns the same version.
+        let previousDownloadedIPA = model.downloadedIPA
+        let previousVersion = downloadableVersion
+        model.downloadedIPA = nil
+        model.downloadError = nil
+        model.downloadProgress = nil
         defer { checkingUpdate = false }
-        do {
-            var request = URLRequest(url: URL(string: "https://api.github.com/repos/yuanyeye0210-debug/classday-ios/releases/latest")!)
-            request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-            let (data, _) = try await URLSession.shared.data(for: request)
-            let release = try JSONDecoder().decode(GitHubRelease.self, from: data)
-            let latest = release.tag_name.hasPrefix("v") ? String(release.tag_name.dropFirst()) : release.tag_name
-            let current = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
-            if Self.version(latest, isNewerThan: current) {
-                updateNote = "新版 \(latest)"
-                // Release assets can't be attached through the API token
-                // channel (uploads host), so the IPAs live in the public
-                // classday-releases archive repo under predictable names.
-                updateURL = URL(string: "https://raw.githubusercontent.com/yuanyeye0210-debug/classday-releases/main/Classday-v\(latest).ipa")
-            } else {
-                updateNote = "已是最新版"
-            }
-        } catch {
-            updateNote = "检查失败"
+        let result = await UpdateService.checkForUpdate(currentVersion: UpdateService.currentVersion())
+        model.applyUpdateCheck(result)
+        if let previousDownloadedIPA, let previousVersion,
+           downloadableVersion == previousVersion {
+            model.downloadedIPA = previousDownloadedIPA
         }
     }
 
-    static func version(_ a: String, isNewerThan b: String) -> Bool {
-        let pa = a.split(separator: ".").map { Int($0) ?? 0 }
-        let pb = b.split(separator: ".").map { Int($0) ?? 0 }
-        for i in 0..<max(pa.count, pb.count) {
-            let x = i < pa.count ? pa[i] : 0
-            let y = i < pb.count ? pb[i] : 0
-            if x != y { return x > y }
+    /// The version of the release the last check decided on, if any.
+    private var downloadableVersion: String? { downloadableRelease?.version }
+
+    /// The release the in-app downloader can fetch: only the manifest path
+    /// carries a `ReleaseEntry` (size + SHA-256). The fallback path has
+    /// `decision == nil`, so it keeps the Safari `Link` and never attempts
+    /// an in-app download without size/sha256.
+    private var downloadableRelease: ReleaseEntry? {
+        switch model.lastUpdateDecision {
+        case let .updateAvailable(release, _): return release
+        case let .belowMinimumSupported(release): return release
+        default: return nil
         }
-        return false
+    }
+
+    private var downloadProgressText: String {
+        guard let progress = model.downloadProgress else { return "下载中…" }
+        return "下载中… \(Int(progress * 100))%"
+    }
+
+    /// Downloads `release` in-app with Range resume + progress, SHA-256
+    /// verification, and a share sheet with the finished IPA on success.
+    /// Delegates to the shared `AppModel.startUpdateDownload` — the same
+    /// entry point RootView's blocking-alert button uses. On total failure
+    /// the error is shown and the Safari `Link` below stays as the
+    /// fallback — the user always keeps a path to the update.
+    private func downloadUpdate(release: ReleaseEntry) async {
+        await model.startUpdateDownload(release: release)
     }
 }
 
