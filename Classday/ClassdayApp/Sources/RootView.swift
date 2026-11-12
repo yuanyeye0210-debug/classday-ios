@@ -109,14 +109,20 @@ struct RootView: View {
         } message: {
             Text(model.importErrors ?? "")
         }
-        .confirmationDialog("这份课表有时间重叠", isPresented: Binding(
-            get: { model.stagedImport != nil },
-            set: { if !$0 { model.stagedImport = nil; model.importWarnings = [] } }
-        ), titleVisibility: .visible) {
-            Button("仍然导入") { model.commitStagedImport() }
+        .confirmationDialog(
+            model.importWarnings.isEmpty ? "用这份文件替换当前课表？" : "这份课表有时间重叠",
+            isPresented: Binding(
+                get: { model.stagedImport != nil },
+                set: { if !$0 { model.stagedImport = nil; model.importWarnings = [] } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button(model.importWarnings.isEmpty ? "替换当前课表" : "仍然导入") { model.commitStagedImport() }
             Button("取消", role: .cancel) {}
         } message: {
-            Text(model.importWarnings.prefix(3).joined(separator: "\n"))
+            Text(model.importWarnings.isEmpty
+                ? "当前课表会先存入课表库，之后可以切回来。"
+                : model.importWarnings.prefix(3).joined(separator: "\n") + "\n当前课表会先存入课表库。")
         }
         .confirmationDialog("导入分享的课表？", isPresented: Binding(
             get: { model.pendingShare != nil },

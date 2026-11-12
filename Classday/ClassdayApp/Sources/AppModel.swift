@@ -106,6 +106,8 @@ final class AppModel {
     private let storeURL: URL
     private var undoTask: Task<Void, Never>?
     private var storeFileModified: Date?
+    /// The file at `storeURL` could not be decoded. Demo data may be shown, but it must not be saved over that file.
+    private var blockDemoOverwrite = false
 
     init() {
         let calendar = ClassdayCalendar.make()
@@ -125,24 +127,21 @@ final class AppModel {
         let loaded: StoreDocument
         var initialError: String?
         var shouldSaveFreshCopy = false
-        if fileManager.fileExists(atPath: resolved.path) {
-            do {
-                loaded = try StoreFile.load(from: resolved)
-            } catch {
-                // Preserve the unreadable file before any later save can
-                // overwrite it with the demo fallback.
-                let stamp = Int(Date().timeIntervalSince1970)
-                let backup = resolved.deletingLastPathComponent()
-                    .appendingPathComponent("classday-store-corrupt-\(stamp).json")
-                try? fileManager.copyItem(at: resolved, to: backup)
-                loaded = DemoData.makeDocument()
-                initialError = "课表文件无法读取，已另存一份损坏文件备份，没有直接覆盖。"
-            }
-        } else {
+        var protectUnreadable = false
+        let stamp = String(Int(Date().timeIntervalSince1970))
+        switch StoreFile.read(from: resolved, stamp: stamp, fileManager: fileManager) {
+        case let .loaded(existing):
+            loaded = existing
+        case .missing:
             loaded = DemoData.makeDocument()
             shouldSaveFreshCopy = true
+        case .unreadable:
+            loaded = DemoData.makeDocument()
+            protectUnreadable = true
+            initialError = "课表文件无法读取，已保留原文件和一份备份。演示数据不会覆盖它。"
         }
         document = loaded
+        blockDemoOverwrite = protectUnreadable
         loadError = initialError
         storeFileModified = Self.modificationDate(of: resolved)
 
@@ -160,9 +159,11 @@ final class AppModel {
             try? StoreFile.save(loaded, to: resolved)
             WidgetReloader.reload()
         }
-        Task { [weak self] in
-            await self?.refreshNotificationStatus()
-            await self?.refreshReminders()
+        if !protectUnreadable {
+            Task { [weak self] in
+                await self?.refreshNotificationStatus()
+                await self?.refreshReminders()
+            }
         }
     }
 
@@ -354,21 +355,25 @@ final class AppModel {
             return
         }
         guard let document = outcome.document else { return }
-        if outcome.warnings.isEmpty {
-            replace(with: document)
-            banner = "已导入 \(document.courses.count) 门课程"
-        } else {
-            stagedImport = document
-            importWarnings = outcome.warnings
-        }
+        stagedImport = document
+        importWarnings = outcome.warnings
     }
 
     func commitStagedImport() {
         guard let stagedImport else { return }
-        replace(with: stagedImport)
-        banner = "已导入，含 \(importWarnings.count) 条重叠提示"
+        let warnings = importWarnings.count
+        let count = stagedImport.courses.count
+        document = StoreImport.replaceKeepingBackup(document, with: stagedImport)
+        presented = nil
+        undo = nil
+        drag = nil
+        realignWeek()
         self.stagedImport = nil
         importWarnings = []
+        banner = warnings == 0
+            ? "已导入 \(count) 门课程，原课表已存入课表库"
+            : "已导入，含 \(warnings) 条重叠提示。原课表已存入课表库"
+        persist(markUserEdited: true)
     }
 
     func exportData() throws -> Data {
@@ -381,7 +386,7 @@ final class AppModel {
         undo = nil
         drag = nil
         realignWeek()
-        persist(markUserEdited: false)
+        persist(markUserEdited: false, forceOverUnreadable: true)
         banner = "已恢复演示数据"
         confirmReset = false
     }
@@ -540,15 +545,6 @@ final class AppModel {
 
     func conflicts() -> [MeetingConflict] {
         ScheduleEngine.conflicts(among: document.courses, context: document.scheduleContext)
-    }
-
-    private func replace(with incoming: StoreDocument) {
-        document = StoreCodec.normalized(incoming)
-        presented = nil
-        undo = nil
-        drag = nil
-        realignWeek()
-        persist(markUserEdited: false)
     }
 
     private func realignWeek() {
@@ -844,12 +840,17 @@ final class AppModel {
         persist(markUserEdited: false)
     }
 
-    private func persist(markUserEdited: Bool) {
+    private func persist(markUserEdited: Bool, forceOverUnreadable: Bool = false) {
         if markUserEdited {
             document.origin = .user
         }
+        if !forceOverUnreadable && StoreSafety.blocksDemoOverwrite(origin: document.origin, fileWasUnreadable: blockDemoOverwrite) {
+            banner = "原课表文件无法读取，已保留。演示数据不会覆盖它。"
+            return
+        }
         do {
             try StoreFile.save(document, to: storeURL)
+            blockDemoOverwrite = false
             loadError = nil
             storeFileModified = Self.modificationDate(of: storeURL)
         } catch {

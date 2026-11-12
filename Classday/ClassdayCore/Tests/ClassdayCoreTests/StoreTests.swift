@@ -87,6 +87,54 @@ final class StoreTests: XCTestCase {
         XCTAssertTrue(outcome.warnings.isEmpty)
     }
 
+    func testUnreadableStoreIsCopiedAndDemoIsNotWrittenOverIt() throws {
+        let directory = try TestSupport.temporaryDirectory()
+        let url = directory.appendingPathComponent("classday-store.json")
+        let original = Data("this is not a timetable".utf8)
+        try original.write(to: url)
+
+        let read = StoreFile.read(from: url, stamp: "unit")
+        guard case let .unreadable(preservedCopy, errors) = read else {
+            return XCTFail("expected unreadable, got \(read)")
+        }
+        XCTAssertFalse(errors.isEmpty)
+        XCTAssertEqual(try Data(contentsOf: url), original)
+        let backup = try XCTUnwrap(preservedCopy)
+        XCTAssertEqual(try Data(contentsOf: backup), original)
+        XCTAssertNotEqual(backup, url)
+        XCTAssertTrue(StoreSafety.blocksDemoOverwrite(origin: .demo, fileWasUnreadable: true))
+        XCTAssertFalse(StoreSafety.blocksDemoOverwrite(origin: .user, fileWasUnreadable: true))
+        XCTAssertFalse(StoreSafety.blocksDemoOverwrite(origin: .demo, fileWasUnreadable: false))
+    }
+
+    func testJSONImportReplaceKeepsThePreviousTimetable() throws {
+        let current = DemoData.makeDocument()
+        var incoming = DemoData.makeDocument()
+        incoming.courses = [incoming.courses[0]]
+        incoming.courses[0].name = "导入的课"
+        incoming.semester.name = "导入学期"
+        let backupID = UUID(uuidString: "00000000-0000-0000-0000-0000000000cc")!
+        let replaced = StoreImport.replaceKeepingBackup(current, with: incoming, backupID: backupID)
+        XCTAssertEqual(replaced.courses.map(\.name), ["导入的课"])
+        XCTAssertEqual(replaced.semester.name, "导入学期")
+        XCTAssertEqual(replaced.origin, .user)
+        XCTAssertEqual(replaced.activeTimetableID, current.activeTimetableID)
+        let saved = try XCTUnwrap(replaced.library.first { $0.id == backupID })
+        XCTAssertEqual(saved.name, "导入前备份")
+        XCTAssertTrue(saved.courses.contains { $0.name == "高等数学" })
+    }
+
+    func testAppImportDoesNotReplaceBeforeConfirmation() throws {
+        let source = try String(
+            contentsOf: TestSupport.repositoryClassdayRoot().appendingPathComponent("ClassdayApp/Sources/AppModel.swift"),
+            encoding: .utf8
+        )
+        XCTAssertFalse(source.contains("replace(with: document)"))
+        XCTAssertTrue(source.contains("StoreImport.replaceKeepingBackup"))
+        XCTAssertTrue(source.contains("StoreFile.read"))
+        XCTAssertTrue(source.contains("blocksDemoOverwrite"))
+    }
+
     func testDeepLinksRoundTrip() {
         let url = ClassdayLink.course(DemoData.ID.calculus, meeting: DemoData.ID.calculusMonday)
         XCTAssertEqual(url.scheme, "classday")
