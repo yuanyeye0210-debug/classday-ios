@@ -19,5 +19,7 @@ jobs:
         run: python3 Classday/Tools/check_project.py
       - name: Version snapshot self-test
         run: python3 Classday/Tools/check_version_snapshot.py --self-test
+      - name: SideStore publish self-test
+        run: python3 Classday/Tools/publish_release.py self-test
       - name: Require a snapshot of the replaced Classday version
         run: python3 Classday/Tools/check_version_snapshot.py --base "origin/${{ github.base_ref }}"
