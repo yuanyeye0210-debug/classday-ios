@@ -5,6 +5,7 @@
 	<key>com.apple.security.application-groups</key>
 	<array>
 		<string>group.com.classday.shared</string>
+		<string>group.com.classday.heptara.shared</string>
 	</array>
 </dict>
 </plist>

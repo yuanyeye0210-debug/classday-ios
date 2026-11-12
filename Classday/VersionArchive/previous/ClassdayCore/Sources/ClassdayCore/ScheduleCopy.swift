@@ -42,7 +42,7 @@ public enum ScheduleCopy {
         if weeks.count == 1 { return "第\(first)周" }
         if weeks == Array(first...last) { return "第\(first)–\(last)周" }
         if weeks.allSatisfy({ $0 % 2 == 1 }),
-           weeks == Array(stride(from: 1, through: last, by: 2)) {
+           weeks == Array(stride(from: first, through: last, by: 2)) {
             return "单周"
         }
         if weeks.allSatisfy({ $0 % 2 == 0 }),

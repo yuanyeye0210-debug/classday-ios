@@ -19,6 +19,14 @@ public enum DemoData {
         public static let physicsThursday = UUID(uuidString: "20000000-0000-0000-0000-000000000008")!
         public static let linearTuesday = UUID(uuidString: "20000000-0000-0000-0000-000000000009")!
         public static let peTuesday = UUID(uuidString: "20000000-0000-0000-0000-00000000000A")!
+        public static let examCalculus = UUID(uuidString: "30000000-0000-0000-0000-000000000001")!
+        public static let examPhysics = UUID(uuidString: "30000000-0000-0000-0000-000000000002")!
+        public static let examEnglish = UUID(uuidString: "30000000-0000-0000-0000-000000000003")!
+        public static let examProgramming = UUID(uuidString: "30000000-0000-0000-0000-000000000004")!
+        public static let homeworkCalculus = UUID(uuidString: "40000000-0000-0000-0000-000000000001")!
+        public static let homeworkProgramming = UUID(uuidString: "40000000-0000-0000-0000-000000000002")!
+        public static let eventGym = UUID(uuidString: "60000000-0000-0000-0000-000000000001")!
+        public static let eventLab = UUID(uuidString: "60000000-0000-0000-0000-000000000002")!
     }
 
     public static func makeDocument() -> StoreDocument {
@@ -26,7 +34,21 @@ public enum DemoData {
             schemaVersion: StoreDocument.currentSchema,
             origin: .demo,
             semester: makeSemester(),
-            courses: makeCourses()
+            courses: makeCourses(),
+            exams: [
+                ExamEvent(id: ID.examCalculus, courseName: "高等数学", location: "教学楼 A · 301", startISO: "2026-12-22T09:00", endISO: "2026-12-22T11:00", note: "期末考试"),
+                ExamEvent(id: ID.examPhysics, courseName: "大学物理", location: "教学楼 A · 206", startISO: "2026-12-24T14:00", endISO: "2026-12-24T16:00", note: "期末考试"),
+                ExamEvent(id: ID.examEnglish, courseName: "大学英语", location: "教学楼 B · 205", startISO: "2026-12-29T10:10", endISO: "2026-12-29T12:10", note: "期末考试"),
+                ExamEvent(id: ID.examProgramming, courseName: "程序设计", location: "机房 2", startISO: "2027-01-05T14:00", endISO: "2027-01-05T16:00", note: "期末考试")
+            ],
+            homework: [
+                HomeworkTask(id: ID.homeworkCalculus, courseName: "高等数学", title: "第三章习题", dueISO: "2026-11-11T23:59"),
+                HomeworkTask(id: ID.homeworkProgramming, courseName: "程序设计", title: "实验报告", dueISO: "2026-11-13T23:59")
+            ],
+            personalEvents: [
+                PersonalEvent(id: ID.eventGym, title: "健身", note: "VivaGym · 练背 + 有氧", startISO: "2026-11-10T18:30", endISO: "2026-11-10T20:00"),
+                PersonalEvent(id: ID.eventLab, title: "实验室组会", note: "Lab 2 小组 · 讨论报告", startISO: "2026-11-10T20:30", endISO: "2026-11-10T21:30")
+            ]
         )
     }
 
@@ -69,7 +91,8 @@ public enum DemoData {
                     Meeting(id: ID.calculusMonday, weekday: 1, startPeriod: 1, endPeriod: 2),
                     Meeting(id: ID.calculusWednesday, weekday: 3, startPeriod: 3, endPeriod: 4),
                 ],
-                reminderLeadMinutes: 10
+                reminderLeadMinutes: 10,
+                credits: 4
             ),
             Course(
                 id: ID.english,
@@ -83,7 +106,8 @@ public enum DemoData {
                 meetings: [
                     Meeting(id: ID.englishMonday, weekday: 1, startPeriod: 3, endPeriod: 4),
                     Meeting(id: ID.englishThursday, weekday: 4, startPeriod: 1, endPeriod: 2),
-                ]
+                ],
+                credits: 2
             ),
             Course(
                 id: ID.programming,
@@ -97,7 +121,8 @@ public enum DemoData {
                 meetings: [
                     Meeting(id: ID.programmingMonday, weekday: 1, startPeriod: 5, endPeriod: 6),
                     Meeting(id: ID.programmingFriday, weekday: 5, startPeriod: 5, endPeriod: 6),
-                ]
+                ],
+                credits: 3
             ),
             Course(
                 id: ID.physics,
@@ -111,7 +136,9 @@ public enum DemoData {
                 meetings: [
                     Meeting(id: ID.physicsTuesday, weekday: 2, startPeriod: 1, endPeriod: 2),
                     Meeting(id: ID.physicsThursday, weekday: 4, startPeriod: 3, endPeriod: 4),
-                ]
+                ],
+                credits: 3,
+                grade: 92
             ),
             Course(
                 id: ID.linear,
@@ -124,7 +151,9 @@ public enum DemoData {
                 weeks: weeks,
                 meetings: [
                     Meeting(id: ID.linearTuesday, weekday: 2, startPeriod: 5, endPeriod: 6),
-                ]
+                ],
+                credits: 3,
+                grade: 85
             ),
             Course(
                 id: ID.pe,
@@ -137,7 +166,8 @@ public enum DemoData {
                 weeks: weeks,
                 meetings: [
                     Meeting(id: ID.peTuesday, weekday: 2, startPeriod: 7, endPeriod: 8),
-                ]
+                ],
+                credits: 1
             ),
         ]
     }

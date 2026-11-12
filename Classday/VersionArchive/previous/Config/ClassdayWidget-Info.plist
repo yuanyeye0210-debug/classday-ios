@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>课间</string>
+	<string>课曜</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -23,6 +23,7 @@
 	<key>ALTAppGroups</key>
 	<array>
 		<string>group.com.classday.shared</string>
+		<string>group.com.classday.heptara.shared</string>
 	</array>
 	<key>NSExtension</key>
 	<dict>

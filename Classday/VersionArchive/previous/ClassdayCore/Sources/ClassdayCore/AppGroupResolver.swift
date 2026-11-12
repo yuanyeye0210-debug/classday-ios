@@ -320,7 +320,7 @@ public enum AppGroupSupport {
         if profileGroups.isEmpty {
             found = "这次安装的描述文件里没有共享组（com.apple.security.application-groups）。"
         } else {
-            found = "描述文件里有「\(profileGroups.joined(separator: "、"))」，但课间无法读写其中任何一个。"
+            found = "描述文件里有「\(profileGroups.joined(separator: "、"))」，但课曜无法读写其中任何一个。"
         }
         return """
         未能访问共享 App Group。课程仍保存在本机，桌面小组件读不到。\(found)
@@ -328,8 +328,8 @@ public enum AppGroupSupport {
         用 Sideloadly 和免费 Apple ID 重装：
         1. 安装方式选 Apple ID 签名，不要改 Bundle ID。主 App 和小组件必须用同一次安装、同一个账号。
         2. 高级选项里不要勾选 Remove Extensions（移除插件）。如果列出了插件，不要勾选 ClassdayWidget.appex。主 App 和小组件各占 1 个 App ID，免费账号每 7 天最多新建 10 个。
-        3. Sideloadly 会把 App Group 注册到你的 Team。group.com.classday.shared 若已被占用，日志会写 An Application Group with Identifier … is not available，组名会改成带 Team ID 或 Bundle ID 的形式（例如 group.com.classday.shared.团队ID、group.团队ID.com.classday.shared、group.加上主 App 的 Bundle ID）。用同一 IPA 再装一次。课间会从两边的描述文件里选用同一个能读写的组。
-        4. 到「设置 → 通用 → VPN 与设备管理」信任该 Apple ID，然后打开课间一次。
+        3. Sideloadly 会把 App Group 注册到你的 Team。group.com.classday.shared 若已被占用，日志会写 An Application Group with Identifier … is not available，组名会改成带 Team ID 或 Bundle ID 的形式（例如 group.com.classday.shared.团队ID、group.团队ID.com.classday.shared、group.加上主 App 的 Bundle ID）。用同一 IPA 再装一次。课曜会从两边的描述文件里选用同一个能读写的组。
+        4. 到「设置 → 通用 → VPN 与设备管理」信任该 Apple ID，然后打开课曜一次。
         """
     }
 }
@@ -368,10 +368,7 @@ public enum AppGroupAccess {
     }
 
     private static func containerURL(for identifier: String, fileManager: FileManager) -> URL? {
-        if let url = fileManager.containerURL(forSecurityApplicationGroupIdentifier: identifier) {
-            return url
-        }
-        return fileManager.containerURL(forSecurityApplicationGroupIdentifier: identifier)
+        fileManager.containerURL(forSecurityApplicationGroupIdentifier: identifier)
     }
 }
 

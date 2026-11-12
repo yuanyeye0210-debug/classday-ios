@@ -82,6 +82,10 @@ enum Haptics {
     static func selection() {
         UISelectionFeedbackGenerator().selectionChanged()
     }
+
+    static func play(_ name: String) {
+        ThemeHaptics.play(name)
+    }
 }
 
 struct EditorSheetBackground: View {

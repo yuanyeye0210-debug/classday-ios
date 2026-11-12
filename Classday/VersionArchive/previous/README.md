@@ -1,6 +1,6 @@
-# 课间 / Classday
+# 课曜 / Heptara
 
-Native SwiftUI iPhone app and WidgetKit extension for a local weekly timetable. Working title: 课间 / Classday. It is an independent design. It is not the official「超级课程表」app and does not aim for feature parity with it.
+Native SwiftUI iPhone app and WidgetKit extension for a local weekly timetable. The product name is 课曜 / Heptara. It is an independent design. It is not the official「超级课程表」app and does not aim for feature parity with it.
 
 There is no campus account, grade query, or school server. Courses live in a JSON file on the phone and, when signing is set up, in an App Group the widgets can read.
 
@@ -40,11 +40,11 @@ The entitlements and `AppGroup.identifier` stay on `group.com.classday.shared`. 
 2. Let Xcode register the App Group, or create `group.com.classday.shared` in the developer portal and enable it on both App IDs.
 3. Choose an iPhone or simulator and Run.
 4. The first launch writes clearly marked demo courses (2026 秋季学期, week of 2–8 November 2026 is week 10). The timetable shows a 演示数据 badge. 我的 can restore that demo or clear every course.
-5. On the Home Screen, long-press, tap +, and search 课间. Add **下一节** (small) and **今日课程** (medium).
+5. On the Home Screen, long-press, tap +, and search 课曜 (or Heptara when the phone language is English). Add **下一节** (small) and **今日课程** (medium).
 
 Deep links use `classday://course/<uuid>?meeting=<uuid>`. Notification taps and widget taps open the course detail.
 
-## What V1 does
+## What 2.7.1 does
 
 - Create, edit, and delete courses: name, teacher, location, department, note, kind, color, weeks, one or more weekday/period meetings, reminder lead time.
 - Semester name, start date, week count, and the ten default period clocks. Overlap is detected by weekday, period span, and shared weeks.
@@ -58,6 +58,16 @@ Deep links use `classday://course/<uuid>?meeting=<uuid>`. Notification taps and 
 - JSON import and export, schema version 1. See [Docs/DATA_SCHEMA.md](Docs/DATA_SCHEMA.md).
 - Dynamic Type, VoiceOver labels, portrait iPhone layout, light and dark appearance.
 - Demo seed with reset and clear.
+
+### New in 2.4.0–2.7.1
+
+- Per-course grading rules (2.4.0): each course can have its own components (project, quiz, exam…) and weights, and the total is computed automatically. Several candidate formulas can compete and the highest wins, the scale can be 20 or 100 points, and a 20-point total is converted to percent for GPA. A course without a rule keeps direct total entry, and the course detail shows the "total / scale · rule-computed" basis.
+- AI grading-rule recognition (2.5.0): photograph a grading-formula screenshot and AI fills the scale, components, and candidate formulas as a draft to check and correct before saving. It uses Gemini vision; the first use asks for a Google AI Studio key, which is then kept in the device keychain.
+- School-calendar holidays and no-class periods (2.6.0): classes inside a holiday are skipped and not reminded, and the today and week views mark 假期. Import from a `.ics` calendar file or by photographing the calendar with AI, with a confirmation page to check each item before it is written. Semester settings show the computed end date, and the holiday list can be edited there at any time.
+- Email cancellation recognition (2.7.0): when a teacher emails that a class is off, paste the email text or pick a mail screenshot in 我的 › 假期与不上课时段 › 邮件停课识别 and AI identifies the date, course, and sessions (relative dates such as 今天/明天 are converted). It starts as a draft — single-course vs whole-day cancellation, date, course, sessions, and reason can each be checked and changed — and only takes effect on confirm. A cancelled session no longer appears and no longer reminds; later classes that day run as normal. Cancellations are managed together with holidays, and deleting a record restores the class.
+- SideStore update installs (2.4.1, 2.7.1): after 检查更新 downloads a new version, install it through SideStore — download the IPA to Files, connect LocalDevVPN, then tap + in SideStore and pick the IPA — so later updates no longer need a computer and Sideloadly. 2.7.1 also fixed course-page scrolling by switching to the system native list (swipe-to-delete kept, still with a confirmation first) and changed the install package to an English registered name with a Chinese display name, so SideStore no longer blocks the install.
+
+Earlier releases (2.0.0–2.3.9) added smart import — timetable photos, CSV, Excel, Word, PDF, `.ics`, and pasted text, each course confirmed before it is added — eight themes with tilt-following effects and a different haptic feel per theme, plus exam countdowns, homework, and grade records with GPA.
 
 The approved week grid and the detail mock disagree about 高等数学 on Wednesday (the grid places it in periods 3–4, the detail text says periods 1–2 on both days). The stored demo follows the grid and the Monday widget times. Detail copy lists each meeting with its own period and clock.
 
@@ -77,17 +87,17 @@ Xcode build, simulator, and device runs were not executed in the environment tha
 
 ## Version backups
 
-The version number lives in `Classday/VERSION`. Change it with one command:
+The version number lives in `Classday/VERSION`, the single source of truth. Change it with one command:
 
 ```bash
 Classday/Tools/bump-version.sh 1.1.0
 ```
 
-The command archives the last commit into `VersionArchive/previous`, then writes the new version. It keeps that immediate previous snapshot and deletes older directories inside `VersionArchive` only. A normal commit does not take a snapshot. V1 is `1.0.0` and has no `previous/` folder. Details: [Docs/VERSION_BACKUPS.md](Docs/VERSION_BACKUPS.md). Pull requests run `.github/workflows/classday-version-snapshot.yml`, which fails if a version change did not archive the committed version it replaced.
+The command archives the last commit into `VersionArchive/previous`, then writes the new version. It keeps that immediate previous snapshot and deletes older directories inside `VersionArchive` only. A normal commit does not take a snapshot. The current version is `2.7.1`. Details: [Docs/VERSION_BACKUPS.md](Docs/VERSION_BACKUPS.md). Pull requests run `.github/workflows/classday-version-snapshot.yml`, which fails if a version change did not archive the committed version it replaced.
 
 ## Limits
 
-- No school login, roster sync, grades, or attendance.
+- No school login, roster sync, school grade query, or attendance.
 - Portrait iPhone. iPad is not a separate target.
 - Chinese interface only.
 - Widgets need a shared App Group in the profile Sideloadly or Xcode installs. The id in that profile may differ from `group.com.classday.shared`. WidgetKit may still delay a reload; the timeline covers the next 36 hours of class boundaries.

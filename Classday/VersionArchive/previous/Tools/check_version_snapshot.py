@@ -158,7 +158,14 @@ def check(repo: Path, base: str | None) -> None:
         return
     parent_version = parse_version(git_show(repo, parent.stdout.strip(), "Classday/VERSION"))
     if parent_version is None:
-        require_no_previous(classday)
+        # One-time restore exception (2.8.0 P0-1): the parent commit has no
+        # Classday/VERSION at all, so this VERSION commit restores the file
+        # rather than bumping a committed version. There is no committed
+        # version to archive, so neither a previous snapshot nor its
+        # absence is required. The restored version must still match
+        # project.yml and every pbxproj MARKETING_VERSION value; that is
+        # already enforced by marketing_versions() above. This is not an
+        # ordinary version bump: a bump's parent always carries a VERSION.
         return
     if parent_version == current:
         raise SystemExit(f"Latest VERSION commit does not change {current}.")
@@ -245,6 +252,31 @@ def self_test() -> None:
             pass
         else:
             raise SystemExit("self-test: nested archive was accepted")
+
+        # One-time restore exception: the base has no Classday/VERSION and a
+        # previous snapshot already exists, so restoring VERSION (matching
+        # project.yml and pbxproj) must pass without a new snapshot.
+        write_classday("2.7.1", "pre-restore", "1.0.0")
+        (repo / "Classday" / "VERSION").unlink()
+        base_no_version = commit("base without VERSION")
+        write_classday("2.7.1", "restored", "1.0.0")
+        commit("restore VERSION 2.7.1")
+        check(repo, base_no_version)
+
+        # Counter-example: a restored VERSION that disagrees with pbxproj
+        # must still fail.
+        subprocess.run(["git", "reset", "-q", "--hard", base_no_version], cwd=repo, check=True)
+        write_classday("2.7.1", "restored", "1.0.0")
+        (repo / "Classday" / "Classday.xcodeproj" / "project.pbxproj").write_text(
+            "MARKETING_VERSION = 2.7.0;\n", encoding="utf-8"
+        )
+        commit("restore VERSION mismatching pbxproj")
+        try:
+            check(repo, base_no_version)
+        except SystemExit:
+            pass
+        else:
+            raise SystemExit("self-test: restored VERSION mismatching pbxproj was accepted")
     print("version snapshot check self-test passed")
 
 

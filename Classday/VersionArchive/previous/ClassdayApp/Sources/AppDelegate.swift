@@ -1,5 +1,7 @@
+import BackgroundTasks
 import UIKit
 import UserNotifications
+import ClassdayCore
 
 extension Notification.Name {
     static let classdayOpenCourse = Notification.Name("classday.openCourse")
@@ -11,6 +13,31 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        BGTaskScheduler.shared.register(
+            forTaskWithIdentifier: NextClassActivity.backgroundTaskID,
+            using: nil
+        ) { task in
+            Task {
+                // SharedWidgetStore lives in the widget extension target and is
+                // not visible to the app target; this mirrors its load() exactly
+                // using the same ClassdayCore calls (AppGroupContainer +
+                // StoreCodec). If the shared store has no document, there is
+                // nothing to refresh and nothing to re-queue.
+                guard let storeURL = AppGroupContainer.storeURL(),
+                      let data = try? Data(contentsOf: storeURL),
+                      let document = StoreCodec.importing(data).document else {
+                    task.setTaskCompleted(success: true)
+                    return
+                }
+                let calendar = ClassdayCalendar.make()
+                // Await the ActivityKit updates before completing the task:
+                // completing first would let the system suspend the app
+                // while the lock-screen updates are still in flight.
+                await NextClassActivity.syncAsync(document: document, calendar: calendar)
+                NextClassActivity.scheduleBackgroundRefresh(document: document, calendar: calendar)
+                task.setTaskCompleted(success: true)
+            }
+        }
         return true
     }
 
