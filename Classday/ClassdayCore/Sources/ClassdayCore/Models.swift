@@ -3,6 +3,10 @@ import Foundation
 public enum WidgetID {
     public static let nextClass = "NextClassWidget"
     public static let todayCourses = "TodayCoursesWidget"
+    public static let fanStack = "FanStackWidget"
+    public static let weekBoard = "WeekBoardWidget"
+    public static let lockScreen = "LockNextWidget"
+    public static let all = [nextClass, todayCourses, fanStack, weekBoard, lockScreen]
 }
 
 public enum DataOrigin: String, Codable, Equatable, Hashable, Sendable {
