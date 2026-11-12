@@ -112,7 +112,7 @@ public struct TimelinePlan: Equatable, Sendable {
 public enum WidgetProjection {
     /// WidgetKit budgets reloads. Timelines carry the boundaries, so the app reloads only after edits.
     public static let minimumRefreshInterval: TimeInterval = 15 * 60
-    public static let horizon: TimeInterval = 36 * 60 * 60
+    public static let horizon: TimeInterval = 7 * 24 * 60 * 60
     public static let maximumEntries = 40
     public static let visibleChipLimit = 3
 
@@ -164,14 +164,16 @@ public enum WidgetProjection {
 
     public static func timelinePlan(now: Date, document: StoreDocument, calendar: Calendar) -> TimelinePlan {
         let horizonEnd = now.addingTimeInterval(horizon)
-        var boundaries: [Date] = []
+        var midnights: [Date] = []
         var day = calendar.startOfDay(for: now)
         while day <= horizonEnd {
-            if day > now { boundaries.append(day) }
+            if day > now { midnights.append(day) }
             guard let nextDay = calendar.date(byAdding: .day, value: 1, to: day) else { break }
             day = nextDay
         }
 
+        var starts: [Date] = []
+        var ends: [Date] = []
         if let scan = scanWeeks(from: now, through: horizonEnd, semester: document.semester, calendar: calendar) {
             for week in scan {
                 let items = ScheduleEngine.occurrences(
@@ -182,19 +184,25 @@ public enum WidgetProjection {
                     context: document.scheduleContext
                 )
                 for item in items {
-                    if item.start > now && item.start <= horizonEnd { boundaries.append(item.start) }
-                    if item.end > now && item.end <= horizonEnd { boundaries.append(item.end) }
+                    if item.start > now && item.start <= horizonEnd { starts.append(item.start) }
+                    if item.end > now && item.end <= horizonEnd { ends.append(item.end) }
                 }
             }
         }
 
-        var dates = [now]
-        for boundary in boundaries.sorted() {
-            guard boundary > now else { continue }
-            if let last = dates.last, boundary.timeIntervalSince(last) < 1 { continue }
-            dates.append(boundary)
-            if dates.count == maximumEntries { break }
+        // D6: when the 40-entry cap is hit, midnights and class starts
+        // outrank class ends — ends only fill whatever slots remain,
+        // earliest first, so a later class start is never cut off by an
+        // earlier class end. `now` itself takes one slot.
+        let capacity = maximumEntries - 1
+        var chosen = Array(dedupedSorted(midnights + starts).prefix(capacity))
+        if chosen.count < capacity {
+            let keptEnds = dedupedSorted(ends).filter { end in
+                chosen.allSatisfy { abs($0.timeIntervalSince(end)) >= 1 }
+            }
+            chosen.append(contentsOf: keptEnds.prefix(capacity - chosen.count))
         }
+        let dates = [now] + chosen.sorted()
 
         let refreshAfter: Date
         if dates.count >= 2, let last = dates.last {
@@ -203,6 +211,16 @@ public enum WidgetProjection {
             refreshAfter = now.addingTimeInterval(max(minimumRefreshInterval, 6 * 60 * 60))
         }
         return TimelinePlan(entryDates: dates, refreshAfter: refreshAfter)
+    }
+
+    /// Sorts boundaries and drops any within a second of the previous kept one.
+    private static func dedupedSorted(_ dates: [Date]) -> [Date] {
+        var kept: [Date] = []
+        for date in dates.sorted() {
+            if let last = kept.last, date.timeIntervalSince(last) < 1 { continue }
+            kept.append(date)
+        }
+        return kept
     }
 
     private static func smallState(
