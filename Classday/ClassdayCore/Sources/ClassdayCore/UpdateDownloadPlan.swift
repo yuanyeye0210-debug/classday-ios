@@ -30,9 +30,15 @@ public struct UpdateDownloadPlan: Equatable, Sendable {
             // A malformed mirror string is skipped: it must not break the
             // `download_url` candidate or drop a later valid mirror. A
             // string is only a usable candidate if it parses as an absolute
-            // URL with a scheme and host — a schemeless string parses as a
-            // relative URL, which can never be downloaded.
-            guard let url = URL(string: mirror), url.scheme != nil, url.host != nil else {
+            // URL with a non-empty scheme and host — a schemeless string
+            // parses as a relative URL, which can never be downloaded.
+            // Non-empty matters, not just non-nil: Darwin's URL parser is
+            // lenient about "://bad" — it returns a URL with an empty
+            // scheme ("") and host "bad" (Linux returns nil for it), so a
+            // `!= nil` check alone lets it through (CI run 43245109637).
+            guard let url = URL(string: mirror),
+                  let scheme = url.scheme, !scheme.isEmpty,
+                  let host = url.host, !host.isEmpty else {
                 continue
             }
             candidates.append(url)
