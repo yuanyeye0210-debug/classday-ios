@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Observation
 import ClassdayCore
@@ -106,6 +107,8 @@ final class AppModel {
     private let storeURL: URL
     private var undoTask: Task<Void, Never>?
     private var storeFileModified: Date?
+    private var lastLiveActivitySnapshot: NextClassSnapshot.Value?
+    private var liveActivityTimer: AnyCancellable?
 
     init() {
         let calendar = ClassdayCalendar.make()
@@ -164,6 +167,16 @@ final class AppModel {
             await self?.refreshNotificationStatus()
             await self?.refreshReminders()
         }
+        // Re-sync the Live Activity once a minute while the app is active, so
+        // the lock screen flips at class boundaries even if the app stays
+        // open. The diff gate inside refreshLiveActivityIfNeeded() means a
+        // tick that changes nothing pushes nothing. The timer does nothing
+        // while the app is suspended in the background (Task 4).
+        liveActivityTimer = Timer.publish(every: 60, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in
+                self?.refreshLiveActivityIfNeeded()
+            }
     }
 
     init(document: StoreDocument, storeURL: URL, appGroupAvailable: Bool, now: Date = Date()) {
@@ -509,6 +522,20 @@ final class AppModel {
         (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
     }
 
+    /// Diff-gated Live Activity refresh: only push to ActivityKit when the
+    /// snapshot actually changed, so identical content is never re-pushed
+    /// (iOS throttles Live Activity updates).
+    func refreshLiveActivityIfNeeded(now: Date = Date()) {
+        // Scheduling is NOT diff-gated: a rest-day open (snapshot nil, was
+        // nil) must still queue the next boundary, or the background chain
+        // is never seeded. Re-submitting replaces the pending request.
+        NextClassActivity.scheduleBackgroundRefresh(document: document, calendar: calendar, now: now)
+        let snapshot = NextClassSnapshot.make(document: document, now: now, calendar: calendar)
+        guard NextClassSnapshot.shouldUpdate(previous: lastLiveActivitySnapshot, current: snapshot) else { return }
+        lastLiveActivitySnapshot = snapshot
+        NextClassActivity.sync(document: document, calendar: calendar)
+    }
+
     /// The widget extension can rewrite the shared store (e.g. "推迟 10 分钟").
     /// When the app comes back to the foreground, adopt the on-disk version
     /// instead of silently overwriting it on the next save.
@@ -525,7 +552,7 @@ final class AppModel {
         realignWeek()
         banner = "已载入小组件里的修改"
         WidgetReloader.reload()
-        NextClassActivity.sync(document: document, calendar: calendar)
+        refreshLiveActivityIfNeeded()
         if CalendarSync.isEnabled {
             CalendarSync.sync(document, calendar: calendar)
         }
@@ -857,7 +884,7 @@ final class AppModel {
             return
         }
         WidgetReloader.reload()
-        NextClassActivity.sync(document: document, calendar: calendar)
+        refreshLiveActivityIfNeeded()
         if CalendarSync.isEnabled {
             CalendarSync.sync(document, calendar: calendar)
         }

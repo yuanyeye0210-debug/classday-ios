@@ -26,6 +26,7 @@ struct ClassdayApp: App {
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .active {
                         model.reloadFromDiskIfChanged()
+                        model.refreshLiveActivityIfNeeded()
                     }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .classdayOpenCourse)) { note in
