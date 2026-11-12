@@ -43,29 +43,6 @@ final class ReminderScheduler {
 
     /// Replaces this app's pending reminders. Does not prompt. Skips delivery when permission is off.
     func apply(_ reminders: [PlannedReminder], calendar: Calendar) async {
-        let center = UNUserNotificationCenter.current()
-        let pending = await center.pendingNotificationRequests()
-        let owned = pending.map(\.identifier).filter { $0.hasPrefix("classday-") }
-        center.removePendingNotificationRequests(withIdentifiers: owned)
-        let authorization = await center.notificationSettings().authorizationStatus
-        guard authorization == .authorized || authorization == .provisional || authorization == .ephemeral else {
-            return
-        }
-        for reminder in reminders.prefix(NotificationPlan.pendingLimit) {
-            let content = UNMutableNotificationContent()
-            content.title = reminder.title
-            content.body = reminder.body
-            content.sound = .default
-            content.userInfo = [
-                "courseID": reminder.courseID.uuidString,
-                "meetingID": reminder.meetingID.uuidString,
-            ]
-            var components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: reminder.fireDate)
-            components.calendar = calendar
-            components.timeZone = calendar.timeZone
-            let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
-            let request = UNNotificationRequest(identifier: reminder.id, content: content, trigger: trigger)
-            try? await center.add(request)
-        }
+        await ReminderDelivery.replacePending(reminders, calendar: calendar)
     }
 }

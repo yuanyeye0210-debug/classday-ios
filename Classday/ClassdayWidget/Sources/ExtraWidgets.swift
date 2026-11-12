@@ -41,6 +41,10 @@ struct DelayClassIntent: AppIntent {
         for kind in WidgetID.all {
             WidgetCenter.shared.reloadTimelines(ofKind: kind)
         }
+        await ReminderDelivery.replacePending(
+            NotificationPlan.make(document: document, now: Date(), calendar: calendar),
+            calendar: calendar
+        )
         return .result()
     }
 }

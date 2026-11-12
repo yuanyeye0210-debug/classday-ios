@@ -128,4 +128,86 @@ final class WidgetNotificationTests: XCTestCase {
         XCTAssertEqual(capped.count, 2)
         XCTAssertLessThan(capped[0].fireDate, capped[1].fireDate)
     }
+
+    func testExamAndHomeworkJoinTheNearestSixtyFour() throws {
+        XCTAssertEqual(NotificationPlan.pendingLimit, 64)
+        var document = DemoData.makeDocument()
+        document.courses = []
+        document.semester.defaultReminderMinutes = 10
+        document.exams = [
+            ExamEvent(
+                id: DemoData.ID.examCalculus,
+                courseName: "高等数学",
+                location: "教学楼 A · 301",
+                startISO: "2026-11-09T09:00",
+                endISO: "2026-11-09T11:00"
+            ),
+        ]
+        let firstDue = TestSupport.date(2026, 11, 10, 12, 0, calendar: calendar)
+        var tasks: [HomeworkTask] = []
+        for offset in 0..<70 {
+            let due = try XCTUnwrap(calendar.date(byAdding: .day, value: offset, to: firstDue))
+            let id = UUID(uuidString: String(format: "50000000-0000-0000-0000-%012d", offset))!
+            tasks.append(HomeworkTask(id: id, courseName: "课", title: "作业\(offset)", dueISO: CivilStamp.string(from: due, calendar: calendar)))
+        }
+        document.homework = tasks
+        let now = TestSupport.date(2026, 11, 8, 12, 0, calendar: calendar)
+        let planned = NotificationPlan.make(document: document, now: now, calendar: calendar)
+        XCTAssertEqual(planned.count, 64)
+        XCTAssertEqual(planned.map(\.fireDate), planned.map(\.fireDate).sorted())
+        let first = try XCTUnwrap(planned.first)
+        XCTAssertEqual(first.id, "classday-exam-\(DemoData.ID.examCalculus.uuidString)")
+        XCTAssertEqual(first.title, "即将考试 · 高等数学")
+        XCTAssertFalse(first.opensCourse)
+        XCTAssertTrue(planned.contains { $0.id == "classday-homework-\(tasks[0].id.uuidString)" })
+        XCTAssertFalse(planned.contains { $0.id == "classday-homework-\(tasks[63].id.uuidString)" })
+
+        document.homework[0].done = true
+        let skipped = NotificationPlan.make(document: document, now: now, calendar: calendar)
+        XCTAssertFalse(skipped.contains { $0.id == "classday-homework-\(tasks[0].id.uuidString)" })
+        XCTAssertEqual(skipped.first?.id, first.id)
+
+        document.semester.defaultReminderMinutes = 0
+        let silenced = NotificationPlan.make(document: document, now: now, calendar: calendar)
+        XCTAssertTrue(silenced.isEmpty)
+    }
+
+    func testDelayingTheNextClassMovesItsReminder() throws {
+        let now = TestSupport.date(2026, 11, 8, 12, 0, calendar: calendar)
+        let before = NotificationPlan.make(document: document, now: now, calendar: calendar)
+        let original = try XCTUnwrap(before.first { $0.meetingID == DemoData.ID.calculusMonday })
+        let start = try XCTUnwrap(calendar.date(byAdding: .minute, value: 10, to: original.fireDate))
+        let week = try XCTUnwrap(SemesterCalendar.weekIndex(for: start, semester: document.semester, calendar: calendar))
+        let delayed = TimetableLibrary.overriding(document, with: OccurrenceOverride(
+            courseID: DemoData.ID.calculus,
+            meetingID: DemoData.ID.calculusMonday,
+            week: week,
+            kind: .delayed,
+            delayMinutes: 10
+        ))
+        let after = NotificationPlan.make(document: delayed, now: now, calendar: calendar)
+        let moved = try XCTUnwrap(after.first { $0.courseID == DemoData.ID.calculus && $0.meetingID == DemoData.ID.calculusMonday })
+        XCTAssertEqual(moved.fireDate.timeIntervalSince(original.fireDate), 10 * 60, accuracy: 1)
+    }
+
+    func testPostponeReschedulesNotifications() throws {
+        let extra = try String(
+            contentsOf: TestSupport.repositoryClassdayRoot().appendingPathComponent("ClassdayWidget/Sources/ExtraWidgets.swift"),
+            encoding: .utf8
+        )
+        let intent = extra.split(separator: "struct NextFanCardIntent").first.map(String.init) ?? ""
+        XCTAssertTrue(intent.contains("ReminderDelivery.replacePending"))
+        XCTAssertTrue(intent.contains("NotificationPlan.make"))
+        let scheduler = try String(
+            contentsOf: TestSupport.repositoryClassdayRoot().appendingPathComponent("ClassdayApp/Sources/ReminderScheduler.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(scheduler.contains("ReminderDelivery.replacePending"))
+        let model = try String(
+            contentsOf: TestSupport.repositoryClassdayRoot().appendingPathComponent("ClassdayApp/Sources/AppModel.swift"),
+            encoding: .utf8
+        )
+        let persist = model.split(separator: "private func persist").last.map(String.init) ?? ""
+        XCTAssertTrue(persist.contains("refreshReminders"))
+    }
 }
