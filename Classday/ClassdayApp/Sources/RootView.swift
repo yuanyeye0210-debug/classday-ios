@@ -59,23 +59,36 @@ struct RootView: View {
                 .presentationCornerRadius(28)
                 .presentationBackground { EditorSheetBackground() }
         }
-        .overlay(alignment: .top) {
-            if let banner = model.banner {
-                Text(banner)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(Theme.ink)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(Capsule(style: .continuous).fill(Theme.elevated))
-                    .padding(.top, 8)
-                    .padding(.horizontal, 24)
-                    .accessibilityAddTraits(.isStaticText)
-                    .task(id: banner) {
-                        try? await Task.sleep(nanoseconds: 2_800_000_000)
-                        if model.banner == banner { model.banner = nil }
-                    }
+        // Merge-review sheet (Task 4, design §5): the page reports the
+        // user's decisions to `applyCourseMerge` (Task 5); it never
+        // merges, backs up, or persists itself.
+        .sheet(isPresented: $model.showMergeReview) {
+            MergeReviewView(groups: model.duplicateGroups) { groups, exclusions, gradeChoices in
+                model.applyCourseMerge(groups: groups, exclusions: exclusions, gradeChoices: gradeChoices)
             }
+        }
+        .overlay(alignment: .top) {
+            VStack(spacing: 8) {
+                if model.showDuplicateImportBanner, !model.duplicateGroups.isEmpty {
+                    duplicateImportBanner
+                }
+                if let banner = model.banner {
+                    Text(banner)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(Theme.ink)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(Capsule(style: .continuous).fill(Theme.elevated))
+                        .accessibilityAddTraits(.isStaticText)
+                        .task(id: banner) {
+                            try? await Task.sleep(nanoseconds: 2_800_000_000)
+                            if model.banner == banner { model.banner = nil }
+                        }
+                }
+            }
+            .padding(.top, 8)
+            .padding(.horizontal, 24)
         }
         .overlay(alignment: .bottom) {
             if let undo = model.undo, model.presented == nil {
@@ -235,6 +248,42 @@ struct RootView: View {
             }
         case nil: return ""
         }
+    }
+
+    /// Post-import duplicate banner (Task 4, design §5): tappable,
+    /// persistent until opened or dismissed — unlike the transient
+    /// `model.banner` above, it leads somewhere (the merge-review page).
+    private var duplicateImportBanner: some View {
+        HStack(spacing: 4) {
+            Button {
+                model.openMergeReview()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "square.stack.3d.up")
+                    Text("发现 \(model.duplicateGroups.count) 组同名课程，去合并")
+                        .lineLimit(1)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .bold))
+                }
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Theme.ink)
+                .padding(.leading, 16)
+                .padding(.vertical, 10)
+            }
+            .buttonStyle(.plain)
+            Button {
+                model.showDuplicateImportBanner = false
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Theme.secondary)
+                    .padding(10)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("关闭同名课程提醒")
+        }
+        .background(Capsule(style: .continuous).fill(Theme.elevated))
+        .shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 2)
     }
 
     private func readImport(_ url: URL) {
@@ -867,6 +916,44 @@ struct CoursesView: View {
             .listRowInsets(EdgeInsets(top: 10, leading: 20, bottom: 2, trailing: 20))
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
+
+            // Merge-review entry (Task 4, design §5): only when
+            // same-name groups exist; shows the group count.
+            if !model.duplicateGroups.isEmpty {
+                Button {
+                    model.openMergeReview()
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "square.stack.3d.up")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(Theme.courseInk("orange", scheme: scheme))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("发现 \(model.duplicateGroups.count) 组同名课程")
+                                .font(.system(size: 15, weight: .bold, design: .rounded))
+                                .foregroundStyle(Theme.ink)
+                            Text("合并后成绩只需录一次")
+                                .font(.system(size: 12, design: .rounded))
+                                .foregroundStyle(Theme.secondary)
+                        }
+                        Spacer(minLength: 0)
+                        Text("去合并")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundStyle(Theme.courseInk("orange", scheme: scheme))
+                            .padding(.horizontal, 11)
+                            .padding(.vertical, 6)
+                            .background(Capsule(style: .continuous).fill(Theme.courseBackground("orange", scheme: scheme)))
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(Theme.secondary.opacity(0.6))
+                    }
+                    .padding(14)
+                    .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Theme.elevated))
+                }
+                .buttonStyle(.plain)
+                .listRowInsets(EdgeInsets(top: 12, leading: 20, bottom: 2, trailing: 20))
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+            }
 
             if let average = model.weightedScoreAverage, let gpa = model.gpaAverage {
                 gradesSummaryCard(average: average, gpa: gpa)
