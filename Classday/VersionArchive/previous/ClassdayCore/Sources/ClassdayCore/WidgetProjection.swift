@@ -121,13 +121,15 @@ public enum WidgetProjection {
             at: date,
             courses: document.courses,
             semester: document.semester,
-            calendar: calendar
+            calendar: calendar,
+            context: document.scheduleContext
         )
         let next = ScheduleEngine.nextOccurrence(
             after: date,
             courses: document.courses,
             semester: document.semester,
-            calendar: calendar
+            calendar: calendar,
+            context: document.scheduleContext
         )
         return WidgetRenderState(
             small: smallState(current: current, next: next, now: date, document: document, calendar: calendar),
@@ -142,7 +144,7 @@ public enum WidgetProjection {
             timeText: "—",
             name: "读不到课表",
             locationText: "",
-            footnote: "打开课间同步，或保留小组件后重装",
+            footnote: "打开课曜同步，或保留小组件后重装",
             colorID: "blue",
             progress: nil,
             url: nil
@@ -151,11 +153,11 @@ public enum WidgetProjection {
             title: "今日课程",
             dateText: ScheduleCopy.monthDayLabel(date, calendar: calendar),
             chips: [],
-            footerLeft: "课间",
+            footerLeft: "课曜",
             footerRight: "尚未同步",
             isEmpty: true,
             emptyTitle: "读不到课表",
-            emptyMessage: "打开课间同步。仍空白就在 Sideloadly 里保留小组件后重装"
+            emptyMessage: "打开课曜同步。仍空白就在 Sideloadly 里保留小组件后重装"
         )
         return WidgetRenderState(small: small, medium: medium)
     }
@@ -176,7 +178,8 @@ public enum WidgetProjection {
                     inWeek: week,
                     courses: document.courses,
                     semester: document.semester,
-                    calendar: calendar
+                    calendar: calendar,
+                    context: document.scheduleContext
                 )
                 for item in items {
                     if item.start > now && item.start <= horizonEnd { boundaries.append(item.start) }
@@ -242,7 +245,7 @@ public enum WidgetProjection {
                 timeText: "—",
                 name: "还没有课程",
                 locationText: "",
-                footnote: "打开课间添加一门课",
+                footnote: "打开课曜添加一门课",
                 colorID: "blue",
                 progress: nil,
                 url: nil
@@ -267,14 +270,15 @@ public enum WidgetProjection {
             on: date,
             courses: document.courses,
             semester: document.semester,
-            calendar: calendar
+            calendar: calendar,
+            context: document.scheduleContext
         )
         if today.isEmpty {
             return MediumWidgetState(
                 title: "今日课程",
                 dateText: dateText,
                 chips: [],
-                footerLeft: "课间",
+                footerLeft: "课曜",
                 footerRight: "今天没有课",
                 isEmpty: true,
                 emptyTitle: "今天没有课",
@@ -296,7 +300,7 @@ public enum WidgetProjection {
             title: "今日课程",
             dateText: dateText,
             chips: chips,
-            footerLeft: "课间",
+            footerLeft: "课曜",
             footerRight: "今天共 \(today.count) 门课",
             isEmpty: false,
             emptyTitle: "",
@@ -343,5 +347,33 @@ public enum WidgetProjection {
         }
         guard first <= last else { return nil }
         return first...min(last, semester.totalWeeks)
+    }
+}
+
+public enum FanDeck {
+    public static let defaultsKey = "classday.fan.index"
+
+    public static func page(at date: Date, document: StoreDocument, calendar: Calendar, index: Int) -> (chips: [WidgetChip], index: Int, count: Int) {
+        let today = ScheduleEngine.occurrences(
+            on: date,
+            courses: document.courses,
+            semester: document.semester,
+            calendar: calendar,
+            context: document.scheduleContext
+        ).sorted { $0.start < $1.start }
+        let chips = today.map { item in
+            WidgetChip(
+                id: item.id,
+                timeText: ScheduleCopy.hhmm(item.start, calendar: calendar),
+                name: item.name,
+                locationText: item.locationShort,
+                colorID: item.colorID,
+                url: ClassdayLink.course(item.courseID, meeting: item.meetingID)
+            )
+        }
+        guard !chips.isEmpty else { return ([], 0, 0) }
+        let wrapped = ((index % chips.count) + chips.count) % chips.count
+        let rotated = Array(chips[wrapped...] + chips[..<wrapped])
+        return (Array(rotated.prefix(WidgetProjection.visibleChipLimit)), wrapped, chips.count)
     }
 }

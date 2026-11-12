@@ -21,7 +21,7 @@ final class WidgetNotificationTests: XCTestCase {
         XCTAssertEqual(mondayState.medium.chips.map(\.name), ["高等数学", "大学英语", "程序设计"])
         XCTAssertEqual(mondayState.medium.chips.map(\.timeText), ["08:00", "10:10", "14:00"])
         XCTAssertEqual(mondayState.medium.chips.map(\.locationText), ["A · 301", "B · 205", "机房 2"])
-        XCTAssertEqual(mondayState.medium.footerLeft, "课间")
+        XCTAssertEqual(mondayState.medium.footerLeft, "课曜")
         XCTAssertEqual(mondayState.medium.footerRight, "今天共 3 门课")
 
         let sunday = TestSupport.date(2026, 11, 8, 12, 0, calendar: calendar)
@@ -96,7 +96,7 @@ final class WidgetNotificationTests: XCTestCase {
         let missing = WidgetProjection.missingStoreState(at: now, calendar: calendar)
         XCTAssertEqual(missing.small.phase, .empty)
         XCTAssertEqual(missing.small.name, "读不到课表")
-        XCTAssertEqual(missing.small.footnote, "打开课间同步，或保留小组件后重装")
+        XCTAssertEqual(missing.small.footnote, "打开课曜同步，或保留小组件后重装")
         XCTAssertEqual(missing.medium.emptyTitle, "读不到课表")
         XCTAssertTrue(missing.medium.emptyMessage.contains("Sideloadly"))
         XCTAssertTrue(missing.medium.emptyMessage.contains("小组件"))

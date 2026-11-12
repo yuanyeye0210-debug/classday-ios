@@ -76,6 +76,12 @@ struct CourseEditorView: View {
                         field("上课地点", text: $draft.location)
                         field("院系", text: $draft.department)
                         field("备注", text: $draft.note)
+                        Stepper(value: $draft.credits, in: 0...12, step: 0.5) {
+                            Text("学分：\(draft.credits > 0 ? String(format: "%g", draft.credits) : "未填")")
+                                .font(.system(size: 14, weight: .medium, design: .rounded))
+                                .foregroundStyle(Theme.ink)
+                        }
+                        .accessibilityLabel("学分")
                         colorPicker
                         weekPicker
                         meetingEditors
@@ -324,9 +330,9 @@ struct CourseEditorView: View {
                 meetings: [Meeting(id: UUID(), weekday: weekday, startPeriod: 1, endPeriod: 2)]
             )
         case .edit(let id):
-            return document.courses.first { $0.id == id } ?? DemoData.makeCourses()[0]
+            return document.courses.first { $0.id == id } ?? initialCourse(route: .newCourse, document: document, selectedDay: selectedDay, calendar: calendar)
         case .reschedule(let courseID, _):
-            return document.courses.first { $0.id == courseID } ?? DemoData.makeCourses()[0]
+            return document.courses.first { $0.id == courseID } ?? initialCourse(route: .newCourse, document: document, selectedDay: selectedDay, calendar: calendar)
         }
     }
 }

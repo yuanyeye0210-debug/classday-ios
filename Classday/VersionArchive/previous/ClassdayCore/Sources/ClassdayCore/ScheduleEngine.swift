@@ -21,6 +21,7 @@ public struct Occurrence: Equatable, Hashable, Identifiable, Sendable {
     public var end: Date
     public var timeText: String
     public var reminderLeadMinutes: Int?
+    public var parityLabel: String
 
     public init(
         id: String,
@@ -42,7 +43,8 @@ public struct Occurrence: Equatable, Hashable, Identifiable, Sendable {
         start: Date,
         end: Date,
         timeText: String,
-        reminderLeadMinutes: Int?
+        reminderLeadMinutes: Int?,
+        parityLabel: String = ""
     ) {
         self.id = id
         self.courseID = courseID
@@ -64,6 +66,7 @@ public struct Occurrence: Equatable, Hashable, Identifiable, Sendable {
         self.end = end
         self.timeText = timeText
         self.reminderLeadMinutes = reminderLeadMinutes
+        self.parityLabel = parityLabel
     }
 }
 
@@ -117,23 +120,32 @@ public enum ScheduleEngine {
         inWeek week: Int,
         courses: [Course],
         semester: Semester,
-        calendar: Calendar
+        calendar: Calendar,
+        context: ScheduleContext = .empty
     ) -> [Occurrence] {
         guard week >= 1, week <= semester.totalWeeks else { return [] }
         var built: [Occurrence] = []
         for course in courses where course.weeks.contains(week) {
             for meeting in course.meetings {
-                guard let clocks = ScheduleCopy.clocks(for: meeting, semester: semester),
-                      let start = SemesterCalendar.date(
+                let parity = context.parity(for: meeting.id)
+                guard parity.contains(week: week) else { continue }
+                let override = context.override(courseID: course.id, meetingID: meeting.id, week: week)
+                if override?.kind == .cancelled { continue }
+                let weekday = override?.kind == .moved ? (override?.weekday ?? meeting.weekday) : meeting.weekday
+                let startPeriod = override?.kind == .moved ? (override?.startPeriod ?? meeting.startPeriod) : meeting.startPeriod
+                let endPeriod = override?.kind == .moved ? (override?.endPeriod ?? meeting.endPeriod) : meeting.endPeriod
+                let placed = Meeting(id: meeting.id, weekday: weekday, startPeriod: startPeriod, endPeriod: endPeriod)
+                guard let clocks = ScheduleCopy.clocks(for: placed, semester: semester),
+                      var start = SemesterCalendar.date(
                         week: week,
-                        weekday: meeting.weekday,
+                        weekday: weekday,
                         time: clocks.start,
                         semester: semester,
                         calendar: calendar
                       ),
-                      let end = SemesterCalendar.date(
+                      var end = SemesterCalendar.date(
                         week: week,
-                        weekday: meeting.weekday,
+                        weekday: weekday,
                         time: clocks.end,
                         semester: semester,
                         calendar: calendar
@@ -141,6 +153,21 @@ public enum ScheduleEngine {
                       end > start else {
                     continue
                 }
+                if override?.kind == .delayed, let minutes = override?.delayMinutes {
+                    start = start.addingTimeInterval(TimeInterval(minutes * 60))
+                    end = end.addingTimeInterval(TimeInterval(minutes * 60))
+                }
+                // Holidays / no-class periods suppress the session entirely
+                // (no occurrence, no reminder, no Live Activity).
+                if SemesterCalendar.holiday(on: start, semester: semester, calendar: calendar) != nil {
+                    continue
+                }
+                // A recognised cancellation (teacher email etc.) suppresses
+                // just the named session - or the whole day for a day entry.
+                if SemesterCalendar.cancellation(on: start, courseID: course.id, semester: semester, calendar: calendar) != nil {
+                    continue
+                }
+                let parityLabel = parity == .any ? "" : parity.title
                 built.append(
                     Occurrence(
                         id: "\(course.id.uuidString)-\(meeting.id.uuidString)-\(week)",
@@ -154,15 +181,16 @@ public enum ScheduleEngine {
                         note: course.note,
                         colorID: course.colorID,
                         kind: course.kind,
-                        weekday: meeting.weekday,
-                        startPeriod: meeting.startPeriod,
-                        endPeriod: meeting.endPeriod,
+                        weekday: weekday,
+                        startPeriod: startPeriod,
+                        endPeriod: endPeriod,
                         weekIndex: week,
                         weeks: course.weeks,
                         start: start,
                         end: end,
                         timeText: ScheduleCopy.timeRange(clocks.start, clocks.end),
-                        reminderLeadMinutes: course.reminderLeadMinutes
+                        reminderLeadMinutes: course.reminderLeadMinutes,
+                        parityLabel: parityLabel
                     )
                 )
             }
@@ -178,13 +206,14 @@ public enum ScheduleEngine {
         on date: Date,
         courses: [Course],
         semester: Semester,
-        calendar: Calendar
+        calendar: Calendar,
+        context: ScheduleContext = .empty
     ) -> [Occurrence] {
         guard let week = SemesterCalendar.weekIndex(for: date, semester: semester, calendar: calendar) else {
             return []
         }
         let weekday = SemesterCalendar.isoWeekday(date, calendar: calendar)
-        return occurrences(inWeek: week, courses: courses, semester: semester, calendar: calendar)
+        return occurrences(inWeek: week, courses: courses, semester: semester, calendar: calendar, context: context)
             .filter { $0.weekday == weekday }
     }
 
@@ -192,12 +221,13 @@ public enum ScheduleEngine {
         at date: Date,
         courses: [Course],
         semester: Semester,
-        calendar: Calendar
+        calendar: Calendar,
+        context: ScheduleContext = .empty
     ) -> Occurrence? {
         guard let week = SemesterCalendar.weekIndex(for: date, semester: semester, calendar: calendar) else {
             return nil
         }
-        return occurrences(inWeek: week, courses: courses, semester: semester, calendar: calendar)
+        return occurrences(inWeek: week, courses: courses, semester: semester, calendar: calendar, context: context)
             .first { $0.start <= date && date < $0.end }
     }
 
@@ -205,7 +235,8 @@ public enum ScheduleEngine {
         after date: Date,
         courses: [Course],
         semester: Semester,
-        calendar: Calendar
+        calendar: Calendar,
+        context: ScheduleContext = .empty
     ) -> Occurrence? {
         guard let startMonday = SemesterCalendar.semesterMonday(semester, calendar: calendar) else {
             return nil
@@ -219,7 +250,7 @@ public enum ScheduleEngine {
             return nil
         }
         for week in startWeek...semester.totalWeeks {
-            if let found = occurrences(inWeek: week, courses: courses, semester: semester, calendar: calendar)
+            if let found = occurrences(inWeek: week, courses: courses, semester: semester, calendar: calendar, context: context)
                 .sorted(by: { $0.start < $1.start })
                 .first(where: { $0.start > date }) {
                 return found
@@ -228,7 +259,7 @@ public enum ScheduleEngine {
         return nil
     }
 
-    public static func conflicts(among courses: [Course]) -> [MeetingConflict] {
+    public static func conflicts(among courses: [Course], context: ScheduleContext = .empty) -> [MeetingConflict] {
         struct Item {
             var course: Course
             var meeting: Meeting
@@ -247,7 +278,11 @@ public enum ScheduleEngine {
                     left.meeting.startPeriod, left.meeting.endPeriod,
                     right.meeting.startPeriod, right.meeting.endPeriod
                 ) else { continue }
-                let weeks = Array(Set(left.course.weeks).intersection(right.course.weeks)).sorted()
+                let leftParity = context.parity(for: left.meeting.id)
+                let rightParity = context.parity(for: right.meeting.id)
+                let weeks = Array(Set(left.course.weeks).intersection(right.course.weeks))
+                    .filter { leftParity.contains(week: $0) && rightParity.contains(week: $0) }
+                    .sorted()
                 guard !weeks.isEmpty else { continue }
                 result.append(
                     MeetingConflict(
@@ -278,7 +313,8 @@ public enum ScheduleEngine {
         weekday: Int,
         startPeriod: Int,
         courses: [Course],
-        semester: Semester
+        semester: Semester,
+        context: ScheduleContext = .empty
     ) -> MoveValidation {
         guard let courseIndex = courses.firstIndex(where: { $0.id == courseID }) else {
             return .missing
@@ -304,7 +340,7 @@ public enum ScheduleEngine {
         }
         var updated = courses
         updated[courseIndex] = moved
-        let involved = conflicts(among: updated).filter {
+        let involved = conflicts(among: updated, context: context).filter {
             $0.meetingID == meetingID || $0.otherMeetingID == meetingID
         }
         if involved.isEmpty {
