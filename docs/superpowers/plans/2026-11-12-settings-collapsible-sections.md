@@ -1,8 +1,8 @@
 # 设置页改导航式分组 — 实施计划
 
 > 设计：`docs/superpowers/specs/2026-11-12-settings-collapsible-sections-design.md`（已批准，2026-11-12 16:34，全部按推荐来）
-> 分支：`feat/settings-collapsible-sections`，工作区 `~/workspace/worktrees/classday-ios-settings-collapsible`，基于 main `318b5d15`，已 rebase 到 `82b76819`（PR #12 已合）。
-> 状态：已 rebase 到 main 82b76819。2.9.0 先发（同名课程合并），本批进 2.9.1。本批不改任何版本号。
+> 分支：`feat/settings-navigation-2.9.1`（旧分支 `feat/settings-collapsible-sections` 已废弃，PR #13 已关），工作区 `~/workspace/worktrees/classday-ios-settings-collapsible`，从 main `9605599` 新切，PR #15 已合入 main `fab7a07`。
+> 状态：PR #15 已合（fab7a07）。2.9.0 已发（同名课程合并），本批进 2.9.1。
 
 ## 已定决策（不再讨论）
 
@@ -64,7 +64,7 @@
 
 ### T5 — 整分支评审（协调员发起，评审子 agent 执行）
 
-- 审整个 `feat/settings-collapsible-sections` 分支相对 main `82b76819` 的 diff：导航结构、草稿与保存语义、六个子页内容完整性（有无控件/文案丢失）、样式复用、D-0–D6 落地情况。
+- 审整个 `feat/settings-navigation-2.9.1` 分支相对 main `9605599` 的 diff：导航结构、草稿与保存语义、六个子页内容完整性（有无控件/文案丢失）、样式复用、D-0–D6 落地情况。
 - Critical 必须修掉再汇报；无 Critical/Important 方可汇报完成。
 - CI（version-snapshot + classday-ios-ipa 构建与主题截图）由父 agent 推分支/开 PR 后跑，不在本计划内。
 
