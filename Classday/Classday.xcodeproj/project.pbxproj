@@ -28,6 +28,8 @@
 		FD27B968B39D52C76E586E33 /* FenixAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B25E366B00E90CDFDE69389 /* FenixAuth.swift */; };
 		CFC46553773B644D5CB61EC7 /* GeminiClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeminiClient.swift; sourceTree = "<group>"; };
 		D130A0E6AE0F95D801192217 /* GeminiClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFC46553773B644D5CB61EC7 /* GeminiClient.swift */; };
+		BAD1C8905AD57D37203B8AC9 /* MergeReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MergeReviewView.swift; sourceTree = "<group>"; };
+		A8E13A6B7C6ED6A399C6DD5E /* MergeReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAD1C8905AD57D37203B8AC9 /* MergeReviewView.swift */; };
 		47CF63DC067B191AE2A2499B /* NextClassActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NextClassActivity.swift; sourceTree = "<group>"; };
 		79642916BFA366103B23F6E5 /* NextClassActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47CF63DC067B191AE2A2499B /* NextClassActivity.swift */; };
 		7C8F3BA35D5A330CF47B3933 /* OCRImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OCRImportView.swift; sourceTree = "<group>"; };
@@ -80,6 +82,7 @@
 				26345FF661CC5DE193B00896 /* Experience.swift in Sources */,
 				FD27B968B39D52C76E586E33 /* FenixAuth.swift in Sources */,
 				D130A0E6AE0F95D801192217 /* GeminiClient.swift in Sources */,
+				A8E13A6B7C6ED6A399C6DD5E /* MergeReviewView.swift in Sources */,
 				79642916BFA366103B23F6E5 /* NextClassActivity.swift in Sources */,
 				058C9804604DA5A4145A9E40 /* OCRImportView.swift in Sources */,
 				17AD6A210B806455313732E1 /* ReminderScheduler.swift in Sources */,
@@ -176,6 +179,7 @@
 				D8F22F087D00F518B8A7488C /* Experience.swift */,
 				2B25E366B00E90CDFDE69389 /* FenixAuth.swift */,
 				CFC46553773B644D5CB61EC7 /* GeminiClient.swift */,
+				BAD1C8905AD57D37203B8AC9 /* MergeReviewView.swift */,
 				47CF63DC067B191AE2A2499B /* NextClassActivity.swift */,
 				7C8F3BA35D5A330CF47B3933 /* OCRImportView.swift */,
 				DC90F8B4EEBE5F5EAEE4F9C1 /* ReminderScheduler.swift */,

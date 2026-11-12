@@ -4,6 +4,8 @@ Schema version: **1**. The on-disk file is UTF-8 JSON. `StoreCodec` in ClassdayC
 
 Import replaces the whole timetable. Overlapping courses are allowed only after you confirm the warning. Invalid JSON, a wrong `schemaVersion`, an empty name, a bad date, a week outside the semester, or a period the semester does not define are rejected and the current file is left unchanged.
 
+同名课程由 App 合并，schema 本身不禁止同名（现状已如此）。
+
 There is no account field. `Course` has `grade` (the total score, as a number) and an optional `gradeScheme` (the per-course grading rule); see the Course table.
 
 Schema version 1 is frozen: these fields were added without raising the version, and no v2 is planned for them. `Semester.holidays`, `Semester.cancellations`, and `Course.gradeScheme` are all optional — a document saved before they existed has no such keys, and it still loads: the decoder reads them with `decodeIfPresent` and falls back to empty (`holidays` and `cancellations` decode as `[]`, `grade` and `gradeScheme` decode as absent).
