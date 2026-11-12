@@ -74,4 +74,53 @@ public enum NextClassSnapshot {
             startsAt: next.start
         )
     }
+
+    /// The next time the snapshot value produced by `make` can change:
+    /// the end of the class in progress, the start of the next class, or
+    /// the midnight at which the snapshot first appears for a new day
+    /// (`make` returns nil when the next class is not today, so the
+    /// snapshot flips nil -> "下一节" at midnight), whichever comes first.
+    /// Only times strictly after `date` and within `horizon` count; `nil`
+    /// when there is none (e.g. no more classes).
+    public static func nextBoundary(after date: Date, document: StoreDocument, calendar: Calendar, horizon: TimeInterval = 36 * 60 * 60) -> Date? {
+        var candidates = [
+            ScheduleEngine.currentOccurrence(
+                at: date,
+                courses: document.courses,
+                semester: document.semester,
+                calendar: calendar,
+                context: document.scheduleContext
+            )?.end,
+            ScheduleEngine.nextOccurrence(
+                after: date,
+                courses: document.courses,
+                semester: document.semester,
+                calendar: calendar,
+                context: document.scheduleContext
+            )?.start,
+        ].compactMap { $0 }
+        // Midnight flip: `make` is nil while the next class is on a later
+        // day, so the snapshot can first appear at the midnight that starts
+        // that day. Scan forward midnight by midnight (at most ~2 within
+        // the horizon); the first midnight where `make` differs is a
+        // candidate, since a later midnight cannot be earlier.
+        let currentValue = make(document: document, now: date, calendar: calendar)
+        var midnight = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: date))
+        while let dayStart = midnight, dayStart.timeIntervalSince(date) <= horizon {
+            if make(document: document, now: dayStart, calendar: calendar) != currentValue {
+                candidates.append(dayStart)
+                break
+            }
+            midnight = calendar.date(byAdding: .day, value: 1, to: dayStart)
+        }
+        return candidates
+            .filter { $0 > date && $0.timeIntervalSince(date) <= horizon }
+            .min()
+    }
+
+    /// Diff gate for Live Activity updates: refresh only when the snapshot
+    /// value actually changed (including appearing or disappearing).
+    public static func shouldUpdate(previous: Value?, current: Value?) -> Bool {
+        previous != current
+    }
 }
