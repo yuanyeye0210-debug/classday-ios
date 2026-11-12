@@ -48,7 +48,9 @@ struct CourseDetailView: View {
                     if let course {
                         Button("导航到教室") {
                             let pin = model.document.rooms.first { $0.name == course.location }
-                            RoomNavigator.open(location: course.location, pin: pin)
+                            if let message = RoomNavigator.open(location: course.location, pin: pin) {
+                                model.banner = message
+                            }
                         }
                     }
                     Button("删除课程", role: .destructive) { model.confirmDeleteCourseID = presentation.courseID }

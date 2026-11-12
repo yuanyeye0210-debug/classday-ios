@@ -38,6 +38,13 @@ struct DelayClassIntent: AppIntent {
             courseID: next.courseID, meetingID: next.meetingID, week: next.weekIndex, kind: .delayed, delayMinutes: 10
         ))
         try? StoreFile.save(document, to: url)
+        for kind in WidgetID.all {
+            WidgetCenter.shared.reloadTimelines(ofKind: kind)
+        }
+        await ReminderDelivery.replacePending(
+            NotificationPlan.make(document: document, now: Date(), calendar: calendar),
+            calendar: calendar
+        )
         return .result()
     }
 }
@@ -83,7 +90,7 @@ struct OpenNextClassIntent: AppIntent {
 
 struct FanStackWidget: Widget {
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "FanStackWidget", provider: ClassdayProvider()) { entry in
+        StaticConfiguration(kind: WidgetID.fanStack, provider: ClassdayProvider()) { entry in
             FanStackView(date: entry.date)
         }
         .configurationDisplayName("卡片叠放")
@@ -139,7 +146,7 @@ struct FanStackView: View {
 
 struct WeekBoardWidget: Widget {
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "WeekBoardWidget", provider: ClassdayProvider()) { entry in
+        StaticConfiguration(kind: WidgetID.weekBoard, provider: ClassdayProvider()) { entry in
             WeekBoardView(date: entry.date)
         }
         .configurationDisplayName("本周课表")
@@ -185,7 +192,7 @@ struct WeekBoardView: View {
 
 struct LockNextWidget: Widget {
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "LockNextWidget", provider: ClassdayProvider()) { entry in
+        StaticConfiguration(kind: WidgetID.lockScreen, provider: ClassdayProvider()) { entry in
             LockNextView(date: entry.date)
         }
         .configurationDisplayName("锁屏下一节")

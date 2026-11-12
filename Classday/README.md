@@ -54,7 +54,7 @@ Deep links use `classday://course/<uuid>?meeting=<uuid>`. Notification taps and 
 - Long-press a week-grid block to drag it. A conflicting or out-of-range drop is cancelled. A successful drop can be undone for a few seconds. VoiceOver uses 调整时间 instead of the drag.
 - Current class progress and a next-class countdown.
 - Small next-class widget and medium today widget. They read the App Group file, follow the device timezone, show an empty state, and deep-link into the course. Edits reload timelines. The timeline itself moves at class boundaries so the app does not poll WidgetKit.
-- Local notification reminders, requested only when a reminder is turned on. Status is shown in 我的. At most 60 pending reminders.
+- Local notification reminders, requested only when a reminder is turned on. Status is shown in 我的. At most 64 pending reminders, nearest first.
 - JSON import and export, schema version 1. See [Docs/DATA_SCHEMA.md](Docs/DATA_SCHEMA.md).
 - Dynamic Type, VoiceOver labels, portrait iPhone layout, light and dark appearance.
 - Demo seed with reset and clear.

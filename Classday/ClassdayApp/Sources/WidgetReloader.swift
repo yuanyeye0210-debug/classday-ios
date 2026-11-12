@@ -5,7 +5,8 @@ enum WidgetReloader {
     /// Call only after a local edit. WidgetKit's daily reload budget is limited;
     /// the timeline itself advances at class boundaries.
     static func reload() {
-        WidgetCenter.shared.reloadTimelines(ofKind: WidgetID.nextClass)
-        WidgetCenter.shared.reloadTimelines(ofKind: WidgetID.todayCourses)
+        for kind in WidgetID.all {
+            WidgetCenter.shared.reloadTimelines(ofKind: kind)
+        }
     }
 }

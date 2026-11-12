@@ -1264,16 +1264,29 @@ enum QRCode {
 }
 
 enum RoomNavigator {
-    static func open(location: String, pin: RoomPin?) {
-        let item: MKMapItem
-        if let pin, let latitude = pin.latitude, let longitude = pin.longitude {
-            item = MKMapItem(placemark: MKPlacemark(coordinate: CLLocationCoordinate2D(latitude: latitude, longitude: longitude)))
-        } else {
-            item = MKMapItem(placemark: MKPlacemark(coordinate: CLLocationCoordinate2D(latitude: 39.9, longitude: 116.4)))
-            item.name = location
+    /// Returns a message when there is nothing to open. A pin with coordinates
+    /// starts walking directions. A name without coordinates is a map search.
+    @discardableResult
+    static func open(location: String, pin: RoomPin?) -> String? {
+        switch RoomNavigation.directions(location: location, pin: pin) {
+        case let .coordinate(latitude, longitude, name):
+            let item = MKMapItem(placemark: MKPlacemark(coordinate: CLLocationCoordinate2D(latitude: latitude, longitude: longitude)))
+            item.name = name
+            item.openInMaps(launchOptions: [MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeWalking])
+            return nil
+        case let .search(query):
+            var components = URLComponents(string: "https://maps.apple.com/")
+            components?.queryItems = [
+                URLQueryItem(name: "q", value: query),
+                URLQueryItem(name: "dirflg", value: "w"),
+            ]
+            if let url = components?.url {
+                UIApplication.shared.open(url)
+            }
+            return nil
+        case .missing:
+            return "还没有设置地点"
         }
-        item.name = pin?.query ?? location
-        item.openInMaps(launchOptions: [MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeWalking])
     }
 }
 

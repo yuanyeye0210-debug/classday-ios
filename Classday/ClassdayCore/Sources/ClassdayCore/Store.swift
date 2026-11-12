@@ -233,7 +233,68 @@ public enum StoreCodec {
     }
 }
 
+public enum StoreRead: Equatable, Sendable {
+    case loaded(StoreDocument)
+    case missing
+    case unreadable(preservedCopy: URL?, errors: [String])
+}
+
+public enum StoreSafety {
+    /// Demo fallback must not replace a file that failed to decode. A later
+    /// explicit edit is user data and may replace it; the corrupt bytes stay
+    /// in the copy `StoreFile.read` already wrote.
+    public static func blocksDemoOverwrite(origin: DataOrigin, fileWasUnreadable: Bool) -> Bool {
+        fileWasUnreadable && origin == .demo
+    }
+}
+
+public enum StoreImport {
+    /// Replaces the live timetable with `incoming` after stashing the current one in the library.
+    public static func replaceKeepingBackup(
+        _ current: StoreDocument,
+        with incoming: StoreDocument,
+        backupName: String = "导入前备份",
+        backupID: UUID = UUID()
+    ) -> StoreDocument {
+        let backed = TimetableLibrary.storingCurrent(current, as: backupName, id: backupID)
+        var next = StoreCodec.normalized(incoming)
+        next.library = backed.library
+        next.activeTimetableID = backed.activeTimetableID
+        next.origin = .user
+        return next
+    }
+}
+
 public enum StoreFile {
+    public static func read(from url: URL, stamp: String = "copy", fileManager: FileManager = .default) -> StoreRead {
+        guard fileManager.fileExists(atPath: url.path) else { return .missing }
+        do {
+            return .loaded(try load(from: url))
+        } catch let error as StoreFileError {
+            let messages: [String]
+            if case let .invalid(errors) = error, !errors.isEmpty {
+                messages = errors
+            } else {
+                messages = ["无法读取课表文件"]
+            }
+            let backup = try? preserveUnreadableCopy(of: url, stamp: stamp, fileManager: fileManager)
+            return .unreadable(preservedCopy: backup, errors: messages)
+        } catch {
+            let backup = try? preserveUnreadableCopy(of: url, stamp: stamp, fileManager: fileManager)
+            return .unreadable(preservedCopy: backup, errors: ["无法读取课表文件"])
+        }
+    }
+
+    private static func preserveUnreadableCopy(of url: URL, stamp: String, fileManager: FileManager) throws -> URL {
+        let folder = url.deletingLastPathComponent()
+        var backup = folder.appendingPathComponent("classday-store-corrupt-\(stamp).json")
+        if fileManager.fileExists(atPath: backup.path) {
+            backup = folder.appendingPathComponent("classday-store-corrupt-\(stamp)-\(UUID().uuidString).json")
+        }
+        try fileManager.copyItem(at: url, to: backup)
+        return backup
+    }
+
     public static func load(from url: URL) throws -> StoreDocument {
         let data = try Data(contentsOf: url)
         let outcome = StoreCodec.importing(data)
