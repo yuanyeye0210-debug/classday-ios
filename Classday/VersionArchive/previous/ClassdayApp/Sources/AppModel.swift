@@ -101,6 +101,14 @@ final class AppModel {
     var showStudyDesk = false
     var showExams = false
     var showSmartImport = false
+    /// Merge-review sheet (Task 4): opened from the all-courses entry
+    /// row or the post-import banner. `applyCourseMerge` (Task 5)
+    /// executes the user's decisions from the page.
+    var showMergeReview = false
+    /// Post-import banner (Task 4): set by `importCalendar` when
+    /// duplicate groups exist afterwards; cleared when the review page
+    /// is opened or the banner is dismissed.
+    var showDuplicateImportBanner = false
     var smartImportSample = false
 
     // Update state shared with SettingsView and RootView (Task 6): the last
@@ -861,6 +869,141 @@ final class AppModel {
         document.courses.filter { $0.grade != nil }
     }
 
+    /// Groups of courses sharing a normalized name (Task 4, design §1/§5).
+    /// Computed live from the document, so the entry row, banner, and
+    /// review page always reflect the current courses.
+    var duplicateGroups: [DuplicateGroup] {
+        findDuplicateGroups(courses: document.courses)
+    }
+
+    /// Opens the merge-review page and clears the post-import banner:
+    /// reaching the page is the banner's destination.
+    func openMergeReview() {
+        showDuplicateImportBanner = false
+        showMergeReview = true
+    }
+
+    /// Banner text `persist` sets when the store save fails. Shared
+    /// so `applyCourseMerge` can tell a failed backup save apart
+    /// from a successful one without re-matching a literal.
+    private static let saveFailedMessage = "未能保存课表"
+
+    /// "合并前备份 11-12 16:30" (design §6): the library name for a
+    /// merge backup, stamped at execution time.
+    private static func mergeBackupName(now: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "MM-dd HH:mm"
+        return "合并前备份 \(formatter.string(from: now))"
+    }
+
+    /// Executes the user's merge decisions from the review page
+    /// (Task 5, design §6): computes every merge first, backs the
+    /// current document up into the timetable library, then applies
+    /// the merges, remaps overrides/cancellations, and persists.
+    /// The review page reports decisions only; this function does
+    /// the merging. A group with fewer than two members left after
+    /// exclusion, or with a grade conflict and no choice, is skipped
+    /// — never merged silently, and never passed to
+    /// `mergeDuplicateGroup` unresolved (it traps on that).
+    func applyCourseMerge(groups: [DuplicateGroup], exclusions: [String: Set<UUID>], gradeChoices: [String: UUID?]) {
+        // 1. Pure computation first: no mutation until every merge
+        // result is known.
+        struct ComputedMerge {
+            let merged: Course
+            let removedIDs: Set<UUID>
+        }
+        var computed: [ComputedMerge] = []
+        var combinedRemap: CourseIDRemap = [:]
+        var combinedMeetingRemap: MeetingIDRemap = [:]
+        for group in groups {
+            let excludedIDs = exclusions[group.normalizedName] ?? []
+            let includedIDs = Set(group.courses.map(\.id)).subtracting(excludedIDs)
+            // Resolve against the current document, in document order,
+            // so the survivor is the first member as stored now.
+            let members = document.courses.filter { includedIDs.contains($0.id) }
+            guard members.count >= 2 else { continue }
+            let gradeSourceID = gradeChoices[group.normalizedName].flatMap { $0 }
+            // An unresolved grade conflict must never reach
+            // mergeDuplicateGroup: skip the group and leave it on
+            // the review page for the user to decide.
+            let distinctGrades = Set(members.compactMap(\.grade))
+            if distinctGrades.count > 1 {
+                guard let gradeSourceID, members.contains(where: { $0.id == gradeSourceID && $0.grade != nil }) else { continue }
+            }
+            let resolvedGroup = DuplicateGroup(normalizedName: group.normalizedName, courses: members)
+            let result = mergeDuplicateGroup(
+                resolvedGroup,
+                gradeSourceID: gradeSourceID
+            )
+            combinedRemap.merge(result.remap) { _, new in new }
+            combinedMeetingRemap.merge(droppedMeetingRemap(of: resolvedGroup)) { _, new in new }
+            computed.append(ComputedMerge(merged: result.course, removedIDs: Set(result.remap.keys)))
+        }
+        guard !computed.isEmpty else { return }
+
+        // 2. Back up the current (pre-merge) document into the
+        // timetable library (design §6). `duplicateTimetable`
+        // persists the backup; if that save fails, `persist`
+        // reports it via the failure banner — abort instead of
+        // merging without a backup. The backup entry stays in the
+        // in-memory library, so a later successful save still
+        // preserves it.
+        duplicateTimetable(named: Self.mergeBackupName(now: Date()))
+        guard banner != Self.saveFailedMessage else { return }
+
+        // 3. Apply: replace each group's members with its merged
+        // course (survivor position kept) and drop the merged-away
+        // members, then remap overrides/cancellations to the
+        // survivor. Exams/homework are name-based and untouched.
+        // Overrides and week rules are meeting-anchored: kept meetings
+        // keep their ids, while a duplicate-slot meeting dropped by
+        // the dedup is remapped to the kept meeting for its slot
+        // (see below) — meeting ids are not all preserved.
+        var mergedBySurvivorID: [UUID: Course] = [:]
+        var removedIDs: Set<UUID> = []
+        for item in computed {
+            mergedBySurvivorID[item.merged.id] = item.merged
+            removedIDs.formUnion(item.removedIDs)
+        }
+        document.courses = document.courses.compactMap { course in
+            if removedIDs.contains(course.id) {
+                return nil
+            }
+            if let merged = mergedBySurvivorID[course.id] {
+                return merged
+            }
+            return course
+        }
+        document.overrides = remapOccurrenceOverrides(document.overrides, remap: combinedRemap)
+        // A duplicate-slot meeting dropped by the dedup keeps no meeting
+        // in the merged course, so an override or week rule anchored to
+        // its id is rewritten to the kept meeting for that slot (I1).
+        // Without this the override would survive, unfindable by the
+        // per-(course, meeting) lookup, and its effect — e.g. a week-3
+        // cancellation — would silently vanish.
+        document.overrides = remapOverrideMeetingIDs(document.overrides, remap: combinedMeetingRemap)
+        document.weekRules = remapWeekRuleMeetingIDs(document.weekRules, remap: combinedMeetingRemap)
+        document.semester.cancellations = remapClassCancellations(document.semester.cancellations, remap: combinedRemap)
+        // A course-detail sheet open on a merged-away course would
+        // point at a deleted id (same guard as `deleteCourse`).
+        if let presented, removedIDs.contains(presented.courseID) {
+            self.presented = nil
+        }
+
+        // 4. Persist through the existing path, so reminders, Live
+        // Activity, and widgets recompute from the new document.
+        // The banner is set before `persist` so a failed save
+        // overwrites it with the failure message (persist's own
+        // behaviour) instead of claiming success. The review page
+        // dismisses itself once `duplicateGroups` is empty; when
+        // groups remain (per-group merge) it stays open.
+        showDuplicateImportBanner = false
+        let mergedCount = computed.count
+        banner = "已合并 \(mergedCount) 组同名课程"
+        persist(markUserEdited: true)
+    }
+
     /// 学分加权（没填学分的按 1 计权重）
     var weightedScoreAverage: Double? {
         let graded = gradedCourses
@@ -958,6 +1101,11 @@ final class AppModel {
         banner = skipped > 0
             ? "导入了 \(newCourses.count) 门课、\(newExams.count) 场考试，跳过 \(skipped) 门重复课程"
             : "导入了 \(newCourses.count) 门课、\(newExams.count) 场考试"
+        // Post-import duplicate banner (Task 4, design §5): if the new
+        // document has same-name groups, offer the merge-review page.
+        if !duplicateGroups.isEmpty {
+            showDuplicateImportBanner = true
+        }
         persist(markUserEdited: true)
     }
 
@@ -1008,7 +1156,7 @@ final class AppModel {
             loadError = nil
             storeFileModified = Self.modificationDate(of: storeURL)
         } catch {
-            banner = "未能保存课表"
+            banner = Self.saveFailedMessage
             return
         }
         WidgetReloader.reload()
