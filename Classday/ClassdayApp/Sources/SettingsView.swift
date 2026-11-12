@@ -35,6 +35,7 @@ struct SettingsView: View {
     @State private var showChangelog = false
     @State private var updateNote: String?
     @State private var updateURL: URL?
+    @State private var sideStoreURL: URL?
     @State private var checkingUpdate = false
 
     init() {
@@ -327,15 +328,15 @@ struct SettingsView: View {
                     Divider().padding(.leading, 58)
                     settingsRow(icon: "arrow.down.circle.fill", color: .teal,
                                 title: "检查更新", value: checkingUpdate ? "检查中…" : updateNote,
-                                showsChevron: updateURL != nil) {
+                                showsChevron: sideStoreURL != nil) {
                         Task { await checkForUpdate() }
                     }
-                    if let updateURL {
+                    if let sideStoreURL {
                         Divider().padding(.leading, 58)
-                        Link(destination: updateURL) {
+                        Link(destination: sideStoreURL) {
                             HStack(spacing: 12) {
-                                iconBadge("square.and.arrow.down.fill", color: .green)
-                                Text("下载新版 IPA")
+                                iconBadge("arrow.down.app.fill", color: .green)
+                                Text("在 SideStore 中打开")
                                     .font(.system(size: 16, weight: .medium))
                                     .foregroundStyle(Theme.ink)
                                 Spacer()
@@ -348,7 +349,28 @@ struct SettingsView: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        Text("安装步骤（SideStore）：① 点上面下载，IPA 会存进「文件」；② 打开 LocalDevVPN 点连接；③ 打开 SideStore，点 + 选中刚下载的 IPA，签好自动装上，课表数据不会丢。还没装 SideStore 的话，首次需要在电脑上用 iloader 装一次，装好后以后更新都不用电脑。")
+                    }
+                    if let updateURL {
+                        Divider().padding(.leading, 58)
+                        Link(destination: updateURL) {
+                            HStack(spacing: 12) {
+                                iconBadge("square.and.arrow.down.fill", color: .green)
+                                Text("直接下载 IPA")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundStyle(Theme.ink)
+                                Spacer()
+                                Image(systemName: "arrow.up.forward.app")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundStyle(Theme.secondary.opacity(0.6))
+                            }
+                            .padding(.vertical, 9)
+                            .padding(.horizontal, 4)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if sideStoreURL != nil || updateURL != nil {
+                        Text("课曜的源加进 SideStore 一次之后，以后的新版本会自己出现。上面的按钮打开这个源。SideStore 打不开时，用直接下载的 IPA：先连接 LocalDevVPN，再在 SideStore 里点 + 选中文件。免费 Apple ID 的签名大约 7 天，SideStore 可以刷新。首次安装 SideStore 仍要在电脑上用 iloader。")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -715,48 +737,44 @@ struct ChangelogView: View {
     }
 }
 
-private struct GitHubRelease: Decodable {
-    let tag_name: String
-}
-
 extension SettingsView {
-    /// Compares the app's own version against the latest GitHub release
-    /// of the (public) repo; releases are published alongside each IPA
-    /// delivery, so this is the sideload-friendly update channel.
+    /// Reads the SideStore source JSON. A newer marketing version, or the same
+    /// version with a higher build, offers to open that source in SideStore.
+    /// The IPA link stays as the fallback when SideStore is not installed.
     func checkForUpdate() async {
         checkingUpdate = true
         updateURL = nil
+        sideStoreURL = nil
         defer { checkingUpdate = false }
+        let current = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+        let os = ProcessInfo.processInfo.operatingSystemVersion
+        let deviceOS = "\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)"
         do {
-            var request = URLRequest(url: URL(string: "https://api.github.com/repos/yuanyeye0210-debug/classday-ios/releases/latest")!)
-            request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-            let (data, _) = try await URLSession.shared.data(for: request)
-            let release = try JSONDecoder().decode(GitHubRelease.self, from: data)
-            let latest = release.tag_name.hasPrefix("v") ? String(release.tag_name.dropFirst()) : release.tag_name
-            let current = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
-            if Self.version(latest, isNewerThan: current) {
-                updateNote = "新版 \(latest)"
-                // Release assets can't be attached through the API token
-                // channel (uploads host), so the IPAs live in the public
-                // classday-releases archive repo under predictable names.
-                updateURL = URL(string: "https://raw.githubusercontent.com/yuanyeye0210-debug/classday-releases/main/Classday-v\(latest).ipa")
+            var request = URLRequest(url: ReleaseChannel.sourceURL)
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            request.timeoutInterval = 20
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                updateNote = "检查失败"
+                return
+            }
+            let source = try ReleaseChannel.parse(data)
+            if let offer = try ReleaseChannel.updateOffer(
+                in: source,
+                currentMarketing: current,
+                currentBuild: build,
+                deviceOS: deviceOS
+            ) {
+                updateNote = "新版 \(offer.version)"
+                sideStoreURL = offer.sideStoreURL
+                updateURL = offer.ipaURL
             } else {
                 updateNote = "已是最新版"
             }
         } catch {
             updateNote = "检查失败"
         }
-    }
-
-    static func version(_ a: String, isNewerThan b: String) -> Bool {
-        let pa = a.split(separator: ".").map { Int($0) ?? 0 }
-        let pb = b.split(separator: ".").map { Int($0) ?? 0 }
-        for i in 0..<max(pa.count, pb.count) {
-            let x = i < pa.count ? pa[i] : 0
-            let y = i < pb.count ? pb[i] : 0
-            if x != y { return x > y }
-        }
-        return false
     }
 }
 

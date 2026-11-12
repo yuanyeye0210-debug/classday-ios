@@ -1,6 +1,10 @@
 import Foundation
-import Compression
 import CoreFoundation
+#if canImport(Compression)
+import Compression
+#elseif os(Linux)
+import ClassdayZlib
+#endif
 
 public enum WeekParity: String, Codable, Equatable, Hashable, Sendable {
     case any
@@ -1363,6 +1367,7 @@ public extension ScheduleTextImporter {
                         entries[name] = raw
                     } else if method == 8, rawSize > 0 {
                         var output = Data(count: rawSize)
+#if canImport(Compression)
                         let written = output.withUnsafeMutableBytes { dst -> Int in
                             raw.withUnsafeBytes { src in
                                 compression_decode_buffer(
@@ -1372,6 +1377,16 @@ public extension ScheduleTextImporter {
                             }
                         }
                         if written == rawSize { entries[name] = output }
+#elseif os(Linux)
+                        let written = output.withUnsafeMutableBytes { dst -> Int32 in
+                            raw.withUnsafeBytes { src in
+                                classday_inflate_raw(
+                                    src.bindMemory(to: UInt8.self).baseAddress, Int32(raw.count),
+                                    dst.bindMemory(to: UInt8.self).baseAddress, Int32(rawSize))
+                            }
+                        }
+                        if written == Int32(rawSize) { entries[name] = output }
+#endif
                     }
                 }
             }

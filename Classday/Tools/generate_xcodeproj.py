@@ -24,7 +24,16 @@ def marketing_version() -> str:
     return line
 
 
-def sync_project_yml(version: str) -> None:
+def build_number() -> str:
+    import re
+
+    line = (ROOT / "BUILD").read_text(encoding="utf-8").splitlines()[0].strip()
+    if not re.fullmatch(r"[1-9][0-9]*", line):
+        raise SystemExit(f"Classday/BUILD must be a positive integer, got {line!r}")
+    return line
+
+
+def sync_project_yml(version: str, build: str) -> None:
     import re
 
     path = ROOT / "project.yml"
@@ -37,7 +46,17 @@ def sync_project_yml(version: str) -> None:
     )
     if count != 1:
         raise SystemExit("project.yml MARKETING_VERSION was not updated")
+    updated, count = re.subn(
+        r'(CURRENT_PROJECT_VERSION:\s*")[^"]+(")',
+        rf"\g<1>{build}\2",
+        updated,
+        count=1,
+    )
+    if count != 1:
+        raise SystemExit("project.yml CURRENT_PROJECT_VERSION was not updated")
     path.write_text(updated, encoding="utf-8")
+
+
 APP_SOURCES = sorted((ROOT / "ClassdayApp" / "Sources").glob("*.swift"))
 WIDGET_SOURCES = sorted((ROOT / "ClassdayWidget" / "Sources").glob("*.swift"))
 PROJECT = ROOT / "Classday.xcodeproj"
@@ -74,8 +93,14 @@ def build_settings(settings: dict[str, str | list[str]], indent: str = "\t\t\t\t
     return "\n".join(lines)
 
 
+def relative_seed(path: Path) -> str:
+    # Hash the path inside Classday, not the machine's absolute path, so a bump
+    # on another computer does not rewrite every object id.
+    return path.resolve().relative_to(ROOT).as_posix()
+
+
 def file_ref(path: Path, kind: str) -> tuple[str, str]:
-    ref = xid(f"ref:{path.as_posix()}")
+    ref = xid(f"ref:{relative_seed(path)}")
     name = path.name
     return ref, (
         f"\t\t{ref} /* {name} */ = {{isa = PBXFileReference; "
@@ -87,7 +112,8 @@ def main() -> None:
     if not APP_SOURCES or not WIDGET_SOURCES:
         raise SystemExit("missing Swift sources")
     version = marketing_version()
-    sync_project_yml(version)
+    project_build = build_number()
+    sync_project_yml(version, project_build)
 
     objects: list[str] = []
     app_build_files: list[str] = []
@@ -97,7 +123,7 @@ def main() -> None:
 
     def add_source(path: Path, target_seed: str, bucket: list[str], refs: list[tuple[str, str]]) -> None:
         ref, declaration = file_ref(path, "sourcecode.swift")
-        build = xid(f"build:{target_seed}:{path.as_posix()}")
+        build = xid(f"build:{target_seed}:{relative_seed(path)}")
         objects.append(declaration)
         objects.append(
             f"\t\t{build} /* {path.name} in Sources */ = {{isa = PBXBuildFile; fileRef = {ref} /* {path.name} */; }};"
@@ -111,7 +137,7 @@ def main() -> None:
     for path in sorted((ROOT / "ClassdayShaders.metal",)):
         if path.is_file():
             ref, declaration = file_ref(path, "sourcecode.metal")
-            build = xid(f"build:metal:{path.as_posix()}")
+            build = xid(f"build:metal:{relative_seed(path)}")
             objects.append(declaration)
             objects.append(
                 f"\t\t{build} /* {path.name} in Sources */ = {{isa = PBXBuildFile; fileRef = {ref} /* {path.name} */; }};"
@@ -341,7 +367,7 @@ def main() -> None:
 
     common_target = {
         "CODE_SIGN_STYLE": "Automatic",
-        "CURRENT_PROJECT_VERSION": "1",
+        "CURRENT_PROJECT_VERSION": project_build,
         "DEVELOPMENT_TEAM": "",
         "IPHONEOS_DEPLOYMENT_TARGET": "17.0",
         "MARKETING_VERSION": version,

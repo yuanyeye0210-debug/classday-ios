@@ -22,8 +22,9 @@ private func usage() -> Never {
           classday-backup bump --committed PATH --working PATH --to X.Y.Z
 
         bump archives the committed tree into working/VersionArchive/previous, then writes
-        X.Y.Z to working/VERSION. Version updates must use Tools/bump-version.sh so the
-        snapshot is the last commit, taken before the version files change.
+        X.Y.Z to working/VERSION and the next integer to working/BUILD. Version updates
+        must use Tools/bump-version.sh so the snapshot is the last commit, taken before
+        the version files change.
         rotate and bump delete directories only inside the marked VersionArchive.
         They never rewrite git history.
         """,
@@ -74,6 +75,8 @@ case "bump":
         mode: bump
         previous-version: \(report.previousVersion)
         new-version: \(report.newVersion)
+        previous-build: \(report.previousBuild)
+        new-build: \(report.newBuild)
         copied: \(report.rotation.copiedFileCount)
         removed: \(removed)
         scope: VersionArchive only

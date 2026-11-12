@@ -1,16 +1,16 @@
 name: classday-ios-ipa
 
-# Push trigger: a workflow that exists only on this branch is not eligible for
-# workflow_dispatch until it is on the default branch. Push to the branch runs it.
+# main builds the unsigned IPA. A marketing-version bump on main, or a v* tag,
+# also publishes that IPA to classday-releases. Other branch names are not triggers.
 on:
   push:
     branches:
-      - cursor/shared-app-group-92bb
-      - cursor/classday-2-themes-92bb
       - main
+    tags:
+      - "v*"
 
 permissions:
-  contents: read
+  contents: write
   actions: write
 
 jobs:
@@ -19,6 +19,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Xcode version
         run: |
@@ -176,3 +178,10 @@ jobs:
           path: |
             ${{ runner.temp }}/xcodebuild-iphoneos.log
           if-no-files-found: ignore
+
+      - name: Publish SideStore source and prune old releases
+        if: success()
+        env:
+          RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash Classday/Tools/publish-release.sh
