@@ -1,4 +1,9 @@
 {
+  "activeTimetableID": "00000000-0000-0000-0000-0000000000AA",
+  "appearance": {
+    "performance": "balanced",
+    "themeID": "neon"
+  },
   "courses": [
     {
       "colorID": "blue",
@@ -302,7 +307,9 @@
       "title": "实验报告"
     }
   ],
+  "library": [],
   "origin": "demo",
+  "overrides": [],
   "personalEvents": [
     {
       "endISO": "2026-11-10T20:00",
@@ -319,9 +326,12 @@
       "title": "实验室组会"
     }
   ],
+  "rooms": [],
   "schemaVersion": 1,
   "semester": {
+    "cancellations": [],
     "defaultReminderMinutes": 10,
+    "holidays": [],
     "name": "2026-2027 学年 · 第一学期",
     "periods": [
       {
@@ -378,5 +388,7 @@
     "shortName": "2026 秋季学期",
     "startDate": "2026-08-31",
     "totalWeeks": 16
-  }
+  },
+  "subscribedICSURL": "",
+  "weekRules": []
 }
