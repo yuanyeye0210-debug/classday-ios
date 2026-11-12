@@ -1,8 +1,8 @@
 # 设置页改导航式分组 — 实施计划
 
 > 设计：`docs/superpowers/specs/2026-11-12-settings-collapsible-sections-design.md`（已批准，2026-11-12 16:34，全部按推荐来）
-> 分支：`feat/settings-collapsible-sections`，工作区 `~/workspace/worktrees/classday-ios-settings-collapsible`，基于 main `318b5d15`
-> 状态：main 未动，无需 rebase。2.8.0 升版分支 `release/2.8.0-version-bump` 在走 PR，**别动它**。本批不改任何版本号（进 2.8.1 是发版口径）。
+> 分支：`feat/settings-collapsible-sections`，工作区 `~/workspace/worktrees/classday-ios-settings-collapsible`，基于 main `318b5d15`，已 rebase 到 `82b76819`（PR #12 已合）。
+> 状态：已 rebase 到 main 82b76819。2.9.0 先发（同名课程合并），本批进 2.9.1。本批不改任何版本号。
 
 ## 已定决策（不再讨论）
 
@@ -10,7 +10,7 @@
 - D1 两张卡片：第一张「课表」（上课时间、学期、假期与不上课时段），第二张「通用」（提醒、数据、关于）。
 - D2 子页里保留底部 tab 栏（NavigationStack 包在 TabView 的「我的」页签内，默认即保留）。
 - D3 未保存就返回：保持现有行为，不加「放弃修改？」弹窗。
-- D4 版本：进 2.8.1，不进 2.8.0；本批不改版号。
+- D4 版本：进 2.9.1，不进 2.9.0；本批不改版号。
 - D5 提醒页新增「保存提醒」按钮（与学期/上课时间的保存按钮同样式），不要改成改动即保存。
 - D6 顶部卡片（主题 / 考试、作业、导入和分享）保持 sheet 不动。
 
@@ -64,7 +64,7 @@
 
 ### T5 — 整分支评审（协调员发起，评审子 agent 执行）
 
-- 审整个 `feat/settings-collapsible-sections` 分支相对 main `318b5d15` 的 diff：导航结构、草稿与保存语义、六个子页内容完整性（有无控件/文案丢失）、样式复用、D-0–D6 落地情况。
+- 审整个 `feat/settings-collapsible-sections` 分支相对 main `82b76819` 的 diff：导航结构、草稿与保存语义、六个子页内容完整性（有无控件/文案丢失）、样式复用、D-0–D6 落地情况。
 - Critical 必须修掉再汇报；无 Critical/Important 方可汇报完成。
 - CI（version-snapshot + classday-ios-ipa 构建与主题截图）由父 agent 推分支/开 PR 后跑，不在本计划内。
 

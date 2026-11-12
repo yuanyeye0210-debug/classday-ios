@@ -80,14 +80,27 @@ public enum StoreCodec {
                     if $0.startPeriod != $1.startPeriod { return $0.startPeriod < $1.startPeriod }
                     return $0.id.uuidString < $1.id.uuidString
                 },
-                reminderLeadMinutes: course.reminderLeadMinutes
+                reminderLeadMinutes: course.reminderLeadMinutes,
+                credits: course.credits,
+                grade: course.grade,
+                gradeScheme: course.gradeScheme
             )
         }
         return StoreDocument(
             schemaVersion: document.schemaVersion,
             origin: document.origin,
             semester: semester,
-            courses: courses
+            courses: courses,
+            weekRules: document.weekRules,
+            overrides: document.overrides,
+            exams: document.exams,
+            homework: document.homework,
+            personalEvents: document.personalEvents,
+            rooms: document.rooms,
+            library: document.library,
+            activeTimetableID: document.activeTimetableID,
+            appearance: document.appearance,
+            subscribedICSURL: document.subscribedICSURL.trimmingCharacters(in: .whitespacesAndNewlines)
         )
     }
 
@@ -105,6 +118,18 @@ public enum StoreCodec {
         }
         if !(1...30).contains(semester.totalWeeks) {
             errors.append("学期周数必须在 1 到 30 之间")
+        }
+        for holiday in semester.holidays {
+            if SemesterCalendar.parseCivil(holiday.startDate, calendar: calendar) == nil
+                || SemesterCalendar.parseCivil(holiday.endDate, calendar: calendar) == nil
+                || holiday.startDate > holiday.endDate {
+                errors.append("假期日期不正确")
+            }
+        }
+        for cancellation in semester.cancellations {
+            if SemesterCalendar.parseCivil(cancellation.date, calendar: calendar) == nil {
+                errors.append("停课日期不正确")
+            }
         }
         if !(0...180).contains(semester.defaultReminderMinutes) {
             errors.append("默认提醒分钟数必须在 0 到 180 之间")

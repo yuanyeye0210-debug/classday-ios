@@ -10,14 +10,28 @@
 		8C15763163D2948F463F3A30 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1F8D30D21E344E9B420A3B9 /* AppDelegate.swift */; };
 		86E9CF08A2F3BA04AFB1075E /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		3B7BA45D02B1EB65E3D6E549 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86E9CF08A2F3BA04AFB1075E /* AppModel.swift */; };
+		67116555683C329691F70203 /* CalendarSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarSync.swift; sourceTree = "<group>"; };
+		547BFB5C7EC9A46F8E08E33E /* CalendarSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67116555683C329691F70203 /* CalendarSync.swift */; };
 		CEF53400CCFAAC54F2A9DDC6 /* ClassdayApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClassdayApp.swift; sourceTree = "<group>"; };
 		306C24454FCBAA4AB837947D /* ClassdayApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEF53400CCFAAC54F2A9DDC6 /* ClassdayApp.swift */; };
+		4419A1EBC13080B501E80E61 /* CloudMirror.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudMirror.swift; sourceTree = "<group>"; };
+		65A7C93BDA197D291CEDDB2C /* CloudMirror.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4419A1EBC13080B501E80E61 /* CloudMirror.swift */; };
 		EE35BA953DBF469C8D5BC892 /* CourseDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CourseDetailView.swift; sourceTree = "<group>"; };
 		79080EB847F66D2BE76A257D /* CourseDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE35BA953DBF469C8D5BC892 /* CourseDetailView.swift */; };
 		7830DDE445292850679C098C /* CourseEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CourseEditorView.swift; sourceTree = "<group>"; };
 		64BB28E17ACDC81106062C84 /* CourseEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7830DDE445292850679C098C /* CourseEditorView.swift */; };
 		CF70A81065DA477D09C850A4 /* DayAgendaViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayAgendaViews.swift; sourceTree = "<group>"; };
 		161EB7F67C97BC15A6E92817 /* DayAgendaViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF70A81065DA477D09C850A4 /* DayAgendaViews.swift */; };
+		D8F22F087D00F518B8A7488C /* Experience.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Experience.swift; sourceTree = "<group>"; };
+		26345FF661CC5DE193B00896 /* Experience.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8F22F087D00F518B8A7488C /* Experience.swift */; };
+		2B25E366B00E90CDFDE69389 /* FenixAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FenixAuth.swift; sourceTree = "<group>"; };
+		FD27B968B39D52C76E586E33 /* FenixAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B25E366B00E90CDFDE69389 /* FenixAuth.swift */; };
+		CFC46553773B644D5CB61EC7 /* GeminiClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeminiClient.swift; sourceTree = "<group>"; };
+		D130A0E6AE0F95D801192217 /* GeminiClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFC46553773B644D5CB61EC7 /* GeminiClient.swift */; };
+		47CF63DC067B191AE2A2499B /* NextClassActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NextClassActivity.swift; sourceTree = "<group>"; };
+		79642916BFA366103B23F6E5 /* NextClassActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47CF63DC067B191AE2A2499B /* NextClassActivity.swift */; };
+		7C8F3BA35D5A330CF47B3933 /* OCRImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OCRImportView.swift; sourceTree = "<group>"; };
+		058C9804604DA5A4145A9E40 /* OCRImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C8F3BA35D5A330CF47B3933 /* OCRImportView.swift */; };
 		DC90F8B4EEBE5F5EAEE4F9C1 /* ReminderScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderScheduler.swift; sourceTree = "<group>"; };
 		17AD6A210B806455313732E1 /* ReminderScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC90F8B4EEBE5F5EAEE4F9C1 /* ReminderScheduler.swift */; };
 		D376DE14109CCEA5852ED22C /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
@@ -26,12 +40,18 @@
 		733F2FB3538C58B594B698D4 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86D5D62184444E83513DA3CB /* SettingsView.swift */; };
 		2D8424D94FA3A2667CD17AD5 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		E87DC8F736EB083A4A567171 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D8424D94FA3A2667CD17AD5 /* Theme.swift */; };
+		5609B784286356ED68D69B4B /* UpdateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateService.swift; sourceTree = "<group>"; };
+		2F27B7CAFF3C859BCCA93529 /* UpdateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5609B784286356ED68D69B4B /* UpdateService.swift */; };
 		B61FB45E5AE9433BD8745CBB /* WeekTimetableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeekTimetableView.swift; sourceTree = "<group>"; };
 		E16F0E70A6FED7E71CC334D0 /* WeekTimetableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B61FB45E5AE9433BD8745CBB /* WeekTimetableView.swift */; };
 		CE98D3759A65266B46E1437D /* WidgetReloader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetReloader.swift; sourceTree = "<group>"; };
 		087F048AC70F5F569FC21C26 /* WidgetReloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE98D3759A65266B46E1437D /* WidgetReloader.swift */; };
+		7B86A81FB69B012336209807 /* ClassdayShaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = ClassdayShaders.metal; sourceTree = "<group>"; };
+		9C89DD567E96B8FD972C32D6 /* ClassdayShaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = 7B86A81FB69B012336209807 /* ClassdayShaders.metal */; };
 		F6F48253C9657D5D61BE3AB7 /* ClassdayWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClassdayWidgetBundle.swift; sourceTree = "<group>"; };
 		D79093BBE9BA8532016D9535 /* ClassdayWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6F48253C9657D5D61BE3AB7 /* ClassdayWidgetBundle.swift */; };
+		9E387B2C1D31CD21402BD166 /* ExtraWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtraWidgets.swift; sourceTree = "<group>"; };
+		DC06F4B6B52B5BE28DF863BA /* ExtraWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E387B2C1D31CD21402BD166 /* ExtraWidgets.swift */; };
 		12A85E7F16624237DE1D1AF6 /* WidgetViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetViews.swift; sourceTree = "<group>"; };
 		101210D2B0770EC0E7D1FB1D /* WidgetViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12A85E7F16624237DE1D1AF6 /* WidgetViews.swift */; };
 		8E5DF11AD37DA63072365373 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -51,16 +71,25 @@
 			files = (
 				8C15763163D2948F463F3A30 /* AppDelegate.swift in Sources */,
 				3B7BA45D02B1EB65E3D6E549 /* AppModel.swift in Sources */,
+				547BFB5C7EC9A46F8E08E33E /* CalendarSync.swift in Sources */,
 				306C24454FCBAA4AB837947D /* ClassdayApp.swift in Sources */,
+				65A7C93BDA197D291CEDDB2C /* CloudMirror.swift in Sources */,
 				79080EB847F66D2BE76A257D /* CourseDetailView.swift in Sources */,
 				64BB28E17ACDC81106062C84 /* CourseEditorView.swift in Sources */,
 				161EB7F67C97BC15A6E92817 /* DayAgendaViews.swift in Sources */,
+				26345FF661CC5DE193B00896 /* Experience.swift in Sources */,
+				FD27B968B39D52C76E586E33 /* FenixAuth.swift in Sources */,
+				D130A0E6AE0F95D801192217 /* GeminiClient.swift in Sources */,
+				79642916BFA366103B23F6E5 /* NextClassActivity.swift in Sources */,
+				058C9804604DA5A4145A9E40 /* OCRImportView.swift in Sources */,
 				17AD6A210B806455313732E1 /* ReminderScheduler.swift in Sources */,
 				5D97A7BE3AFA00C81F134D4C /* RootView.swift in Sources */,
 				733F2FB3538C58B594B698D4 /* SettingsView.swift in Sources */,
 				E87DC8F736EB083A4A567171 /* Theme.swift in Sources */,
+				2F27B7CAFF3C859BCCA93529 /* UpdateService.swift in Sources */,
 				E16F0E70A6FED7E71CC334D0 /* WeekTimetableView.swift in Sources */,
 				087F048AC70F5F569FC21C26 /* WidgetReloader.swift in Sources */,
+				9C89DD567E96B8FD972C32D6 /* ClassdayShaders.metal in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -69,6 +98,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				D79093BBE9BA8532016D9535 /* ClassdayWidgetBundle.swift in Sources */,
+				DC06F4B6B52B5BE28DF863BA /* ExtraWidgets.swift in Sources */,
 				101210D2B0770EC0E7D1FB1D /* WidgetViews.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -89,11 +119,26 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		438A41ACF2FAC670C1BF3FA3 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		C7734C769644D56141196E79 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
+		91D0EC5D4C244EBE8699E11A /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				438A41ACF2FAC670C1BF3FA3 /* en */,
+				C7734C769644D56141196E79 /* zh-Hans */,
+			);
+			name = InfoPlist.strings;
+			sourceTree = "<group>";
+		};
+		1658B5EB43DF7C8A0491E0F2 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 91D0EC5D4C244EBE8699E11A /* InfoPlist.strings */; };
+		915B3832C0F1257FBE6E9371 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 91D0EC5D4C244EBE8699E11A /* InfoPlist.strings */; };
+		1C361AFF577372DB45D41693 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8E5DF11AD37DA63072365373 /* Assets.xcassets */; };
 		4C29BBC16528FEA9E858725B /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 				FB90684E69A6C96ED866993E /* Assets.xcassets in Resources */,
+				1658B5EB43DF7C8A0491E0F2 /* InfoPlist.strings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -101,7 +146,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-
+				1C361AFF577372DB45D41693 /* Assets.xcassets in Resources */,
+				915B3832C0F1257FBE6E9371 /* InfoPlist.strings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -121,14 +167,22 @@
 			children = (
 				D1F8D30D21E344E9B420A3B9 /* AppDelegate.swift */,
 				86E9CF08A2F3BA04AFB1075E /* AppModel.swift */,
+				67116555683C329691F70203 /* CalendarSync.swift */,
 				CEF53400CCFAAC54F2A9DDC6 /* ClassdayApp.swift */,
+				4419A1EBC13080B501E80E61 /* CloudMirror.swift */,
 				EE35BA953DBF469C8D5BC892 /* CourseDetailView.swift */,
 				7830DDE445292850679C098C /* CourseEditorView.swift */,
 				CF70A81065DA477D09C850A4 /* DayAgendaViews.swift */,
+				D8F22F087D00F518B8A7488C /* Experience.swift */,
+				2B25E366B00E90CDFDE69389 /* FenixAuth.swift */,
+				CFC46553773B644D5CB61EC7 /* GeminiClient.swift */,
+				47CF63DC067B191AE2A2499B /* NextClassActivity.swift */,
+				7C8F3BA35D5A330CF47B3933 /* OCRImportView.swift */,
 				DC90F8B4EEBE5F5EAEE4F9C1 /* ReminderScheduler.swift */,
 				D376DE14109CCEA5852ED22C /* RootView.swift */,
 				86D5D62184444E83513DA3CB /* SettingsView.swift */,
 				2D8424D94FA3A2667CD17AD5 /* Theme.swift */,
+				5609B784286356ED68D69B4B /* UpdateService.swift */,
 				B61FB45E5AE9433BD8745CBB /* WeekTimetableView.swift */,
 				CE98D3759A65266B46E1437D /* WidgetReloader.swift */,
 			);
@@ -139,6 +193,7 @@
 			isa = PBXGroup;
 			children = (
 				F6F48253C9657D5D61BE3AB7 /* ClassdayWidgetBundle.swift */,
+				9E387B2C1D31CD21402BD166 /* ExtraWidgets.swift */,
 				12A85E7F16624237DE1D1AF6 /* WidgetViews.swift */,
 			);
 			path = Sources;
@@ -168,6 +223,7 @@
 				2FDE1C8B81AFF7684CF9A46F /* Classday.entitlements */,
 				319D4794F860E4AD87ED6EFF /* ClassdayWidget-Info.plist */,
 				45FADA922FA25EB21D85474D /* ClassdayWidget.entitlements */,
+				91D0EC5D4C244EBE8699E11A /* InfoPlist.strings */,
 			);
 			path = Config;
 			sourceTree = "<group>";
@@ -187,6 +243,7 @@
 				CF8D0BD4B75E8C2C174692A5 /* ClassdayApp */,
 				D45CB4A487390B4D06F7B760 /* ClassdayWidget */,
 				D35BDCF6803CCB1A9C4483A8 /* Config */,
+				7B86A81FB69B012336209807 /* ClassdayShaders.metal */,
 				00C45FD35CB0F9C5F764F070 /* Products */,
 			);
 			name = Classday;
@@ -255,12 +312,12 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0.1;
+				MARKETING_VERSION = 2.7.1;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Config/Classday.entitlements;
@@ -280,12 +337,12 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0.1;
+				MARKETING_VERSION = 2.7.1;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Config/Classday.entitlements;
@@ -305,12 +362,12 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0.1;
+				MARKETING_VERSION = 2.7.1;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = Config/ClassdayWidget.entitlements;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -328,12 +385,12 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0.1;
+				MARKETING_VERSION = 2.7.1;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = Config/ClassdayWidget.entitlements;
 				GENERATE_INFOPLIST_FILE = NO;

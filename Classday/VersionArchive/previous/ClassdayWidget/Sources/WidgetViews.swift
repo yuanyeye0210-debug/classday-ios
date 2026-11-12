@@ -26,7 +26,7 @@ enum WidgetTheme {
     }
 }
 
-private extension Color {
+extension Color {
     init(_ palette: PaletteColor) {
         self.init(.sRGB, red: palette.r, green: palette.g, blue: palette.b)
     }

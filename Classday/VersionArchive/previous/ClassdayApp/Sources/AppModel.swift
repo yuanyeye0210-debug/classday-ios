@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Observation
 import ClassdayCore
@@ -17,6 +18,9 @@ enum TimetableMode: String, CaseIterable, Identifiable {
 }
 
 enum AppTab: Hashable {
+    case today
+    case week
+    case courses
     case timetable
     case agenda
     case settings
@@ -73,7 +77,7 @@ final class AppModel {
     var weekIndex: Int
     var selectedDay: Date
     var mode: TimetableMode = .week
-    var tab: AppTab = .timetable
+    var tab: AppTab = .today
     var presented: CoursePresentation?
     var editor: EditorRoute?
     var drag: DragSession?
@@ -91,10 +95,44 @@ final class AppModel {
     var confirmClear = false
     var confirmReset = false
     var weekSlideForward = true
+    var preferSpecialLayout = true
+    var lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+    var showThemeGallery = false
+    var showStudyDesk = false
+    var showExams = false
+    var showSmartImport = false
+    var smartImportSample = false
+
+    // Update state shared with SettingsView and RootView (Task 6): the last
+    // check's row note / download link / decision, and a blocking alert
+    // (mandatory or below-minimum) that RootView surfaces app-wide.
+    var lastUpdateNote: String?
+    var lastUpdateDownloadURL: URL?
+    var lastUpdateDecision: UpdateDecision?
+    var updateAlert: UpdateService.UpdateAlertKind?
+    /// Bounded re-raise flag (fix wave): set when a failed mandatory /
+    /// below-minimum download re-raises the blocking alert once; reset
+    /// by `applyUpdateCheck`, so one check re-raises at most once and a
+    /// persistent network failure cannot loop the alert.
+    private var didReRaiseUpdateAlertAfterFailure = false
+
+    // In-app download state, shared so RootView's blocking-alert button
+    // can start the download directly and SettingsView shows the same
+    // progress / finished IPA / error (fix round 1: the alert button used
+    // to only navigate to Settings, leaving a second tap — and a
+    // dismissable "non-dismissable" alert — between the user and the
+    // download). Owned here, driven by UpdateService.download.
+    var downloadingUpdate = false
+    var downloadProgress: Double?
+    var downloadedIPA: URL?
+    var downloadError: String?
 
     let calendar: Calendar
     private let storeURL: URL
     private var undoTask: Task<Void, Never>?
+    private var storeFileModified: Date?
+    private var lastLiveActivitySnapshot: NextClassSnapshot.Value?
+    private var liveActivityTimer: AnyCancellable?
 
     init() {
         let calendar = ClassdayCalendar.make()
@@ -118,8 +156,14 @@ final class AppModel {
             do {
                 loaded = try StoreFile.load(from: resolved)
             } catch {
+                // Preserve the unreadable file before any later save can
+                // overwrite it with the demo fallback.
+                let stamp = Int(Date().timeIntervalSince1970)
+                let backup = resolved.deletingLastPathComponent()
+                    .appendingPathComponent("classday-store-corrupt-\(stamp).json")
+                try? fileManager.copyItem(at: resolved, to: backup)
                 loaded = DemoData.makeDocument()
-                initialError = "课表文件无法读取，原文件还在，没有被覆盖。"
+                initialError = "课表文件无法读取，已另存一份损坏文件备份，没有直接覆盖。"
             }
         } else {
             loaded = DemoData.makeDocument()
@@ -127,6 +171,7 @@ final class AppModel {
         }
         document = loaded
         loadError = initialError
+        storeFileModified = Self.modificationDate(of: resolved)
 
         let now = Date()
         if let week = SemesterCalendar.weekIndex(for: now, semester: loaded.semester, calendar: calendar) {
@@ -146,6 +191,20 @@ final class AppModel {
             await self?.refreshNotificationStatus()
             await self?.refreshReminders()
         }
+        // Launch-only: a stored version that differs from the current one
+        // means this version was just installed. First launch stores
+        // silently and reports nothing.
+        UpdateService.reportInstalledIfNeeded()
+        // Re-sync the Live Activity once a minute while the app is active, so
+        // the lock screen flips at class boundaries even if the app stays
+        // open. The diff gate inside refreshLiveActivityIfNeeded() means a
+        // tick that changes nothing pushes nothing. The timer does nothing
+        // while the app is suspended in the background (Task 4).
+        liveActivityTimer = Timer.publish(every: 60, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in
+                self?.refreshLiveActivityIfNeeded()
+            }
     }
 
     init(document: StoreDocument, storeURL: URL, appGroupAvailable: Bool, now: Date = Date()) {
@@ -155,6 +214,7 @@ final class AppModel {
         self.appGroupNotice = appGroupAvailable ? nil : AppGroupSupport.unavailableNotice(profileGroups: [])
         let calendar = ClassdayCalendar.make()
         self.calendar = calendar
+        storeFileModified = Self.modificationDate(of: storeURL)
         weekIndex = SemesterCalendar.weekIndex(for: now, semester: document.semester, calendar: calendar) ?? 1
         selectedDay = calendar.startOfDay(for: now)
     }
@@ -164,17 +224,122 @@ final class AppModel {
         return AppModel(document: DemoData.makeDocument(), storeURL: url, appGroupAvailable: false)
     }
 
+    /// Applies one completed update check (manual or automatic) to the
+    /// shared state: the Settings row, the download link, and — only for a
+    /// mandatory update or a below-minimum install — the blocking alert.
+    /// Network errors ("检查失败") and "already latest" never raise an alert.
+    func applyUpdateCheck(_ result: UpdateService.CheckResult) {
+        lastUpdateNote = result.note
+        lastUpdateDownloadURL = result.downloadURL
+        lastUpdateDecision = result.decision
+        // A new check resets the bounded re-raise: one check re-raises
+        // the blocking alert at most once after a failed download.
+        didReRaiseUpdateAlertAfterFailure = false
+        switch result.decision {
+        case let .updateAvailable(release, mandatory: true):
+            updateAlert = .mandatory(release: release)
+        case let .belowMinimumSupported(release):
+            updateAlert = .belowMinimum(release: release)
+        default:
+            // A later up-to-date / failure result clears a stale alert, so
+            // a dismissed update does not keep blocking the app after the
+            // next check says there is nothing to install.
+            updateAlert = nil
+        }
+    }
+
+    /// Starts the in-app IPA download for `release` with Range resume +
+    /// progress, SHA-256 verification, and the finished IPA on success.
+    /// Shared entry point: RootView's blocking-alert "下载更新" button and
+    /// the Settings download row both call this, so the alert button
+    /// really downloads. A second call while a download is running is a
+    /// no-op. On total failure the error is kept in `downloadError` and
+    /// the Safari fallback in Settings stays available; a failed
+    /// mandatory / below-minimum download re-raises the blocking alert
+    /// once (see `reRaiseBlockingAlertIfNeeded`), so the user is not
+    /// silently un-blocked until the next day.
+    func startUpdateDownload(release: ReleaseEntry) async {
+        guard !downloadingUpdate else { return }
+        downloadingUpdate = true
+        downloadError = nil
+        downloadedIPA = nil
+        downloadProgress = 0
+        defer { downloadingUpdate = false }
+        // The service reports progress from a background context; hop to
+        // the main actor before touching view state.
+        let result = await UpdateService.download(release: release) { [weak self] value in
+            Task { @MainActor in self?.downloadProgress = value }
+        }
+        switch result {
+        case let .success(url):
+            downloadedIPA = url
+            downloadProgress = 1
+        case let .failure(reason):
+            downloadError = reason
+            downloadProgress = nil
+            reRaiseBlockingAlertIfNeeded()
+        }
+    }
+
+    /// Re-raises the blocking alert once per check when a mandatory or
+    /// below-minimum download failed: the alert was already cleared when
+    /// the user tapped "下载更新", and the daily auto-check gate was
+    /// already consumed, so without this the user would be silently
+    /// un-blocked until tomorrow or a manual tap. Bounded by
+    /// `didReRaiseUpdateAlertAfterFailure` (reset on each new check), so
+    /// a persistent network failure cannot loop the alert; the Settings
+    /// error text + retry row is the escape hatch. Ordinary
+    /// (non-mandatory, above-minimum) updates never re-raise.
+    private func reRaiseBlockingAlertIfNeeded() {
+        guard !didReRaiseUpdateAlertAfterFailure else { return }
+        switch lastUpdateDecision {
+        case let .updateAvailable(release, mandatory: true):
+            updateAlert = .mandatory(release: release)
+            didReRaiseUpdateAlertAfterFailure = true
+        case let .belowMinimumSupported(release):
+            updateAlert = .belowMinimum(release: release)
+            didReRaiseUpdateAlertAfterFailure = true
+        default:
+            break
+        }
+    }
+
+    /// Silent daily auto-check, triggered from the existing foreground path
+    /// (`scenePhase == .active`, which also fires on launch). At most once
+    /// per calendar day; never blocks launch — the check runs in a detached
+    /// `Task` and only surfaces UI (row note, blocking alert) when an
+    /// update, mandatory, or below-minimum condition is found. A manual tap
+    /// in Settings always checks and does not consult this gate.
+    func triggerDailyAutoCheck() {
+        guard UpdateService.shouldAutoCheck() else { return }
+        // Record the date when the check STARTS, not when it completes:
+        // two foreground transitions during one slow check would both pass
+        // the gate and run duplicate checks (and duplicate `update_check`
+        // reports). `checkForUpdate` still records on completion as well.
+        UpdateService.recordCheckDate()
+        Task { [weak self] in
+            guard let self else { return }
+            let result = await UpdateService.checkForUpdate(currentVersion: UpdateService.currentVersion())
+            self.applyUpdateCheck(result)
+        }
+    }
+
     func occurrences(inWeek week: Int? = nil) -> [Occurrence] {
         ScheduleEngine.occurrences(
             inWeek: week ?? weekIndex,
             courses: document.courses,
             semester: document.semester,
-            calendar: calendar
+            calendar: calendar,
+            context: document.scheduleContext
         )
     }
 
     func occurrences(on date: Date) -> [Occurrence] {
-        ScheduleEngine.occurrences(on: date, courses: document.courses, semester: document.semester, calendar: calendar)
+        ScheduleEngine.occurrences(on: date, courses: document.courses, semester: document.semester, calendar: calendar, context: document.scheduleContext)
+    }
+
+    func holiday(on date: Date) -> HolidayPeriod? {
+        SemesterCalendar.holiday(on: date, semester: document.semester, calendar: calendar)
     }
 
     func shiftWeek(by delta: Int) {
@@ -260,7 +425,7 @@ final class AppModel {
         let normalized = StoreCodec.normalized(next)
         let report = StoreCodec.validate(normalized, calendar: calendar)
         if let error = report.errors.first { return error }
-        if let conflict = ScheduleEngine.conflicts(among: normalized.courses).first(where: {
+        if let conflict = ScheduleEngine.conflicts(among: normalized.courses, context: normalized.scheduleContext).first(where: {
             $0.courseID == course.id || $0.otherCourseID == course.id
         }) {
             return ScheduleCopy.conflictMessage(conflict)
@@ -282,6 +447,12 @@ final class AppModel {
 
     func updateSemester(_ semester: Semester) -> String? {
         var next = document
+        if semester.periods != document.semester.periods {
+            // Insurance: a period table re-maps every class in the book, so
+            // stash the pre-change document in the library first - the old
+            // table stays one tap away if the new one is wrong.
+            next = TimetableLibrary.storingCurrent(next, as: "节次修改前备份")
+        }
         next.semester = semester
         let normalized = StoreCodec.normalized(next)
         let report = StoreCodec.validate(normalized, calendar: calendar)
@@ -395,7 +566,8 @@ final class AppModel {
             weekday: drag.proposedWeekday,
             startPeriod: drag.proposedStart,
             courses: document.courses,
-            semester: document.semester
+            semester: document.semester,
+            context: document.scheduleContext
         )
     }
 
@@ -413,7 +585,8 @@ final class AppModel {
             weekday: drag.proposedWeekday,
             startPeriod: drag.proposedStart,
             courses: document.courses,
-            semester: document.semester
+            semester: document.semester,
+            context: document.scheduleContext
         )
         switch validation {
         case .ok(let courses):
@@ -473,12 +646,55 @@ final class AppModel {
         notificationStatusText = await ReminderScheduler.shared.statusText()
     }
 
+    private static func modificationDate(of url: URL) -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
+    }
+
+    /// Diff-gated Live Activity refresh: only push to ActivityKit when the
+    /// snapshot actually changed, so identical content is never re-pushed
+    /// (iOS throttles Live Activity updates).
+    func refreshLiveActivityIfNeeded(now: Date = Date()) {
+        // Scheduling is NOT diff-gated: a rest-day open (snapshot nil, was
+        // nil) must still queue the next boundary, or the background chain
+        // is never seeded. Re-submitting replaces the pending request.
+        NextClassActivity.scheduleBackgroundRefresh(document: document, calendar: calendar, now: now)
+        let snapshot = NextClassSnapshot.make(document: document, now: now, calendar: calendar)
+        guard NextClassSnapshot.shouldUpdate(previous: lastLiveActivitySnapshot, current: snapshot) else { return }
+        lastLiveActivitySnapshot = snapshot
+        NextClassActivity.sync(document: document, calendar: calendar)
+    }
+
+    /// The widget extension can rewrite the shared store (e.g. "推迟 10 分钟").
+    /// When the app comes back to the foreground, adopt the on-disk version
+    /// instead of silently overwriting it on the next save.
+    func reloadFromDiskIfChanged() {
+        guard let modified = Self.modificationDate(of: storeURL),
+              modified != storeFileModified,
+              let reloaded = try? StoreFile.load(from: storeURL),
+              reloaded != document else { return }
+        document = reloaded
+        storeFileModified = modified
+        presented = nil
+        undo = nil
+        drag = nil
+        realignWeek()
+        banner = "已载入小组件里的修改"
+        WidgetReloader.reload()
+        refreshLiveActivityIfNeeded()
+        if CalendarSync.isEnabled {
+            CalendarSync.sync(document, calendar: calendar)
+        }
+        Task { [weak self] in
+            await self?.refreshReminders()
+        }
+    }
+
     func course(_ id: UUID) -> Course? {
         document.courses.first { $0.id == id }
     }
 
     func conflicts() -> [MeetingConflict] {
-        ScheduleEngine.conflicts(among: document.courses)
+        ScheduleEngine.conflicts(among: document.courses, context: document.scheduleContext)
     }
 
     private func replace(with incoming: StoreDocument) {
@@ -496,6 +712,293 @@ final class AppModel {
         selectedDay = calendar.startOfDay(for: now)
     }
 
+    func setAppearance(_ choice: AppearanceChoice) {
+        document.appearance = choice
+        preferSpecialLayout = choice.theme.usesOrbit || choice.theme.usesCube
+        Haptics.play(choice.theme.haptic)
+        persist(markUserEdited: false)
+    }
+
+    func setPerformance(_ tier: PerformanceTier) {
+        document.appearance.performance = tier
+        persist(markUserEdited: false)
+    }
+
+    func cancelThisWeek(_ occurrence: Occurrence) {
+        document = TimetableLibrary.overriding(document, with: OccurrenceOverride(
+            courseID: occurrence.courseID, meetingID: occurrence.meetingID, week: occurrence.weekIndex, kind: .cancelled
+        ))
+        banner = "已取消本周这一节，其他周不变"
+        persist(markUserEdited: true)
+    }
+
+    func delayThisWeek(_ occurrence: Occurrence, minutes: Int = 10) {
+        document = TimetableLibrary.overriding(document, with: OccurrenceOverride(
+            courseID: occurrence.courseID, meetingID: occurrence.meetingID, week: occurrence.weekIndex, kind: .delayed, delayMinutes: minutes
+        ))
+        banner = "本周这一节推迟 \(minutes) 分钟"
+        persist(markUserEdited: true)
+    }
+
+    /// Applies per-meeting odd/even rules for freshly imported courses without
+    /// overwriting the import banner once per meeting.
+    func applyImportedParities(_ pairs: [(meetingID: UUID, parity: WeekParity)]) {
+        guard !pairs.isEmpty else { return }
+        for pair in pairs {
+            document = TimetableLibrary.settingParity(document, meetingID: pair.meetingID, parity: pair.parity)
+        }
+        persist(markUserEdited: true)
+    }
+
+    func setParity(meetingID: UUID, parity: WeekParity) {
+        document = TimetableLibrary.settingParity(document, meetingID: meetingID, parity: parity)
+        banner = parity == .any ? "改回每周都上" : "改为\(parity.title)"
+        persist(markUserEdited: true)
+    }
+
+    func duplicateTimetable(named name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        document = TimetableLibrary.storingCurrent(document, as: trimmed)
+        banner = "已另存「\(trimmed)」"
+        persist(markUserEdited: true)
+    }
+
+    func switchTimetable(to id: UUID) {
+        guard let next = TimetableLibrary.switching(document, to: id) else {
+            banner = "没有这张课表"
+            return
+        }
+        document = next
+        realignWeek()
+        persist(markUserEdited: true)
+    }
+
+    func addHomework(title: String, courseName: String, due: Date) {
+        document.homework.append(HomeworkTask(
+            courseName: courseName,
+            title: title,
+            dueISO: CivilStamp.string(from: due, calendar: calendar)
+        ))
+        persist(markUserEdited: true)
+    }
+
+    func toggleHomework(_ id: UUID) {
+        guard let index = document.homework.firstIndex(where: { $0.id == id }) else { return }
+        document.homework[index].done.toggle()
+        persist(markUserEdited: true)
+    }
+
+    func deleteHomework(_ id: UUID) {
+        document.homework.removeAll { $0.id == id }
+        persist(markUserEdited: true)
+    }
+
+    func updateHomework(_ id: UUID, title: String, courseName: String, due: Date) {
+        guard let index = document.homework.firstIndex(where: { $0.id == id }) else { return }
+        document.homework[index].title = title
+        document.homework[index].courseName = courseName
+        document.homework[index].dueISO = CivilStamp.string(from: due, calendar: calendar)
+        persist(markUserEdited: true)
+    }
+
+    func addExam(courseName: String, location: String, start: Date, end: Date) {
+        document.exams.append(ExamEvent(
+            courseName: courseName,
+            location: location,
+            startISO: CivilStamp.string(from: start, calendar: calendar),
+            endISO: CivilStamp.string(from: end, calendar: calendar)
+        ))
+        persist(markUserEdited: true)
+    }
+
+    func deleteExam(_ id: UUID) {
+        document.exams.removeAll { $0.id == id }
+        persist(markUserEdited: true)
+    }
+
+    func addEvent(title: String, note: String, start: Date, end: Date) {
+        document.personalEvents.append(PersonalEvent(
+            title: title,
+            note: note,
+            startISO: CivilStamp.string(from: start, calendar: calendar),
+            endISO: CivilStamp.string(from: end, calendar: calendar)
+        ))
+        persist(markUserEdited: true)
+    }
+
+    func updateEvent(_ id: UUID, title: String, note: String, start: Date, end: Date) {
+        guard let index = document.personalEvents.firstIndex(where: { $0.id == id }) else { return }
+        document.personalEvents[index].title = title
+        document.personalEvents[index].note = note
+        document.personalEvents[index].startISO = CivilStamp.string(from: start, calendar: calendar)
+        document.personalEvents[index].endISO = CivilStamp.string(from: end, calendar: calendar)
+        persist(markUserEdited: true)
+    }
+
+    func deleteEvent(_ id: UUID) {
+        document.personalEvents.removeAll { $0.id == id }
+        persist(markUserEdited: true)
+    }
+
+    func setCourseGrade(_ courseID: UUID, grade: Double?) {
+        guard let index = document.courses.firstIndex(where: { $0.id == courseID }) else { return }
+        document.courses[index].grade = grade
+        persist(markUserEdited: true)
+    }
+
+    /// 设置/移除一门课的记分规则；有规则时总成绩由规则算出，折合百分制写回 grade 进 GPA。
+    func setCourseGradeScheme(_ courseID: UUID, scheme: GradeScheme?) {
+        guard let index = document.courses.firstIndex(where: { $0.id == courseID }) else { return }
+        document.courses[index].gradeScheme = scheme
+        if let scheme {
+            document.courses[index].grade = scheme.normalizedFinal
+        }
+        persist(markUserEdited: true)
+    }
+
+    var gradedCourses: [Course] {
+        document.courses.filter { $0.grade != nil }
+    }
+
+    /// 学分加权（没填学分的按 1 计权重）
+    var weightedScoreAverage: Double? {
+        let graded = gradedCourses
+        guard !graded.isEmpty else { return nil }
+        var totalWeight = 0.0
+        var total = 0.0
+        for course in graded {
+            let weight = course.credits > 0 ? course.credits : 1
+            total += (course.grade ?? 0) * weight
+            totalWeight += weight
+        }
+        return totalWeight > 0 ? total / totalWeight : nil
+    }
+
+    var gpaAverage: Double? {
+        let graded = gradedCourses
+        guard !graded.isEmpty else { return nil }
+        var totalWeight = 0.0
+        var total = 0.0
+        for course in graded {
+            let weight = course.credits > 0 ? course.credits : 1
+            total += AppModel.gradePoint(for: course.grade ?? 0) * weight
+            totalWeight += weight
+        }
+        return totalWeight > 0 ? total / totalWeight : nil
+    }
+
+    var earnedCredits: Double {
+        gradedCourses.reduce(0) { $0 + $1.credits }
+    }
+
+    static func gradePoint(for score: Double) -> Double {
+        switch score {
+        case 90...: return 4.0
+        case 85...: return 3.7
+        case 82...: return 3.3
+        case 78...: return 3.0
+        case 75...: return 2.7
+        case 72...: return 2.3
+        case 68...: return 2.0
+        case 64...: return 1.5
+        case 60...: return 1.0
+        default: return 0
+        }
+    }
+
+    func events(on date: Date) -> [PersonalEvent] {
+        document.personalEvents
+            .compactMap { event in CivilStamp.date(from: event.startISO, calendar: calendar).map { (event, $0) } }
+            .filter { calendar.isDate($0.1, inSameDayAs: date) }
+            .sorted { $0.1 < $1.1 }
+            .map(\.0)
+    }
+
+    private static func courseSignature(_ course: Course) -> String {
+        let meetings = course.meetings
+            .map { "\($0.weekday):\($0.startPeriod)-\($0.endPeriod)" }
+            .sorted()
+            .joined(separator: ",")
+        return "\(course.name)|\(course.location)|\(meetings)"
+    }
+
+    func importCalendar(_ imported: ImportedCalendar, subscribeURL: String? = nil) {
+        var knownIDs = Set(document.courses.map(\.id))
+        var knownSignatures = Set(document.courses.map(Self.courseSignature))
+        var newCourses: [Course] = []
+        for course in imported.courses {
+            let signature = Self.courseSignature(course)
+            guard !knownIDs.contains(course.id), !knownSignatures.contains(signature) else { continue }
+            knownIDs.insert(course.id)
+            knownSignatures.insert(signature)
+            newCourses.append(course)
+        }
+        var knownExams = Set(document.exams.map { "\($0.courseName)|\($0.startISO)|\($0.location)" })
+        var newExams: [ExamEvent] = []
+        for exam in imported.exams {
+            let key = "\(exam.courseName)|\(exam.startISO)|\(exam.location)"
+            guard !knownExams.contains(key) else { continue }
+            knownExams.insert(key)
+            newExams.append(exam)
+        }
+        var knownHomework = Set(document.homework.map { "\($0.courseName)|\($0.title)|\($0.dueISO)" })
+        var newHomework: [HomeworkTask] = []
+        for task in imported.homework {
+            let key = "\(task.courseName)|\(task.title)|\(task.dueISO)"
+            guard !knownHomework.contains(key) else { continue }
+            knownHomework.insert(key)
+            newHomework.append(task)
+        }
+        document.courses.append(contentsOf: newCourses)
+        document.exams.append(contentsOf: newExams)
+        document.homework.append(contentsOf: newHomework)
+        if let subscribeURL { document.subscribedICSURL = subscribeURL }
+        let skipped = imported.courses.count - newCourses.count
+        banner = skipped > 0
+            ? "导入了 \(newCourses.count) 门课、\(newExams.count) 场考试，跳过 \(skipped) 门重复课程"
+            : "导入了 \(newCourses.count) 门课、\(newExams.count) 场考试"
+        persist(markUserEdited: true)
+    }
+
+    var pendingShare: ShareCodec.Payload?
+
+    func stageSharedTimetable(_ payload: ShareCodec.Payload) {
+        pendingShare = payload
+    }
+
+    func commitSharedTimetable() {
+        guard let payload = pendingShare else { return }
+        pendingShare = nil
+        applySharedTimetable(payload)
+    }
+
+    func cancelSharedTimetable() {
+        pendingShare = nil
+    }
+
+    func applySharedTimetable(_ payload: ShareCodec.Payload) {
+        // Keep the current timetable recoverable in the library first.
+        document = TimetableLibrary.storingCurrent(document, as: "导入前备份")
+        document.semester = payload.semester
+        document.courses = payload.courses
+        document.weekRules = payload.weekRules
+        document.overrides = payload.overrides
+        document.exams = payload.exams
+        document.homework = payload.homework
+        banner = "已导入分享的课表，原课表已存入课表库"
+        realignWeek()
+        persist(markUserEdited: true)
+    }
+
+    func rememberRoom(_ name: String, latitude: Double?, longitude: Double?) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        document.rooms.removeAll { $0.name == trimmed }
+        document.rooms.append(RoomPin(name: trimmed, latitude: latitude, longitude: longitude))
+        persist(markUserEdited: false)
+    }
+
     private func persist(markUserEdited: Bool) {
         if markUserEdited {
             document.origin = .user
@@ -503,11 +1006,16 @@ final class AppModel {
         do {
             try StoreFile.save(document, to: storeURL)
             loadError = nil
+            storeFileModified = Self.modificationDate(of: storeURL)
         } catch {
             banner = "未能保存课表"
             return
         }
         WidgetReloader.reload()
+        refreshLiveActivityIfNeeded()
+        if CalendarSync.isEnabled {
+            CalendarSync.sync(document, calendar: calendar)
+        }
         Task { [weak self] in
             await self?.refreshReminders()
         }
