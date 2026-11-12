@@ -4,7 +4,9 @@ Schema version: **1**. The on-disk file is UTF-8 JSON. `StoreCodec` in ClassdayC
 
 Import replaces the whole timetable. Overlapping courses are allowed only after you confirm the warning. Invalid JSON, a wrong `schemaVersion`, an empty name, a bad date, a week outside the semester, or a period the semester does not define are rejected and the current file is left unchanged.
 
-There is no account field and no grade field.
+There is no account field. `Course` has `grade` (the total score, as a number) and an optional `gradeScheme` (the per-course grading rule); see the Course table.
+
+Schema version 1 is frozen: these fields were added without raising the version, and no v2 is planned for them. `Semester.holidays`, `Semester.cancellations`, and `Course.gradeScheme` are all optional — a document saved before they existed has no such keys, and it still loads: the decoder reads them with `decodeIfPresent` and falls back to empty (`holidays` and `cancellations` decode as `[]`, `grade` and `gradeScheme` decode as absent).
 
 ## Document
 
@@ -25,8 +27,14 @@ There is no account field and no grade field.
 | totalWeeks | number | 1...30. Week 1 is the Monday-start week that contains `startDate` |
 | periods | array | Indexes must be 1, 2, 3, ... with no gaps |
 | defaultReminderMinutes | number | 0...180. Used when a course omits `reminderLeadMinutes` |
+| holidays | array | Optional. `[HolidayPeriod]`; omit or leave empty when there are none. Classes inside a holiday are skipped and not reminded |
+| cancellations | array | Optional. `[ClassCancellation]`; omit or leave empty when there are none. Cancelled sessions do not appear and do not remind |
 
 Period: `{ "index": 1, "start": "08:00", "end": "08:45" }`. `end` must be later than `start` on the same day.
+
+HolidayPeriod: `{ "id": "<uuid>", "name": "寒假", "startDate": "2026-01-19", "endDate": "2026-02-15" }`. Dates are civil `yyyy-MM-dd` strings, both ends inclusive — the same representation `startDate` uses.
+
+ClassCancellation: `{ "id": "<uuid>", "date": "2026-11-12", "courseID": "<uuid>", "courseName": "高等数学", "scope": "all", "reason": "老师出差" }`. `date` is a civil `yyyy-MM-dd` string. `courseID` omitted (or null) means the whole day is off; otherwise `scope` selects which of that course's sessions that day are cancelled: `"all"`, `"am"` (starts before noon), or `"pm"` (starts at or after noon).
 
 ## Course
 
@@ -40,6 +48,8 @@ Period: `{ "index": 1, "start": "08:00", "end": "08:45" }`. `end` must be later 
 | weeks | number array | 1-based weeks inside the semester |
 | meetings | array | At least one |
 | reminderLeadMinutes | number or omitted | 0 turns the reminder off. Omit to use the semester default |
+| grade | number or omitted | Optional. The total score; when a `gradeScheme` is set, the scheme's computed total converted to percent |
+| gradeScheme | object or omitted | Optional. `GradeScheme`: the per-course grading rule — `{ "scale": 100, "components": [...], "scores": {...}, "branches": [[...]] }`. `scale` is the point scale (100, or 20 for a 20-point course); `components` are the weighted items, `scores` maps component id to score, `branches` are the candidate formulas and the highest wins. Missing keys inside a `gradeScheme` fall back to `scale` 100 and empty `components` / `scores` / `branches` |
 
 Meeting: `{ "id": "<uuid>", "weekday": 1, "startPeriod": 1, "endPeriod": 2 }`. Weekday 1 is Monday and 7 is Sunday. `startPeriod` must be less than or equal to `endPeriod`, and both indexes must exist.
 

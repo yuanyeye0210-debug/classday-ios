@@ -2054,7 +2054,7 @@ public enum HolidayImporter {
 
 
 /// The editable draft produced from a cancellation recognition result.
-public struct CancellationDraft: Equatable, Sendable {
+public struct CancellationDraft: Codable, Equatable, Sendable {
     public var date: String
     public var courseID: UUID?
     public var courseName: String
