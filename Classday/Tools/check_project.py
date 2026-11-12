@@ -57,9 +57,19 @@ def main() -> int:
     check("ClassdayCore" in pbx, "local package missing")
     check("PBXCopyFilesBuildPhase" in pbx and "dstSubfolderSpec = 13" in pbx, "widget is not embedded")
 
-    version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
-    check(f'MARKETING_VERSION: "{version}"' in (ROOT / "project.yml").read_text(encoding="utf-8"), "project.yml version drifted from VERSION")
-    check(f"MARKETING_VERSION = {version};" in pbx, "pbxproj version drifted from VERSION")
+    version_path = ROOT / "VERSION"
+    build_path = ROOT / "BUILD"
+    check(version_path.is_file(), "VERSION missing (marketing version source of truth)")
+    check(build_path.is_file(), "BUILD missing (CFBundleVersion source of truth)")
+    version = version_path.read_text(encoding="utf-8").strip() if version_path.is_file() else ""
+    build = build_path.read_text(encoding="utf-8").strip() if build_path.is_file() else ""
+    yml = (ROOT / "project.yml").read_text(encoding="utf-8")
+    check(f'MARKETING_VERSION: "{version}"' in yml, "project.yml marketing version drifted from VERSION")
+    check(f'CURRENT_PROJECT_VERSION: "{build}"' in yml, "project.yml build drifted from BUILD")
+    check(f"MARKETING_VERSION = {version};" in pbx, "pbxproj marketing version drifted from VERSION")
+    check(f"CURRENT_PROJECT_VERSION = {build};" in pbx, "pbxproj build drifted from BUILD")
+    generator = read(ROOT / "Tools" / "generate_xcodeproj.py")
+    check("BUILD" in generator and "CURRENT_PROJECT_VERSION" in generator, "generate_xcodeproj.py does not propagate BUILD")
     check((ROOT / "Tools" / "bump-version.sh").is_file(), "bump-version.sh missing")
 
     archive = ROOT / "VersionArchive"

@@ -38,6 +38,9 @@ final class VersionBumpTests: XCTestCase {
         let first = try VersionBump.apply(committedTree: committedV1, workingTree: working, newVersion: "1.1.0")
         XCTAssertEqual(first.previousVersion, "1.0.0")
         XCTAssertEqual(first.newVersion, "1.1.0")
+        XCTAssertEqual(first.previousBuild, 1)
+        XCTAssertEqual(first.newBuild, 2)
+        XCTAssertEqual(try text(working.appendingPathComponent(VersionBump.buildFileName)), "2\n")
         XCTAssertEqual(VersionBump.readVersion(in: working), "1.1.0")
         XCTAssertEqual(try text(working.appendingPathComponent("payload.txt")), "alpha")
         let previous = working.appendingPathComponent("VersionArchive/previous")
@@ -54,8 +57,13 @@ final class VersionBumpTests: XCTestCase {
         try Data("beta".utf8).write(to: working.appendingPathComponent("payload.txt"))
         let committedV11 = root.appendingPathComponent("committed-v1.1", isDirectory: true)
         try writeApp(committedV11, version: "1.1.0", payload: "beta")
+        try Data("4\n".utf8).write(to: committedV11.appendingPathComponent(VersionBump.buildFileName))
         let second = try VersionBump.apply(committedTree: committedV11, workingTree: working, newVersion: "1.2.0")
         XCTAssertEqual(second.previousVersion, "1.1.0")
+        XCTAssertEqual(second.previousBuild, 4)
+        XCTAssertEqual(second.newBuild, 5)
+        XCTAssertEqual(try text(working.appendingPathComponent(VersionBump.buildFileName)), "5\n")
+        XCTAssertEqual(try text(previous.appendingPathComponent(VersionBump.buildFileName)), "4\n")
         XCTAssertEqual(VersionBump.readVersion(in: working), "1.2.0")
         XCTAssertEqual(try text(previous.appendingPathComponent("payload.txt")), "beta")
         XCTAssertEqual(try text(previous.appendingPathComponent(VersionBump.stampFileName)), "1.1.0\n")
@@ -98,6 +106,16 @@ final class VersionBumpTests: XCTestCase {
         }
         XCTAssertThrowsError(try VersionBump.apply(committedTree: committed, workingTree: working, newVersion: "1.1")) { error in
             guard case VersionBumpError.invalidVersion = error else {
+                return XCTFail("unexpected \(error)")
+            }
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: working.appendingPathComponent("VersionArchive/previous").path))
+        XCTAssertEqual(VersionBump.readVersion(in: working), "1.0.0")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: working.appendingPathComponent(VersionBump.buildFileName).path))
+
+        try Data("nope\n".utf8).write(to: committed.appendingPathComponent(VersionBump.buildFileName))
+        XCTAssertThrowsError(try VersionBump.apply(committedTree: committed, workingTree: working, newVersion: "1.1.0")) { error in
+            guard case VersionBumpError.invalidBuild = error else {
                 return XCTFail("unexpected \(error)")
             }
         }

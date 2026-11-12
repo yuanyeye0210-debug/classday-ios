@@ -4,6 +4,10 @@
 Scope: marketing-version bumps of Classday/VERSION. Ordinary commits are not required
 to create a snapshot. Deletes are not performed here; this script only reads git and
 VersionArchive.
+
+VERSION is the marketing version. BUILD is the CFBundleVersion. project.yml and
+project.pbxproj must match both. A commit that touches VERSION without changing the
+number (for example restoring the file after it was deleted) is not a bump.
 """
 
 from __future__ import annotations
@@ -17,6 +21,7 @@ import tempfile
 from pathlib import Path
 
 VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
+BUILD_RE = re.compile(r"^[1-9][0-9]*$")
 STAMP_NAME = ".classday-snapshot-version"
 
 
@@ -51,27 +56,68 @@ def parse_version(text: str | None) -> str | None:
     return line
 
 
+def parse_build(text: str | None) -> str | None:
+    if text is None:
+        return None
+    line = text.strip().splitlines()[0].strip() if text.strip() else ""
+    if not BUILD_RE.fullmatch(line):
+        return None
+    return line
+
+
+def pbx_values(text: str | None, key: str) -> set[str]:
+    if not text:
+        return set()
+    return {value.strip().strip('"') for value in re.findall(rf"{key} = ([^;]+);", text)}
+
+
+def marketing_version_at(repo: Path, rev: str) -> str | None:
+    """VERSION file when that revision has one, otherwise the single pbxproj marketing version."""
+    parsed = parse_version(git_show(repo, rev, "Classday/VERSION"))
+    if parsed:
+        return parsed
+    values = {value for value in pbx_values(git_show(repo, rev, "Classday/Classday.xcodeproj/project.pbxproj"), "MARKETING_VERSION") if VERSION_RE.fullmatch(value)}
+    if len(values) == 1:
+        return next(iter(values))
+    return None
+
+
+def build_at(repo: Path, rev: str) -> int | None:
+    parsed = parse_build(git_show(repo, rev, "Classday/BUILD"))
+    if parsed is None:
+        return None
+    return int(parsed)
+
+
 def marketing_versions(classday: Path) -> dict[str, str]:
-    version = parse_version((classday / "VERSION").read_text(encoding="utf-8"))
+    version_path = classday / "VERSION"
+    version = parse_version(version_path.read_text(encoding="utf-8")) if version_path.is_file() else None
     if version is None:
         raise SystemExit("Classday/VERSION is missing or not X.Y.Z")
+    build_path = classday / "BUILD"
+    build = parse_build(build_path.read_text(encoding="utf-8")) if build_path.is_file() else None
+    if build is None:
+        raise SystemExit("Classday/BUILD is missing or not a positive integer")
     yml = (classday / "project.yml").read_text(encoding="utf-8")
     yml_match = re.search(r'MARKETING_VERSION:\s*"([^"]+)"', yml)
+    yml_build = re.search(r'CURRENT_PROJECT_VERSION:\s*"([^"]+)"', yml)
     pbx = (classday / "Classday.xcodeproj" / "project.pbxproj").read_text(encoding="utf-8")
-    pbx_values = set(re.findall(r"MARKETING_VERSION = ([^;]+);", pbx))
-    pbx_values = {value.strip().strip('"') for value in pbx_values}
-    found = {"VERSION": version}
-    if yml_match:
-        found["project.yml"] = yml_match.group(1)
-    found["pbxproj"] = ",".join(sorted(pbx_values))
+    marketing = {value for value in pbx_values(pbx, "MARKETING_VERSION") if value}
+    builds = {value for value in pbx_values(pbx, "CURRENT_PROJECT_VERSION") if value}
     problems = []
-    if found.get("project.yml") != version:
-        problems.append(f"project.yml MARKETING_VERSION is {found.get('project.yml')}, VERSION is {version}")
-    if pbx_values != {version}:
-        problems.append(f"project.pbxproj MARKETING_VERSION values are {sorted(pbx_values)}, VERSION is {version}")
+    if yml_match is None or yml_match.group(1) != version:
+        found = yml_match.group(1) if yml_match else None
+        problems.append(f"project.yml MARKETING_VERSION is {found}, VERSION is {version}")
+    if marketing != {version}:
+        problems.append(f"project.pbxproj MARKETING_VERSION values are {sorted(marketing)}, VERSION is {version}")
+    if yml_build is None or yml_build.group(1) != build:
+        found = yml_build.group(1) if yml_build else None
+        problems.append(f"project.yml CURRENT_PROJECT_VERSION is {found}, BUILD is {build}")
+    if builds != {build}:
+        problems.append(f"project.pbxproj CURRENT_PROJECT_VERSION values are {sorted(builds)}, BUILD is {build}")
     if problems:
         raise SystemExit("version files disagree:\n" + "\n".join(problems))
-    return found
+    return {"VERSION": version, "BUILD": build}
 
 
 def archive_directories(archive: Path) -> list[Path]:
@@ -117,9 +163,47 @@ def require_snapshot(classday: Path, expected: str, current: str) -> None:
         raise SystemExit(f"VersionArchive may contain only previous/, found directories: {names or '(none)'}")
 
 
+def ensure_snapshot_is_not_current(classday: Path, current: str) -> None:
+    archive = classday / "VersionArchive"
+    previous = archive / "previous"
+    if not previous.exists():
+        return
+    stamp_path = previous / STAMP_NAME
+    if not stamp_path.is_file():
+        raise SystemExit("VersionArchive/previous has no .classday-snapshot-version stamp.")
+    stamp = parse_version(stamp_path.read_text(encoding="utf-8"))
+    captured = parse_version((previous / "VERSION").read_text(encoding="utf-8")) if (previous / "VERSION").is_file() else None
+    if stamp is None or stamp != captured:
+        raise SystemExit(f"Snapshot stamp {stamp!r} does not match previous/VERSION {captured!r}.")
+    if stamp == current:
+        raise SystemExit("Working snapshot is stamped with the current version.")
+    if (previous / "VersionArchive").exists():
+        raise SystemExit("Nested VersionArchive inside previous/.")
+    names = [path.name for path in archive_directories(archive)]
+    if names != ["previous"]:
+        raise SystemExit(f"VersionArchive may contain only previous/, found directories: {names or '(none)'}")
+
+
+def require_newer_build(repo: Path, parent_rev: str, classday: Path) -> None:
+    parent_build = build_at(repo, parent_rev)
+    current_build = parse_build((classday / "BUILD").read_text(encoding="utf-8"))
+    if parent_build is None or current_build is None:
+        return
+    if int(current_build) <= parent_build:
+        raise SystemExit(
+            f"BUILD is {current_build} but the replaced version is build {parent_build}. "
+            "Each release must increase Classday/BUILD so SideStore sees a new CFBundleVersion."
+        )
+
+
 def check(repo: Path, base: str | None) -> None:
     classday = repo / "Classday"
     if not (classday / "VERSION").is_file():
+        if (classday / "project.yml").is_file() or (classday / "Classday.xcodeproj" / "project.pbxproj").is_file():
+            raise SystemExit(
+                "Classday/VERSION is missing. It is the marketing-version source of truth; "
+                "Classday/BUILD is the build number. project.yml and project.pbxproj are generated from them."
+            )
         return
     versions = marketing_versions(classday)
     current = versions["VERSION"]
@@ -138,17 +222,13 @@ def check(repo: Path, base: str | None) -> None:
         raise SystemExit(commits.stderr.strip() or "git log failed")
     hashes = [line for line in commits.stdout.splitlines() if line.strip()]
     if not hashes:
-        base_version = parse_version(git_show(repo, base, "Classday/VERSION"))
+        base_version = marketing_version_at(repo, base)
         if base_version is None:
             require_no_previous(classday)
         elif base_version != current:
             raise SystemExit(f"VERSION is {current} but {base} is {base_version} and no bump commit was found.")
         else:
-            previous = classday / "VersionArchive" / "previous"
-            if previous.exists():
-                require_snapshot(classday, parse_version((previous / STAMP_NAME).read_text(encoding="utf-8")) or "", current)
-                if parse_version((previous / STAMP_NAME).read_text(encoding="utf-8")) == current:
-                    raise SystemExit("Unchanged version has a snapshot of itself.")
+            ensure_snapshot_is_not_current(classday, current)
         return
 
     latest = hashes[0]
@@ -156,13 +236,17 @@ def check(repo: Path, base: str | None) -> None:
     if parent.returncode != 0:
         require_no_previous(classday)
         return
-    parent_version = parse_version(git_show(repo, parent.stdout.strip(), "Classday/VERSION"))
+    parent_rev = parent.stdout.strip()
+    parent_version = marketing_version_at(repo, parent_rev)
     if parent_version is None:
         require_no_previous(classday)
         return
     if parent_version == current:
-        raise SystemExit(f"Latest VERSION commit does not change {current}.")
+        # Restoring VERSION, or a commit that touches the file without changing the number.
+        ensure_snapshot_is_not_current(classday, current)
+        return
     require_snapshot(classday, parent_version, current)
+    require_newer_build(repo, parent_rev, classday)
 
 
 def self_test() -> None:
@@ -177,7 +261,7 @@ def self_test() -> None:
             subprocess.run(["git", "commit", "-q", "-m", message], cwd=repo, check=True)
             return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
 
-        def write_classday(version: str, payload: str, previous: str | None) -> None:
+        def write_classday(version: str, payload: str, previous: str | None, build: str) -> None:
             classday = repo / "Classday"
             (classday / "Classday.xcodeproj").mkdir(parents=True, exist_ok=True)
             archive = classday / "VersionArchive"
@@ -185,9 +269,14 @@ def self_test() -> None:
                 shutil.rmtree(archive)
             archive.mkdir()
             (classday / "VERSION").write_text(version + "\n", encoding="utf-8")
-            (classday / "project.yml").write_text(f'MARKETING_VERSION: "{version}"\n', encoding="utf-8")
+            (classday / "BUILD").write_text(build + "\n", encoding="utf-8")
+            (classday / "project.yml").write_text(
+                f'MARKETING_VERSION: "{version}"\nCURRENT_PROJECT_VERSION: "{build}"\n',
+                encoding="utf-8",
+            )
             (classday / "Classday.xcodeproj" / "project.pbxproj").write_text(
-                f"MARKETING_VERSION = {version};\n", encoding="utf-8"
+                f"MARKETING_VERSION = {version};\nCURRENT_PROJECT_VERSION = {build};\n",
+                encoding="utf-8",
             )
             (classday / "payload.txt").write_text(payload, encoding="utf-8")
             (archive / ".classday-backup-root").write_text("classday-version-archive-v1\n", encoding="utf-8")
@@ -204,11 +293,11 @@ def self_test() -> None:
 
         subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "empty"], cwd=repo, check=True)
         base_empty = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
-        write_classday("1.0.0", "alpha", None)
+        write_classday("1.0.0", "alpha", None, "1")
         v1 = commit("add classday 1.0.0")
         check(repo, base_empty)
 
-        write_classday("1.1.0", "beta", None)
+        write_classday("1.1.0", "beta", None, "2")
         commit("bump without snapshot")
         try:
             check(repo, v1)
@@ -218,11 +307,11 @@ def self_test() -> None:
             raise SystemExit("self-test: skipped snapshot was accepted")
         subprocess.run(["git", "reset", "-q", "--hard", v1], cwd=repo, check=True)
 
-        write_classday("1.1.0", "beta", "1.0.0")
+        write_classday("1.1.0", "beta", "1.0.0", "2")
         v11 = commit("bump 1.1.0 with snapshot of 1.0.0")
         check(repo, v1)
 
-        write_classday("1.2.0", "gamma", "1.1.0")
+        write_classday("1.2.0", "gamma", "1.1.0", "3")
         (repo / "Classday" / "VersionArchive" / "older").mkdir()
         commit("bump keeping ancient archive")
         try:
@@ -233,8 +322,8 @@ def self_test() -> None:
             raise SystemExit("self-test: older archive directory was accepted")
         subprocess.run(["git", "reset", "-q", "--hard", v11], cwd=repo, check=True)
 
-        write_classday("1.2.0", "gamma", "1.1.0")
-        commit("bump 1.2.0 with immediate previous")
+        write_classday("1.2.0", "gamma", "1.1.0", "3")
+        v12 = commit("bump 1.2.0 with immediate previous")
         check(repo, v1)
         check(repo, v11)
         nested = repo / "Classday" / "VersionArchive" / "previous" / "VersionArchive"
@@ -245,6 +334,41 @@ def self_test() -> None:
             pass
         else:
             raise SystemExit("self-test: nested archive was accepted")
+        subprocess.run(["git", "reset", "-q", "--hard", v12], cwd=repo, check=True)
+
+        write_classday("1.3.0", "delta", "1.2.0", "3")
+        commit("bump without a new build number")
+        try:
+            check(repo, v12)
+        except SystemExit:
+            pass
+        else:
+            raise SystemExit("self-test: unchanged BUILD was accepted")
+        subprocess.run(["git", "reset", "-q", "--hard", v12], cwd=repo, check=True)
+
+        version_file = repo / "Classday" / "VERSION"
+        version_file.unlink()
+        dropped = commit("drop VERSION file")
+        version_file.write_text("1.2.0\n", encoding="utf-8")
+        restored = commit("restore VERSION without a marketing bump")
+        check(repo, dropped)
+        check(repo, v12)
+
+        subprocess.run(["git", "reset", "-q", "--hard", dropped], cwd=repo, check=True)
+        write_classday("1.3.0", "delta", None, "4")
+        commit("bump from pbxproj-only parent without snapshot")
+        try:
+            check(repo, dropped)
+        except SystemExit:
+            pass
+        else:
+            raise SystemExit("self-test: bump from a VERSION-less parent skipped the snapshot")
+        subprocess.run(["git", "reset", "-q", "--hard", dropped], cwd=repo, check=True)
+
+        write_classday("1.3.0", "delta", "1.2.0", "4")
+        commit("bump from pbxproj-only parent with snapshot")
+        check(repo, dropped)
+        _ = restored
     print("version snapshot check self-test passed")
 
 
