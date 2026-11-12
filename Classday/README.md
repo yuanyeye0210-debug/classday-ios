@@ -25,14 +25,18 @@ python3 Tools/generate_xcodeproj.py
 
 ## Signing
 
-See [Docs/SIGNING.md](Docs/SIGNING.md). Both targets declare the App Group `group.com.classday.shared`. A free Apple ID resign may grant a different id under your team. The app and the widget pick that granted id together. Until a shared group can be opened, the timetable stays in Application Support, 我的 explains the Sideloadly setting, and the widgets show 读不到课表.
+See [Docs/SIGNING.md](Docs/SIGNING.md). Install with SideStore and LocalDevVPN. Add this source once; SideStore then offers updates itself:
+
+`https://raw.githubusercontent.com/yuanyeye0210-debug/classday-releases/main/apps.json`
+
+Both targets declare the App Group `group.com.classday.shared`. A free Apple ID resign may grant a different id under your team. The app and the widget pick that granted id together. Until a shared group can be opened, the timetable stays in Application Support, 我的 names the group ids the profile actually contained, and the widgets show 读不到课表.
 
 Bundle IDs in the project:
 
 - App: `com.classday.app`
 - Widget: `com.classday.app.widget`
 
-The entitlements and `AppGroup.identifier` stay on `group.com.classday.shared`. You do not have to edit that string when Sideloadly rewrites the group for a free Apple ID.
+The entitlements and `AppGroup.identifier` stay on `group.com.classday.shared`. You do not have to edit that string when SideStore rewrites the group for a free Apple ID.
 
 ## Run on iPhone
 
@@ -77,20 +81,21 @@ Xcode build, simulator, and device runs were not executed in the environment tha
 
 ## Version backups
 
-The version number lives in `Classday/VERSION`. Change it with one command:
+The marketing version lives in `Classday/VERSION`. The build number lives in `Classday/BUILD` (`CFBundleVersion`). Change them with one command:
 
 ```bash
 Classday/Tools/bump-version.sh 1.1.0
 ```
 
-The command archives the last commit into `VersionArchive/previous`, then writes the new version. It keeps that immediate previous snapshot and deletes older directories inside `VersionArchive` only. A normal commit does not take a snapshot. V1 is `1.0.0` and has no `previous/` folder. Details: [Docs/VERSION_BACKUPS.md](Docs/VERSION_BACKUPS.md). Pull requests run `.github/workflows/classday-version-snapshot.yml`, which fails if a version change did not archive the committed version it replaced.
+The command archives the last commit into `VersionArchive/previous`, writes the new marketing version, and increments `BUILD`. It then rewrites `project.yml` and `project.pbxproj` from those files. It keeps that immediate previous snapshot and deletes older directories inside `VersionArchive` only. A normal commit does not take a snapshot. V1 is `1.0.0` and has no `previous/` folder. Details: [Docs/VERSION_BACKUPS.md](Docs/VERSION_BACKUPS.md). Pull requests run `.github/workflows/classday-version-snapshot.yml`, which fails if a version change did not archive the committed version it replaced or did not increase the build number.
 
 ## Limits
 
 - No school login, roster sync, grades, or attendance.
 - Portrait iPhone. iPad is not a separate target.
 - Chinese interface only.
-- Widgets need a shared App Group in the profile Sideloadly or Xcode installs. The id in that profile may differ from `group.com.classday.shared`. WidgetKit may still delay a reload; the timeline covers the next 36 hours of class boundaries.
+- Widgets need a shared App Group in the profile SideStore or Xcode installs. The id in that profile may differ from `group.com.classday.shared`. WidgetKit may still delay a reload; the timeline covers the next 36 hours of class boundaries.
+- A free Apple ID can keep 3 sideloaded apps (SideStore and LocalDevVPN count) and can register 10 App IDs every 7 days. The widget extension uses a second App ID.
 - Reminders are local notifications, capped at 60.
 - Drag-and-drop rescheduling is on the week grid. The day list uses 调整时间.
 - Overlap is based on period numbers, not on clock times that a custom period table might make overlap.
