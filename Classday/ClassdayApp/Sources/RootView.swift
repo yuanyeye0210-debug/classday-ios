@@ -101,13 +101,41 @@ struct RootView: View {
                 model.banner = "没有读到文件"
             }
         }
-        .alert("无法导入", isPresented: Binding(
-            get: { model.importErrors != nil },
-            set: { if !$0 { model.importErrors = nil } }
+        // One `.alert` for both cases (fix wave): SwiftUI honours only
+        // one `.alert` modifier per view, so the pre-existing "无法导入"
+        // alert and the blocking update alert chained as two modifiers
+        // could never both present. A single enum-driven modifier
+        // switches on whichever is active; an import error takes
+        // precedence, and dismissing it re-presents a pending update
+        // alert (the binding stays true while `updateAlert` is set).
+        // The `.confirmationDialog` chain below is untouched.
+        .alert(Text(rootAlertTitle), isPresented: Binding(
+            get: { rootAlert != nil },
+            set: { if !$0 { dismissRootAlert() } }
         )) {
-            Button("好", role: .cancel) {}
+            switch rootAlert {
+            case .importError:
+                Button("好", role: .cancel) {}
+            case let .update(kind):
+                // Blocking update alert (Task 6): a mandatory update or a
+                // current version below the minimum supported version. A
+                // single "下载更新" button and no cancel role. Tapping it
+                // starts the in-app download immediately (shared AppModel
+                // state, so the Settings tab shows progress) — it never
+                // just navigates away and leaves the alert dismissed with
+                // nothing downloading. It never appears on a network error
+                // or when already latest. Lives here (not SettingsView) so
+                // a silent auto-check on launch surfaces it on any tab.
+                Button("下载更新") {
+                    model.updateAlert = nil
+                    model.tab = .settings
+                    Task { await model.startUpdateDownload(release: kind.release) }
+                }
+            case nil:
+                Button("好", role: .cancel) {}
+            }
         } message: {
-            Text(model.importErrors ?? "")
+            Text(rootAlertMessage)
         }
         .confirmationDialog("这份课表有时间重叠", isPresented: Binding(
             get: { model.stagedImport != nil },
@@ -149,6 +177,61 @@ struct RootView: View {
             Button("取消", role: .cancel) {}
         } message: {
             Text("学期和节次设置会保留。")
+        }
+    }
+
+    /// The single alert this view can present: the pre-existing import
+    /// error, or the blocking update alert. One enum, one `.alert`
+    /// modifier — SwiftUI honours only one per view.
+    private enum RootAlert: Equatable {
+        case importError(String)
+        case update(UpdateService.UpdateAlertKind)
+    }
+
+    /// Whichever alert is active, import error first: the user just did
+    /// something (an import) when it appears. A pending update alert
+    /// behind a dismissed import error re-presents.
+    private var rootAlert: RootAlert? {
+        if let importErrors = model.importErrors { return .importError(importErrors) }
+        if let updateAlert = model.updateAlert { return .update(updateAlert) }
+        return nil
+    }
+
+    /// Clears whichever alert is showing. When both were set, clearing
+    /// the import error leaves the binding true (the update alert is
+    /// still set), so the update alert presents next.
+    private func dismissRootAlert() {
+        if model.importErrors != nil {
+            model.importErrors = nil
+        } else {
+            model.updateAlert = nil
+        }
+    }
+
+    private var rootAlertTitle: String {
+        switch rootAlert {
+        case .importError: return "无法导入"
+        case let .update(kind):
+            switch kind {
+            case .mandatory: return "发现必须安装的新版本"
+            case .belowMinimum: return "当前版本已不再受支持"
+            }
+        case nil: return ""
+        }
+    }
+
+    private var rootAlertMessage: String {
+        switch rootAlert {
+        case let .importError(message): return message
+        case let .update(kind):
+            let current = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+            switch kind {
+            case let .mandatory(release):
+                return "新版 \(release.version) 已发布，需要更新后才能继续使用。点「下载更新」开始下载新版 IPA。"
+            case let .belowMinimum(release):
+                return "当前版本 \(current) 已不再受支持，请更新到新版 \(release.version) 才能继续使用。点「下载更新」开始下载新版 IPA。"
+            }
+        case nil: return ""
         }
     }
 

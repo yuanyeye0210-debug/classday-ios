@@ -103,6 +103,30 @@ final class AppModel {
     var showSmartImport = false
     var smartImportSample = false
 
+    // Update state shared with SettingsView and RootView (Task 6): the last
+    // check's row note / download link / decision, and a blocking alert
+    // (mandatory or below-minimum) that RootView surfaces app-wide.
+    var lastUpdateNote: String?
+    var lastUpdateDownloadURL: URL?
+    var lastUpdateDecision: UpdateDecision?
+    var updateAlert: UpdateService.UpdateAlertKind?
+    /// Bounded re-raise flag (fix wave): set when a failed mandatory /
+    /// below-minimum download re-raises the blocking alert once; reset
+    /// by `applyUpdateCheck`, so one check re-raises at most once and a
+    /// persistent network failure cannot loop the alert.
+    private var didReRaiseUpdateAlertAfterFailure = false
+
+    // In-app download state, shared so RootView's blocking-alert button
+    // can start the download directly and SettingsView shows the same
+    // progress / finished IPA / error (fix round 1: the alert button used
+    // to only navigate to Settings, leaving a second tap — and a
+    // dismissable "non-dismissable" alert — between the user and the
+    // download). Owned here, driven by UpdateService.download.
+    var downloadingUpdate = false
+    var downloadProgress: Double?
+    var downloadedIPA: URL?
+    var downloadError: String?
+
     let calendar: Calendar
     private let storeURL: URL
     private var undoTask: Task<Void, Never>?
@@ -167,6 +191,10 @@ final class AppModel {
             await self?.refreshNotificationStatus()
             await self?.refreshReminders()
         }
+        // Launch-only: a stored version that differs from the current one
+        // means this version was just installed. First launch stores
+        // silently and reports nothing.
+        UpdateService.reportInstalledIfNeeded()
         // Re-sync the Live Activity once a minute while the app is active, so
         // the lock screen flips at class boundaries even if the app stays
         // open. The diff gate inside refreshLiveActivityIfNeeded() means a
@@ -194,6 +222,106 @@ final class AppModel {
     static func preview() -> AppModel {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("classday-preview-\(UUID().uuidString).json")
         return AppModel(document: DemoData.makeDocument(), storeURL: url, appGroupAvailable: false)
+    }
+
+    /// Applies one completed update check (manual or automatic) to the
+    /// shared state: the Settings row, the download link, and — only for a
+    /// mandatory update or a below-minimum install — the blocking alert.
+    /// Network errors ("检查失败") and "already latest" never raise an alert.
+    func applyUpdateCheck(_ result: UpdateService.CheckResult) {
+        lastUpdateNote = result.note
+        lastUpdateDownloadURL = result.downloadURL
+        lastUpdateDecision = result.decision
+        // A new check resets the bounded re-raise: one check re-raises
+        // the blocking alert at most once after a failed download.
+        didReRaiseUpdateAlertAfterFailure = false
+        switch result.decision {
+        case let .updateAvailable(release, mandatory: true):
+            updateAlert = .mandatory(release: release)
+        case let .belowMinimumSupported(release):
+            updateAlert = .belowMinimum(release: release)
+        default:
+            // A later up-to-date / failure result clears a stale alert, so
+            // a dismissed update does not keep blocking the app after the
+            // next check says there is nothing to install.
+            updateAlert = nil
+        }
+    }
+
+    /// Starts the in-app IPA download for `release` with Range resume +
+    /// progress, SHA-256 verification, and the finished IPA on success.
+    /// Shared entry point: RootView's blocking-alert "下载更新" button and
+    /// the Settings download row both call this, so the alert button
+    /// really downloads. A second call while a download is running is a
+    /// no-op. On total failure the error is kept in `downloadError` and
+    /// the Safari fallback in Settings stays available; a failed
+    /// mandatory / below-minimum download re-raises the blocking alert
+    /// once (see `reRaiseBlockingAlertIfNeeded`), so the user is not
+    /// silently un-blocked until the next day.
+    func startUpdateDownload(release: ReleaseEntry) async {
+        guard !downloadingUpdate else { return }
+        downloadingUpdate = true
+        downloadError = nil
+        downloadedIPA = nil
+        downloadProgress = 0
+        defer { downloadingUpdate = false }
+        // The service reports progress from a background context; hop to
+        // the main actor before touching view state.
+        let result = await UpdateService.download(release: release) { [weak self] value in
+            Task { @MainActor in self?.downloadProgress = value }
+        }
+        switch result {
+        case let .success(url):
+            downloadedIPA = url
+            downloadProgress = 1
+        case let .failure(reason):
+            downloadError = reason
+            downloadProgress = nil
+            reRaiseBlockingAlertIfNeeded()
+        }
+    }
+
+    /// Re-raises the blocking alert once per check when a mandatory or
+    /// below-minimum download failed: the alert was already cleared when
+    /// the user tapped "下载更新", and the daily auto-check gate was
+    /// already consumed, so without this the user would be silently
+    /// un-blocked until tomorrow or a manual tap. Bounded by
+    /// `didReRaiseUpdateAlertAfterFailure` (reset on each new check), so
+    /// a persistent network failure cannot loop the alert; the Settings
+    /// error text + retry row is the escape hatch. Ordinary
+    /// (non-mandatory, above-minimum) updates never re-raise.
+    private func reRaiseBlockingAlertIfNeeded() {
+        guard !didReRaiseUpdateAlertAfterFailure else { return }
+        switch lastUpdateDecision {
+        case let .updateAvailable(release, mandatory: true):
+            updateAlert = .mandatory(release: release)
+            didReRaiseUpdateAlertAfterFailure = true
+        case let .belowMinimumSupported(release):
+            updateAlert = .belowMinimum(release: release)
+            didReRaiseUpdateAlertAfterFailure = true
+        default:
+            break
+        }
+    }
+
+    /// Silent daily auto-check, triggered from the existing foreground path
+    /// (`scenePhase == .active`, which also fires on launch). At most once
+    /// per calendar day; never blocks launch — the check runs in a detached
+    /// `Task` and only surfaces UI (row note, blocking alert) when an
+    /// update, mandatory, or below-minimum condition is found. A manual tap
+    /// in Settings always checks and does not consult this gate.
+    func triggerDailyAutoCheck() {
+        guard UpdateService.shouldAutoCheck() else { return }
+        // Record the date when the check STARTS, not when it completes:
+        // two foreground transitions during one slow check would both pass
+        // the gate and run duplicate checks (and duplicate `update_check`
+        // reports). `checkForUpdate` still records on completion as well.
+        UpdateService.recordCheckDate()
+        Task { [weak self] in
+            guard let self else { return }
+            let result = await UpdateService.checkForUpdate(currentVersion: UpdateService.currentVersion())
+            self.applyUpdateCheck(result)
+        }
     }
 
     func occurrences(inWeek week: Int? = nil) -> [Occurrence] {
