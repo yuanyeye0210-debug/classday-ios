@@ -22,18 +22,8 @@ struct JSONFileDocument: FileDocument {
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @State private var semester: Semester
-    @State private var showCalendarImport = false
-    @State private var showMailCancel = false
-    @State private var newHolidayName = ""
-    @State private var newHolidayStart = Date()
-    @State private var newHolidayEnd = Date()
     @State private var didLoadSemester = false
     @State private var lastSyncedSemester: Semester?
-    @State private var errorText: String?
-    @State private var exporting = false
-    @State private var exportDocument = JSONFileDocument(data: Data())
-    @State private var showChangelog = false
-    @State private var checkingUpdate = false
     // Download state lives in AppModel (shared with RootView's alert
     // button); this view only reads it.
 
@@ -45,9 +35,6 @@ struct SettingsView: View {
         @Bindable var model = model
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                Text("我的")
-                    .font(.system(size: 34, weight: .bold, design: .rounded))
-                    .foregroundStyle(Theme.ink)
                 VStack(spacing: 0) {
                     settingsRow(icon: "paintpalette.fill", color: .purple,
                                 title: "主题", value: model.document.appearance.theme.name) {
@@ -63,361 +50,71 @@ struct SettingsView: View {
                 if let loadError = model.loadError {
                     notice(loadError)
                 }
-                section("学期") {
-                    labeledField("名称", text: $semester.name)
-                    labeledField("简称", text: $semester.shortName)
-                    HStack(spacing: 12) {
-                        iconBadge("calendar", color: .red)
-                        Text("开始日期").font(.system(size: 16, weight: .medium)).foregroundStyle(Theme.ink)
-                        Spacer()
-                        DatePicker("开始日期", selection: startDateBinding, displayedComponents: .date)
-                            .labelsHidden()
-                    }
-                    HStack(spacing: 12) {
-                        iconBadge("number", color: .orange)
-                        Stepper(value: $semester.totalWeeks, in: 1...30) {
-                            Text("共 \(semester.totalWeeks) 周").font(.system(size: 16, weight: .medium))
-                        }
-                    }
-                    HStack(spacing: 12) {
-                        iconBadge("flag.checkered", color: .purple)
-                        Text("结束日期").font(.system(size: 16, weight: .medium)).foregroundStyle(Theme.ink)
-                        Spacer()
-                        Text(semesterEndText).font(.system(size: 14)).foregroundStyle(Theme.secondary)
-                    }
-                    if let errorText {
-                        Text(errorText).font(.footnote).foregroundStyle(.red)
-                    }
-                    saveButton("保存学期") {
-                        if let error = model.updateSemester(semester) {
-                            errorText = error
-                        } else {
-                            errorText = nil
-                            semester = model.document.semester
-                            lastSyncedSemester = semester
-                        }
-                    }
-                    .disabled(!didLoadSemester)
-                }
-                section("假期与不上课时段") {
-                    if semester.holidays.isEmpty {
-                        Text("还没有假期。导入校历、拍照识别，或在下面手动加一段——假期内的课会自动跳过、不提醒。")
-                            .font(.system(size: 13.5, design: .rounded))
-                            .foregroundStyle(Theme.secondary)
-                    }
-                    ForEach(semester.holidays.sorted { $0.startDate < $1.startDate }) { holiday in
-                        HStack(spacing: 12) {
-                            iconBadge("beach.umbrella.fill", color: .orange)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(holiday.name).font(.system(size: 15.5, weight: .semibold)).foregroundStyle(Theme.ink)
-                                Text(holidayRangeText(holiday)).font(.system(size: 12.5)).foregroundStyle(Theme.secondary)
-                            }
-                            Spacer()
-                            Button(role: .destructive) {
-                                semester.holidays.removeAll { $0.id == holiday.id }
-                                saveHolidays()
-                            } label: {
-                                Image(systemName: "trash").foregroundStyle(.red)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    Divider()
-                    labeledField("新时段名称", text: $newHolidayName)
-                    HStack(spacing: 12) {
-                        Text("开始").font(.system(size: 14)).foregroundStyle(Theme.secondary)
-                        DatePicker("开始", selection: $newHolidayStart, displayedComponents: .date).labelsHidden()
-                        Spacer()
-                        Text("结束").font(.system(size: 14)).foregroundStyle(Theme.secondary)
-                        DatePicker("结束", selection: $newHolidayEnd, displayedComponents: .date).labelsHidden()
-                    }
-                    saveButton("添加时段") {
-                        let name = newHolidayName.trimmingCharacters(in: .whitespacesAndNewlines)
-                        let start = SemesterCalendar.formatCivil(newHolidayStart, calendar: model.calendar)
-                        let end = SemesterCalendar.formatCivil(newHolidayEnd, calendar: model.calendar)
-                        semester.holidays.append(HolidayPeriod(id: UUID(), name: name.isEmpty ? "不上课" : name, startDate: min(start, end), endDate: max(start, end)))
-                        newHolidayName = ""
-                        saveHolidays()
-                    }
-                    Button {
-                        showCalendarImport = true
-                    } label: {
-                        HStack(spacing: 12) {
-                            iconBadge("calendar.badge.plus", color: .teal)
-                            Text("校历导入").font(.system(size: 16, weight: .medium)).foregroundStyle(Theme.ink)
-                            Spacer()
-                            Text("文件 / 拍照识别").font(.system(size: 13)).foregroundStyle(Theme.secondary)
-                            Image(systemName: "chevron.right").font(.system(size: 12, weight: .bold)).foregroundStyle(Theme.secondary.opacity(0.6))
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    Divider()
-                    Button {
-                        showMailCancel = true
-                    } label: {
-                        HStack(spacing: 12) {
-                            iconBadge("envelope.badge.fill", color: .pink)
-                            Text("邮件停课识别").font(.system(size: 16, weight: .medium)).foregroundStyle(Theme.ink)
-                            Spacer()
-                            Text("粘贴 / 截图").font(.system(size: 13)).foregroundStyle(Theme.secondary)
-                            Image(systemName: "chevron.right").font(.system(size: 12, weight: .bold)).foregroundStyle(Theme.secondary.opacity(0.6))
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    if !semester.cancellations.isEmpty {
-                        Divider()
-                        Text("停课记录")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Theme.secondary)
-                        ForEach(semester.cancellations.sorted { $0.date < $1.date }) { entry in
-                            HStack(spacing: 12) {
-                                iconBadge("calendar.badge.minus", color: .red)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(entry.courseID == nil ? "全天停课" : entry.courseName).font(.system(size: 15.5, weight: .semibold)).foregroundStyle(Theme.ink)
-                                    Text(cancellationDetailText(entry)).font(.system(size: 12.5)).foregroundStyle(Theme.secondary)
-                                }
-                                Spacer()
-                                Button(role: .destructive) {
-                                    semester.cancellations.removeAll { $0.id == entry.id }
-                                    saveHolidays()
-                                } label: {
-                                    Image(systemName: "trash").foregroundStyle(.red)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
-                }
-                section("上课时间") {
-                    ForEach(semester.periods) { period in
-                        HStack(spacing: 10) {
-                            Text("第 \(period.index) 节")
-                                .font(.system(size: 13, weight: .heavy))
-                                .foregroundStyle(Theme.accentInk)
-                                .frame(width: 52, height: 34)
-                                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.accent.opacity(0.12)))
-                            Spacer()
-                            DatePicker("开始", selection: timeBinding(period.index, isStart: true), displayedComponents: .hourAndMinute)
-                                .labelsHidden()
-                            Text("–").foregroundStyle(Theme.secondary)
-                            DatePicker("结束", selection: timeBinding(period.index, isStart: false), displayedComponents: .hourAndMinute)
-                                .labelsHidden()
-                        }
-                        if period.index != semester.periods.last?.index {
-                            Divider()
-                        }
-                    }
-                    HStack(spacing: 10) {
-                        tintedButton("添加一节", icon: "plus.circle.fill", color: .green) { addPeriod() }
-                        tintedButton("删除最后一节", icon: "trash.fill", color: .red) { removeLastPeriod() }
-                    }
-                    saveButton("保存节次与学期") {
-                        if let error = model.updateSemester(semester) {
-                            errorText = error
-                        } else {
-                            errorText = nil
-                            semester = model.document.semester
-                            lastSyncedSemester = semester
-                        }
-                    }
-                    .disabled(!didLoadSemester)
-                    HStack(spacing: 10) {
-                        tintedButton("30 分钟 × 20 节", icon: "rectangle.grid.3x2.fill", color: .blue) { applyPeriodTemplate(minutes: 30, count: 20) }
-                        tintedButton("45 分钟 × 10 节", icon: "rectangle.grid.2x2.fill", color: .gray) { applyPeriodTemplate(minutes: 45, count: 10) }
-                    }
-                    noteCard("节次按序号连续排列。删除只允许从最后一节开始，并且不能还有课程占用它。保存会连同学期名称、周数和默认提醒一起写入本机。上面两个模板从 08:00 起排：30 分钟 × 20 节是里斯本 IST 的节次表，套用后先别保存，核对无误再点保存（保存前 App 会自动把当前课表存进课表库备份）。")
-                }
-                section("提醒") {
-                    HStack(spacing: 12) {
-                        iconBadge("bell.fill", color: .orange)
-                        Stepper(value: $semester.defaultReminderMinutes, in: 0...120) {
-                            Text(semester.defaultReminderMinutes == 0 ? "默认不提醒" : "默认提前 \(semester.defaultReminderMinutes) 分钟")
-                                .font(.system(size: 16, weight: .medium))
-                        }
-                    }
-                    HStack(spacing: 12) {
-                        iconBadge("bell.badge.fill", color: .pink)
-                        Circle()
-                            .fill(notificationDotColor)
-                            .frame(width: 9, height: 9)
-                        Text("通知权限：\(model.notificationStatusText)")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundStyle(Theme.ink)
-                        Spacer()
-                        Button("检查") {
-                            Task {
-                                _ = await ReminderScheduler.shared.requestAuthorization()
-                                await model.refreshNotificationStatus()
-                            }
-                        }
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(Theme.accent)
-                        .padding(.horizontal, 14).padding(.vertical, 7)
-                        .background(Capsule().fill(Theme.accent.opacity(0.12)))
-                        .buttonStyle(JournalPressStyle())
-                    }
-                    if model.notificationStatusText == "已拒绝" {
-                        settingsRow(icon: "gearshape.fill", color: .gray,
-                                    title: "打开系统设置去允许", value: nil) {
-                            openSettings()
-                        }
-                    }
-                    noteCard("开启某门课的提醒时才会向系统请求权限。允许后，课曜会在本地安排最多 \(NotificationPlan.pendingLimit) 条即将上课的通知。")
-                }
-                section("数据") {
-                    settingsRow(icon: "square.and.arrow.up.fill", color: Theme.accent,
-                                title: "导出 JSON", value: nil) {
-                        if let data = try? model.exportData() {
-                            exportDocument = JSONFileDocument(data: data)
-                            exporting = true
-                        }
-                    }
-                    Divider().padding(.leading, 58)
-                    settingsRow(icon: "square.and.arrow.down.fill", color: .green,
-                                title: "导入 JSON", value: nil) {
-                        model.showImporter = true
-                    }
-                    Divider().padding(.leading, 58)
-                    settingsRow(icon: "sparkles", color: .purple,
-                                title: "智能导入课表", value: "图片 / 文件 / 文本") {
-                        model.showSmartImport = true
-                    }
-                    Divider().padding(.leading, 58)
-                    settingsRow(icon: "arrow.counterclockwise", color: .orange,
-                                title: "恢复演示数据", value: nil) {
-                        model.confirmReset = true
-                    }
-                    Divider().padding(.leading, 58)
-                    settingsRow(icon: "trash.fill", color: .red,
-                                title: "清空课程", value: nil, destructive: true) {
-                        model.confirmClear = true
-                    }
-                    noteCard("导入会替换当前课表。文件需要 schemaVersion \(StoreDocument.currentSchema)。没有校园账号，也不会查询成绩。")
-                }
-                section("关于") {
-                    HStack(spacing: 14) {
-                        Text("课")
-                            .font(.system(size: 26, weight: .heavy, design: .rounded))
-                            .foregroundStyle(.white)
-                            .frame(width: 54, height: 54)
-                            .background(RoundedRectangle(cornerRadius: 15, style: .continuous)
-                                .fill(LinearGradient(colors: [Theme.accent, Color(red: 0.55, green: 0.35, blue: 0.98)],
-                                                     startPoint: .topLeading, endPoint: .bottomTrailing)))
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("课曜 / Heptara").font(.system(size: 17, weight: .bold)).foregroundStyle(Theme.ink)
-                            Text("版本 \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0")")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(Theme.accentInk)
-                                .padding(.horizontal, 8).padding(.vertical, 2)
-                                .background(Capsule().fill(Theme.accent.opacity(0.12)))
-                        }
-                        Spacer()
-                    }
-                    Text("独立设计的本地课表。界面参考了常见的周课表和彩色课程卡片，不是「超级课程表」官方产品，也不追求与它功能一致。课程、教师、教室和时间都可以是你自己的数据；首次打开时的示例已标明为演示数据。")
-                        .font(.footnote)
-                        .foregroundStyle(Theme.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Divider()
-                    settingsRow(icon: "newspaper.fill", color: .indigo,
-                                title: "更新日志", value: AppChangelog.entries.first?.version) {
-                        showChangelog = true
-                    }
-                    Divider().padding(.leading, 58)
-                    settingsRow(icon: "arrow.down.circle.fill", color: .teal,
-                                title: "检查更新", value: checkingUpdate ? "检查中…" : model.lastUpdateNote,
-                                showsChevron: model.lastUpdateDownloadURL != nil) {
-                        Task { await checkForUpdate() }
-                    }
-                    if let updateURL = model.lastUpdateDownloadURL {
-                        Divider().padding(.leading, 58)
-                        if let release = downloadableRelease {
-                            // Manifest path: size + SHA-256 are known, so the
-                            // IPA can be downloaded in-app with resume and
-                            // verification. The fallback path (decision nil)
-                            // keeps the Safari Link below instead.
-                            if let downloadedIPA = model.downloadedIPA {
-                                Divider().padding(.leading, 58)
-                                ShareLink(item: downloadedIPA) {
-                                    HStack(spacing: 12) {
-                                        iconBadge("square.and.arrow.up.fill", color: .green)
-                                        Text("分享 IPA，在 SideStore 中打开")
-                                            .font(.system(size: 16, weight: .medium))
-                                            .foregroundStyle(Theme.ink)
-                                        Spacer()
-                                        Image(systemName: "chevron.right")
-                                            .font(.system(size: 12, weight: .bold))
-                                            .foregroundStyle(Theme.secondary.opacity(0.6))
-                                    }
-                                    .padding(.vertical, 9)
-                                    .padding(.horizontal, 4)
-                                    .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                            } else if model.downloadingUpdate {
-                                Divider().padding(.leading, 58)
-                                VStack(alignment: .leading, spacing: 8) {
-                                    HStack(spacing: 12) {
-                                        iconBadge("arrow.down.circle.fill", color: .teal)
-                                        Text(downloadProgressText)
-                                            .font(.system(size: 16, weight: .medium))
-                                            .foregroundStyle(Theme.ink)
-                                    }
-                                    ProgressView(value: model.downloadProgress ?? 0)
-                                        .padding(.leading, 42)
-                                }
-                                .padding(.vertical, 9)
-                                .padding(.horizontal, 4)
-                            } else {
-                                Divider().padding(.leading, 58)
-                                settingsRow(icon: "arrow.down.circle.fill", color: .green,
-                                            title: "下载新版 IPA", value: nil) {
-                                    Task { await downloadUpdate(release: release) }
-                                }
-                                if let downloadError = model.downloadError {
-                                    Text("下载失败（\(downloadError)），也可以点下面的链接用浏览器下载。")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            Divider().padding(.leading, 58)
-                        }
-                        Link(destination: updateURL) {
-                            HStack(spacing: 12) {
-                                iconBadge("square.and.arrow.down.fill", color: .green)
-                                Text("在浏览器中下载")
-                                    .font(.system(size: 16, weight: .medium))
-                                    .foregroundStyle(Theme.ink)
-                                Spacer()
-                                Image(systemName: "arrow.up.forward.app")
-                                    .font(.system(size: 13, weight: .bold))
-                                    .foregroundStyle(Theme.secondary.opacity(0.6))
-                            }
-                            .padding(.vertical, 9)
-                            .padding(.horizontal, 4)
-                            .contentShape(Rectangle())
+                // 分组导航（六个分区均已抽子页：课表卡三行 + 通用卡三行）
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("课表")
+                        .font(.system(size: 15, weight: .heavy, design: .rounded))
+                        .foregroundStyle(Theme.ink)
+                        .padding(.leading, 4)
+                    VStack(spacing: 0) {
+                        NavigationLink {
+                            PeriodsSettingsView(semester: $semester, didLoadSemester: didLoadSemester, saveSemester: { draft in saveSemesterDraft(draft) })
+                        } label: {
+                            navRow(icon: "clock.fill", color: .blue, title: "上课时间", value: periodsSummary)
                         }
                         .buttonStyle(.plain)
-                        Text("安装步骤（SideStore）：① 点上面下载，IPA 会存进「文件」；② 打开 LocalDevVPN 点连接；③ 打开 SideStore，点 + 选中刚下载的 IPA，签好自动装上，课表数据不会丢。还没装 SideStore 的话，首次需要在电脑上用 iloader 装一次，装好后以后更新都不用电脑。")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        Divider().padding(.leading, 58)
+                        NavigationLink {
+                            SemesterSettingsView(semester: $semester, didLoadSemester: didLoadSemester, saveSemester: { draft in saveSemesterDraft(draft) })
+                        } label: {
+                            navRow(icon: "calendar", color: .red, title: "学期", value: semesterSummary)
+                        }
+                        .buttonStyle(.plain)
+                        Divider().padding(.leading, 58)
+                        NavigationLink {
+                            HolidaySettingsView(semester: $semester, saveSemester: { draft in saveSemesterDraft(draft) })
+                        } label: {
+                            navRow(icon: "beach.umbrella.fill", color: .orange, title: "假期与不上课时段", value: holidaySummary)
+                        }
+                        .buttonStyle(.plain)
                     }
+                    .settingsCard(padding: 6)
+                }
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("通用")
+                        .font(.system(size: 15, weight: .heavy, design: .rounded))
+                        .foregroundStyle(Theme.ink)
+                        .padding(.leading, 4)
+                    VStack(spacing: 0) {
+                        NavigationLink {
+                            ReminderSettingsView(semester: $semester, didLoadSemester: didLoadSemester, saveSemester: { draft in saveSemesterDraft(draft) })
+                        } label: {
+                            navRow(icon: "bell.fill", color: .orange, title: "提醒", value: reminderSummary)
+                        }
+                        .buttonStyle(.plain)
+                        Divider().padding(.leading, 58)
+                        NavigationLink {
+                            DataSettingsView()
+                        } label: {
+                            navRow(icon: "square.and.arrow.up.fill", color: Theme.accent, title: "数据", value: "本地存储")
+                        }
+                        .buttonStyle(.plain)
+                        Divider().padding(.leading, 58)
+                        NavigationLink {
+                            AboutSettingsView()
+                        } label: {
+                            navRow(icon: "info.circle.fill", color: .indigo, title: "关于", value: aboutSummary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .settingsCard(padding: 6)
                 }
             }
             .padding(20)
         }
         .scrollIndicators(.hidden)
+        .navigationTitle("我的")
         .background(Theme.background.ignoresSafeArea())
-        .sheet(isPresented: $showCalendarImport) {
-            CalendarImportView(onConfirm: { drafts in mergeHolidays(drafts) }, onOpenMail: {
-                showCalendarImport = false
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showMailCancel = true }
-            })
-        }
-        .sheet(isPresented: $showMailCancel) {
-            MailCancelView { record in mergeCancellation(record) }
-        }
         .onAppear {
             if !didLoadSemester || semester == lastSyncedSemester {
                 semester = model.document.semester
@@ -435,161 +132,72 @@ struct SettingsView: View {
                 lastSyncedSemester = newValue
             }
         }
-        .sheet(isPresented: $showChangelog) { ChangelogView() }
         .sheet(isPresented: $model.showThemeGallery) { ThemeGalleryView() }
         .sheet(isPresented: $model.showStudyDesk) { StudyDeskView() }
-        .fileExporter(
-            isPresented: $exporting,
-            document: exportDocument,
-            contentType: .json,
-            defaultFilename: "课曜课表.json"
-        ) { result in
-            if case .failure = result { model.banner = "导出没有完成" }
-        }
     }
 
     // MARK: building blocks
 
-    private var notificationDotColor: Color {
-        switch model.notificationStatusText {
-        case "已允许", "已开启": return .green
-        case "已拒绝": return .red
-        default: return .orange
+    /// 学期 / 上课时间 / 提醒三个子页共用的保存入口：走同一个
+    /// AppModel.updateSemester()。成功时把回写的文档同步回草稿并更新
+    /// lastSyncedSemester（否则 onChange 的守卫会把之后的外来文档变更挡掉）；
+    /// 失败返回错误文案，由子页就地显示。
+    func saveSemesterDraft(_ draft: Semester) -> String? {
+        if let error = model.updateSemester(draft) {
+            return error
         }
+        semester = model.document.semester
+        lastSyncedSemester = semester
+        return nil
     }
 
-    private func iconBadge(_ icon: String, color: Color) -> some View {
-        Image(systemName: icon)
-            .font(.system(size: 15, weight: .semibold))
-            .foregroundStyle(.white)
-            .frame(width: 30, height: 30)
-            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(color))
-    }
-
-    private var semesterEndText: String {
-        guard let end = SemesterCalendar.endDate(semester: semester, calendar: model.calendar) else { return "—" }
-        let cal = model.calendar
-        return "\(cal.component(.year, from: end))年\(cal.component(.month, from: end))月\(cal.component(.day, from: end))日（自动推算）"
-    }
-
-    private func holidayRangeText(_ holiday: HolidayPeriod) -> String {
-        func md(_ civil: String) -> String {
-            let parts = civil.split(separator: "-")
-            guard parts.count == 3, let m = Int(parts[1]), let d = Int(parts[2]) else { return civil }
-            return "\(m)月\(d)日"
-        }
-        return holiday.startDate == holiday.endDate ? md(holiday.startDate) : "\(md(holiday.startDate)) – \(md(holiday.endDate))"
-    }
-
-    private func saveHolidays() {
-        if let error = model.updateSemester(semester) {
-            errorText = error
-        } else {
-            errorText = nil
-            semester = model.document.semester
-            lastSyncedSemester = semester
-        }
-    }
-
-    private func cancellationDetailText(_ entry: ClassCancellation) -> String {
-        let parts = entry.date.split(separator: "-")
-        let md = parts.count == 3 ? "\(Int(parts[1]) ?? 0)月\(Int(parts[2]) ?? 0)日" : entry.date
-        let scope = ["day": "全天", "all": "当天全部节次", "am": "上午", "pm": "下午"][entry.scope] ?? entry.scope
-        return entry.reason.isEmpty ? "\(md) · \(scope)" : "\(md) · \(scope) · \(entry.reason)"
-    }
-
-    private func mergeCancellation(_ record: ClassCancellation) {
-        if !semester.cancellations.contains(where: { $0.date == record.date && $0.courseID == record.courseID && $0.scope == record.scope }) {
-            semester.cancellations.append(record)
-        }
-        saveHolidays()
-    }
-
-    private func mergeHolidays(_ drafts: [HolidayPeriod]) {
-        for draft in drafts where !semester.holidays.contains(where: { $0.name == draft.name && $0.startDate == draft.startDate && $0.endDate == draft.endDate }) {
-            semester.holidays.append(draft)
-        }
-        saveHolidays()
-    }
-
-    private func settingsRow(icon: String, color: Color, title: String, value: String?,
-                             destructive: Bool = false, showsChevron: Bool = true, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                iconBadge(icon, color: color)
-                Text(title)
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(destructive ? .red : Theme.ink)
-                Spacer()
-                if let value {
-                    Text(value).font(.system(size: 14)).foregroundStyle(Theme.secondary)
-                }
-                if showsChevron {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(Theme.secondary.opacity(0.6))
-                }
-            }
-            .padding(.vertical, 9)
-            .padding(.horizontal, 4)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func saveButton(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+    /// NavigationLink 行：与 settingsRow 同一套行布局（图标 + 标题 + 摘要值 + >）。
+    /// settingsRow 本身是 Button，不能嵌进 NavigationLink 里，所以这里只复用行内容。
+    private func navRow(icon: String, color: Color, title: String, value: String?) -> some View {
+        HStack(spacing: 12) {
+            iconBadge(icon, color: color)
             Text(title)
-                .font(.system(size: 16, weight: .bold))
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .frame(height: 48)
-                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.accent))
-        }
-        .buttonStyle(JournalPressStyle())
-    }
-
-    private func tintedButton(_ title: String, icon: String, color: Color, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                Text(title)
-            }
-            .font(.system(size: 14, weight: .bold))
-            .foregroundStyle(color)
-            .frame(maxWidth: .infinity)
-            .frame(height: 42)
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(color.opacity(0.12)))
-        }
-        .buttonStyle(JournalPressStyle())
-    }
-
-    private func noteCard(_ text: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "info.circle.fill")
-                .font(.system(size: 13))
-                .foregroundStyle(Theme.secondary)
-            Text(text)
-                .font(.footnote)
-                .foregroundStyle(Theme.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.background.opacity(0.65)))
-    }
-
-    private func section(_ title: String, @ViewBuilder content: () -> some View) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.system(size: 15, weight: .heavy, design: .rounded))
+                .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(Theme.ink)
-                .padding(.leading, 4)
-            VStack(alignment: .leading, spacing: 12) {
-                content()
+            Spacer()
+            if let value {
+                Text(value).font(.system(size: 14)).foregroundStyle(Theme.secondary)
             }
-            .settingsCard()
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(Theme.secondary.opacity(0.6))
         }
+        .padding(.vertical, 9)
+        .padding(.horizontal, 4)
+        .contentShape(Rectangle())
+    }
+
+    private var periodsSummary: String {
+        let sorted = semester.periods.sorted { $0.index < $1.index }
+        guard let first = sorted.first, let last = sorted.last else { return "未设置" }
+        return "\(sorted.count) 节 · \(first.start)–\(last.end)"
+    }
+
+    private var semesterSummary: String {
+        let name = semester.name.isEmpty ? "学期" : semester.name
+        return "\(name) · 共 \(semester.totalWeeks) 周"
+    }
+
+    private var reminderSummary: String {
+        let minutes = semester.defaultReminderMinutes == 0
+            ? "默认不提醒"
+            : "提前 \(semester.defaultReminderMinutes) 分钟"
+        let allowed = model.notificationStatusText == "已允许" || model.notificationStatusText == "已开启"
+        return "\(minutes) · 通知\(allowed ? "已允许" : "未允许")"
+    }
+
+    private var holidaySummary: String {
+        if semester.holidays.isEmpty && semester.cancellations.isEmpty { return "未设置" }
+        return "\(semester.holidays.count) 段假期 · \(semester.cancellations.count) 条停课"
+    }
+
+    private var aboutSummary: String {
+        "版本 \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0")"
     }
 
     private func notice(_ text: String) -> some View {
@@ -601,16 +209,60 @@ struct SettingsView: View {
             .background(Theme.hero, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
-    private func labeledField(_ title: String, text: Binding<String>) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.caption.weight(.bold)).foregroundStyle(Theme.secondary)
-            TextField(title, text: text)
-                .font(.system(size: 16, weight: .medium))
-                .padding(.horizontal, 12)
-                .frame(height: 44)
-                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.background))
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Theme.line, lineWidth: 1))
+}
+
+// MARK: - 设置子页（T2：学期 / 上课时间 / 提醒）
+//
+// 三个子页共用 SettingsView 的 @State semester 草稿（Binding 下传），保存都
+// 走 SettingsView.saveSemesterDraft（即同一个 AppModel.updateSemester()）。
+// 未保存就返回时不弹窗，草稿留在内存里，回来还能看到（D3）。
+
+struct SemesterSettingsView: View {
+    @Binding var semester: Semester
+    var didLoadSemester: Bool
+    var saveSemester: (Semester) -> String?
+    @Environment(AppModel.self) private var model
+    @State private var errorText: String?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                labeledField("名称", text: $semester.name)
+                labeledField("简称", text: $semester.shortName)
+                HStack(spacing: 12) {
+                    iconBadge("calendar", color: .red)
+                    Text("开始日期").font(.system(size: 16, weight: .medium)).foregroundStyle(Theme.ink)
+                    Spacer()
+                    DatePicker("开始日期", selection: startDateBinding, displayedComponents: .date)
+                        .labelsHidden()
+                }
+                HStack(spacing: 12) {
+                    iconBadge("number", color: .orange)
+                    Stepper(value: $semester.totalWeeks, in: 1...30) {
+                        Text("共 \(semester.totalWeeks) 周").font(.system(size: 16, weight: .medium))
+                    }
+                }
+                HStack(spacing: 12) {
+                    iconBadge("flag.checkered", color: .purple)
+                    Text("结束日期").font(.system(size: 16, weight: .medium)).foregroundStyle(Theme.ink)
+                    Spacer()
+                    Text(semesterEndText).font(.system(size: 14)).foregroundStyle(Theme.secondary)
+                }
+                if let errorText {
+                    Text(errorText).font(.footnote).foregroundStyle(.red)
+                }
+                saveButton("保存学期") {
+                    errorText = saveSemester(semester)
+                }
+                .disabled(!didLoadSemester)
+            }
+            .settingsCard()
+            .padding(20)
         }
+        .scrollIndicators(.hidden)
+        .navigationTitle("学期")
+        .navigationBarTitleDisplayMode(.inline)
+        .background(Theme.background.ignoresSafeArea())
     }
 
     private var startDateBinding: Binding<Date> {
@@ -622,6 +274,67 @@ struct SettingsView: View {
                 semester.startDate = SemesterCalendar.formatCivil(newValue, calendar: model.calendar)
             }
         )
+    }
+
+    private var semesterEndText: String {
+        guard let end = SemesterCalendar.endDate(semester: semester, calendar: model.calendar) else { return "—" }
+        let cal = model.calendar
+        return "\(cal.component(.year, from: end))年\(cal.component(.month, from: end))月\(cal.component(.day, from: end))日（自动推算）"
+    }
+}
+
+struct PeriodsSettingsView: View {
+    @Binding var semester: Semester
+    var didLoadSemester: Bool
+    var saveSemester: (Semester) -> String?
+    @Environment(AppModel.self) private var model
+    @State private var errorText: String?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(semester.periods) { period in
+                    HStack(spacing: 10) {
+                        Text("第 \(period.index) 节")
+                            .font(.system(size: 13, weight: .heavy))
+                            .foregroundStyle(Theme.accentInk)
+                            .frame(width: 52, height: 34)
+                            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.accent.opacity(0.12)))
+                        Spacer()
+                        DatePicker("开始", selection: timeBinding(period.index, isStart: true), displayedComponents: .hourAndMinute)
+                            .labelsHidden()
+                        Text("–").foregroundStyle(Theme.secondary)
+                        DatePicker("结束", selection: timeBinding(period.index, isStart: false), displayedComponents: .hourAndMinute)
+                            .labelsHidden()
+                    }
+                    if period.index != semester.periods.last?.index {
+                        Divider()
+                    }
+                }
+                HStack(spacing: 10) {
+                    tintedButton("添加一节", icon: "plus.circle.fill", color: .green) { addPeriod() }
+                    tintedButton("删除最后一节", icon: "trash.fill", color: .red) { removeLastPeriod() }
+                }
+                if let errorText {
+                    Text(errorText).font(.footnote).foregroundStyle(.red)
+                }
+                saveButton("保存节次与学期") {
+                    errorText = saveSemester(semester)
+                }
+                .disabled(!didLoadSemester)
+                HStack(spacing: 10) {
+                    tintedButton("30 分钟 × 20 节", icon: "rectangle.grid.3x2.fill", color: .blue) { applyPeriodTemplate(minutes: 30, count: 20) }
+                    tintedButton("45 分钟 × 10 节", icon: "rectangle.grid.2x2.fill", color: .gray) { applyPeriodTemplate(minutes: 45, count: 10) }
+                }
+                noteCard("节次按序号连续排列。删除只允许从最后一节开始，并且不能还有课程占用它。保存会连同学期名称、周数和默认提醒一起写入本机。上面两个模板从 08:00 起排：30 分钟 × 20 节是里斯本 IST 的节次表，套用后先别保存，核对无误再点保存（保存前 App 会自动把当前课表存进课表库备份）。")
+            }
+            .settingsCard()
+            .padding(20)
+        }
+        .scrollIndicators(.hidden)
+        .navigationTitle("上课时间")
+        .navigationBarTitleDisplayMode(.inline)
+        .background(Theme.background.ignoresSafeArea())
     }
 
     private func timeBinding(_ index: Int, isStart: Bool) -> Binding<Date> {
@@ -721,6 +434,77 @@ struct SettingsView: View {
         }
         semester.periods.removeAll { $0.index == last }
     }
+}
+
+struct ReminderSettingsView: View {
+    @Binding var semester: Semester
+    var didLoadSemester: Bool
+    var saveSemester: (Semester) -> String?
+    @Environment(AppModel.self) private var model
+    @State private var errorText: String?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                    iconBadge("bell.fill", color: .orange)
+                    Stepper(value: $semester.defaultReminderMinutes, in: 0...120) {
+                        Text(semester.defaultReminderMinutes == 0 ? "默认不提醒" : "默认提前 \(semester.defaultReminderMinutes) 分钟")
+                            .font(.system(size: 16, weight: .medium))
+                    }
+                }
+                HStack(spacing: 12) {
+                    iconBadge("bell.badge.fill", color: .pink)
+                    Circle()
+                        .fill(notificationDotColor)
+                        .frame(width: 9, height: 9)
+                    Text("通知权限：\(model.notificationStatusText)")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(Theme.ink)
+                    Spacer()
+                    Button("检查") {
+                        Task {
+                            _ = await ReminderScheduler.shared.requestAuthorization()
+                            await model.refreshNotificationStatus()
+                        }
+                    }
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(Theme.accent)
+                    .padding(.horizontal, 14).padding(.vertical, 7)
+                    .background(Capsule().fill(Theme.accent.opacity(0.12)))
+                    .buttonStyle(JournalPressStyle())
+                }
+                if model.notificationStatusText == "已拒绝" {
+                    settingsRow(icon: "gearshape.fill", color: .gray,
+                                title: "打开系统设置去允许", value: nil) {
+                        openSettings()
+                    }
+                }
+                if let errorText {
+                    Text(errorText).font(.footnote).foregroundStyle(.red)
+                }
+                saveButton("保存提醒") {
+                    errorText = saveSemester(semester)
+                }
+                .disabled(!didLoadSemester)
+                noteCard("开启某门课的提醒时才会向系统请求权限。允许后，课曜会在本地安排最多 \(NotificationPlan.pendingLimit) 条即将上课的通知。")
+            }
+            .settingsCard()
+            .padding(20)
+        }
+        .scrollIndicators(.hidden)
+        .navigationTitle("提醒")
+        .navigationBarTitleDisplayMode(.inline)
+        .background(Theme.background.ignoresSafeArea())
+    }
+
+    private var notificationDotColor: Color {
+        switch model.notificationStatusText {
+        case "已允许", "已开启": return .green
+        case "已拒绝": return .red
+        default: return .orange
+        }
+    }
 
     private func openSettings() {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
@@ -728,52 +512,362 @@ struct SettingsView: View {
     }
 }
 
-extension View {
-    func settingsCard(padding: CGFloat = 16) -> some View {
-        self
-            .padding(padding)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.elevated, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+// MARK: - 设置子页（T3：假期 / 数据 / 关于）
+//
+// 假期子页共用 SettingsView 的 @State semester 草稿（Binding 下传），改动
+// 仍立即保存（saveHolidays → 同一个 AppModel.updateSemester()）；数据、
+// 关于子页只读 AppModel 的共享状态（导出 fileExporter 与更新日志 / 检查
+// 更新的本地 @State 随子页走）。未保存就返回时不弹窗（D3）。
+
+struct HolidaySettingsView: View {
+    @Binding var semester: Semester
+    var saveSemester: (Semester) -> String?
+    @Environment(AppModel.self) private var model
+    @State private var showCalendarImport = false
+    @State private var showMailCancel = false
+    @State private var newHolidayName = ""
+    @State private var newHolidayStart = Date()
+    @State private var newHolidayEnd = Date()
+    @State private var errorText: String?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                if semester.holidays.isEmpty {
+                    Text("还没有假期。导入校历、拍照识别，或在下面手动加一段——假期内的课会自动跳过、不提醒。")
+                        .font(.system(size: 13.5, design: .rounded))
+                        .foregroundStyle(Theme.secondary)
+                }
+                ForEach(semester.holidays.sorted { $0.startDate < $1.startDate }) { holiday in
+                    HStack(spacing: 12) {
+                        iconBadge("beach.umbrella.fill", color: .orange)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(holiday.name).font(.system(size: 15.5, weight: .semibold)).foregroundStyle(Theme.ink)
+                            Text(holidayRangeText(holiday)).font(.system(size: 12.5)).foregroundStyle(Theme.secondary)
+                        }
+                        Spacer()
+                        Button(role: .destructive) {
+                            semester.holidays.removeAll { $0.id == holiday.id }
+                            saveHolidays()
+                        } label: {
+                            Image(systemName: "trash").foregroundStyle(.red)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                Divider()
+                labeledField("新时段名称", text: $newHolidayName)
+                HStack(spacing: 12) {
+                    Text("开始").font(.system(size: 14)).foregroundStyle(Theme.secondary)
+                    DatePicker("开始", selection: $newHolidayStart, displayedComponents: .date).labelsHidden()
+                    Spacer()
+                    Text("结束").font(.system(size: 14)).foregroundStyle(Theme.secondary)
+                    DatePicker("结束", selection: $newHolidayEnd, displayedComponents: .date).labelsHidden()
+                }
+                saveButton("添加时段") {
+                    let name = newHolidayName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let start = SemesterCalendar.formatCivil(newHolidayStart, calendar: model.calendar)
+                    let end = SemesterCalendar.formatCivil(newHolidayEnd, calendar: model.calendar)
+                    semester.holidays.append(HolidayPeriod(id: UUID(), name: name.isEmpty ? "不上课" : name, startDate: min(start, end), endDate: max(start, end)))
+                    newHolidayName = ""
+                    saveHolidays()
+                }
+                Button {
+                    showCalendarImport = true
+                } label: {
+                    HStack(spacing: 12) {
+                        iconBadge("calendar.badge.plus", color: .teal)
+                        Text("校历导入").font(.system(size: 16, weight: .medium)).foregroundStyle(Theme.ink)
+                        Spacer()
+                        Text("文件 / 拍照识别").font(.system(size: 13)).foregroundStyle(Theme.secondary)
+                        Image(systemName: "chevron.right").font(.system(size: 12, weight: .bold)).foregroundStyle(Theme.secondary.opacity(0.6))
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                Divider()
+                Button {
+                    showMailCancel = true
+                } label: {
+                    HStack(spacing: 12) {
+                        iconBadge("envelope.badge.fill", color: .pink)
+                        Text("邮件停课识别").font(.system(size: 16, weight: .medium)).foregroundStyle(Theme.ink)
+                        Spacer()
+                        Text("粘贴 / 截图").font(.system(size: 13)).foregroundStyle(Theme.secondary)
+                        Image(systemName: "chevron.right").font(.system(size: 12, weight: .bold)).foregroundStyle(Theme.secondary.opacity(0.6))
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                if !semester.cancellations.isEmpty {
+                    Divider()
+                    Text("停课记录")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.secondary)
+                    ForEach(semester.cancellations.sorted { $0.date < $1.date }) { entry in
+                        HStack(spacing: 12) {
+                            iconBadge("calendar.badge.minus", color: .red)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(entry.courseID == nil ? "全天停课" : entry.courseName).font(.system(size: 15.5, weight: .semibold)).foregroundStyle(Theme.ink)
+                                Text(cancellationDetailText(entry)).font(.system(size: 12.5)).foregroundStyle(Theme.secondary)
+                            }
+                            Spacer()
+                            Button(role: .destructive) {
+                                semester.cancellations.removeAll { $0.id == entry.id }
+                                saveHolidays()
+                            } label: {
+                                Image(systemName: "trash").foregroundStyle(.red)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                if let errorText {
+                    Text(errorText).font(.footnote).foregroundStyle(.red)
+                }
+            }
+            .settingsCard()
+            .padding(20)
+        }
+        .scrollIndicators(.hidden)
+        .navigationTitle("假期与不上课时段")
+        .navigationBarTitleDisplayMode(.inline)
+        .background(Theme.background.ignoresSafeArea())
+        .sheet(isPresented: $showCalendarImport) {
+            CalendarImportView(onConfirm: { drafts in mergeHolidays(drafts) }, onOpenMail: {
+                showCalendarImport = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showMailCancel = true }
+            })
+        }
+        .sheet(isPresented: $showMailCancel) {
+            MailCancelView { record in mergeCancellation(record) }
+        }
+    }
+
+    /// 假期 / 停课立即保存：走与学期子页同一个 updateSemester() 入口，
+    /// 成功时草稿由 saveSemester 回写同步（经 Binding 传回 SettingsView）。
+    private func saveHolidays() {
+        errorText = saveSemester(semester)
+    }
+
+    private func holidayRangeText(_ holiday: HolidayPeriod) -> String {
+        func md(_ civil: String) -> String {
+            let parts = civil.split(separator: "-")
+            guard parts.count == 3, let m = Int(parts[1]), let d = Int(parts[2]) else { return civil }
+            return "\(m)月\(d)日"
+        }
+        return holiday.startDate == holiday.endDate ? md(holiday.startDate) : "\(md(holiday.startDate)) – \(md(holiday.endDate))"
+    }
+
+    private func cancellationDetailText(_ entry: ClassCancellation) -> String {
+        let parts = entry.date.split(separator: "-")
+        let md = parts.count == 3 ? "\(Int(parts[1]) ?? 0)月\(Int(parts[2]) ?? 0)日" : entry.date
+        let scope = ["day": "全天", "all": "当天全部节次", "am": "上午", "pm": "下午"][entry.scope] ?? entry.scope
+        return entry.reason.isEmpty ? "\(md) · \(scope)" : "\(md) · \(scope) · \(entry.reason)"
+    }
+
+    private func mergeCancellation(_ record: ClassCancellation) {
+        if !semester.cancellations.contains(where: { $0.date == record.date && $0.courseID == record.courseID && $0.scope == record.scope }) {
+            semester.cancellations.append(record)
+        }
+        saveHolidays()
+    }
+
+    private func mergeHolidays(_ drafts: [HolidayPeriod]) {
+        for draft in drafts where !semester.holidays.contains(where: { $0.name == draft.name && $0.startDate == draft.startDate && $0.endDate == draft.endDate }) {
+            semester.holidays.append(draft)
+        }
+        saveHolidays()
     }
 }
 
-struct ChangelogView: View {
-    @Environment(\.dismiss) private var dismiss
+struct DataSettingsView: View {
+    @Environment(AppModel.self) private var model
+    @State private var exporting = false
+    @State private var exportDocument = JSONFileDocument(data: Data())
 
     var body: some View {
-        NavigationStack {
-            List {
-                ForEach(AppChangelog.entries, id: \.version) { entry in
-                    Section {
-                        ForEach(entry.changes, id: \.self) { change in
-                            HStack(alignment: .top, spacing: 8) {
-                                Text("·").foregroundStyle(.secondary)
-                                Text(change)
-                            }
-                        }
-                    } header: {
-                        Text("\(entry.version) · \(entry.title)")
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                settingsRow(icon: "square.and.arrow.up.fill", color: Theme.accent,
+                            title: "导出 JSON", value: nil) {
+                    if let data = try? model.exportData() {
+                        exportDocument = JSONFileDocument(data: data)
+                        exporting = true
                     }
                 }
-            }
-            .navigationTitle("更新日志")
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("完成") { dismiss() }
+                Divider().padding(.leading, 58)
+                settingsRow(icon: "square.and.arrow.down.fill", color: .green,
+                            title: "导入 JSON", value: nil) {
+                    model.showImporter = true
                 }
+                Divider().padding(.leading, 58)
+                settingsRow(icon: "sparkles", color: .purple,
+                            title: "智能导入课表", value: "图片 / 文件 / 文本") {
+                    model.showSmartImport = true
+                }
+                Divider().padding(.leading, 58)
+                settingsRow(icon: "arrow.counterclockwise", color: .orange,
+                            title: "恢复演示数据", value: nil) {
+                    model.confirmReset = true
+                }
+                Divider().padding(.leading, 58)
+                settingsRow(icon: "trash.fill", color: .red,
+                            title: "清空课程", value: nil, destructive: true) {
+                    model.confirmClear = true
+                }
+                noteCard("导入会替换当前课表。文件需要 schemaVersion \(StoreDocument.currentSchema)。没有校园账号，也不会查询成绩。")
             }
+            .settingsCard()
+            .padding(20)
+        }
+        .scrollIndicators(.hidden)
+        .navigationTitle("数据")
+        .navigationBarTitleDisplayMode(.inline)
+        .background(Theme.background.ignoresSafeArea())
+        .fileExporter(
+            isPresented: $exporting,
+            document: exportDocument,
+            contentType: .json,
+            defaultFilename: "课曜课表.json"
+        ) { result in
+            if case .failure = result { model.banner = "导出没有完成" }
         }
     }
 }
 
-extension SettingsView {
+struct AboutSettingsView: View {
+    @Environment(AppModel.self) private var model
+    @State private var showChangelog = false
+    @State private var checkingUpdate = false
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 14) {
+                    Text("课")
+                        .font(.system(size: 26, weight: .heavy, design: .rounded))
+                        .foregroundStyle(.white)
+                        .frame(width: 54, height: 54)
+                        .background(RoundedRectangle(cornerRadius: 15, style: .continuous)
+                            .fill(LinearGradient(colors: [Theme.accent, Color(red: 0.55, green: 0.35, blue: 0.98)],
+                                                 startPoint: .topLeading, endPoint: .bottomTrailing)))
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("课曜 / Heptara").font(.system(size: 17, weight: .bold)).foregroundStyle(Theme.ink)
+                        Text("版本 \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0")")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Theme.accentInk)
+                            .padding(.horizontal, 8).padding(.vertical, 2)
+                            .background(Capsule().fill(Theme.accent.opacity(0.12)))
+                    }
+                    Spacer()
+                }
+                Text("独立设计的本地课表。界面参考了常见的周课表和彩色课程卡片，不是「超级课程表」官方产品，也不追求与它功能一致。课程、教师、教室和时间都可以是你自己的数据；首次打开时的示例已标明为演示数据。")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Divider()
+                settingsRow(icon: "newspaper.fill", color: .indigo,
+                            title: "更新日志", value: AppChangelog.entries.first?.version) {
+                    showChangelog = true
+                }
+                Divider().padding(.leading, 58)
+                settingsRow(icon: "arrow.down.circle.fill", color: .teal,
+                            title: "检查更新", value: checkingUpdate ? "检查中…" : model.lastUpdateNote,
+                            showsChevron: model.lastUpdateDownloadURL != nil) {
+                    Task { await checkForUpdate() }
+                }
+                if let updateURL = model.lastUpdateDownloadURL {
+                    Divider().padding(.leading, 58)
+                    if let release = downloadableRelease {
+                        // Manifest path: size + SHA-256 are known, so the
+                        // IPA can be downloaded in-app with resume and
+                        // verification. The fallback path (decision nil)
+                        // keeps the Safari Link below instead.
+                        if let downloadedIPA = model.downloadedIPA {
+                            Divider().padding(.leading, 58)
+                            ShareLink(item: downloadedIPA) {
+                                HStack(spacing: 12) {
+                                    iconBadge("square.and.arrow.up.fill", color: .green)
+                                    Text("分享 IPA，在 SideStore 中打开")
+                                        .font(.system(size: 16, weight: .medium))
+                                        .foregroundStyle(Theme.ink)
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 12, weight: .bold))
+                                        .foregroundStyle(Theme.secondary.opacity(0.6))
+                                }
+                                .padding(.vertical, 9)
+                                .padding(.horizontal, 4)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        } else if model.downloadingUpdate {
+                            Divider().padding(.leading, 58)
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(spacing: 12) {
+                                    iconBadge("arrow.down.circle.fill", color: .teal)
+                                    Text(downloadProgressText)
+                                        .font(.system(size: 16, weight: .medium))
+                                        .foregroundStyle(Theme.ink)
+                                }
+                                ProgressView(value: model.downloadProgress ?? 0)
+                                    .padding(.leading, 42)
+                            }
+                            .padding(.vertical, 9)
+                            .padding(.horizontal, 4)
+                        } else {
+                            Divider().padding(.leading, 58)
+                            settingsRow(icon: "arrow.down.circle.fill", color: .green,
+                                        title: "下载新版 IPA", value: nil) {
+                                Task { await downloadUpdate(release: release) }
+                            }
+                            if let downloadError = model.downloadError {
+                                Text("下载失败（\(downloadError)），也可以点下面的链接用浏览器下载。")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        Divider().padding(.leading, 58)
+                    }
+                    Link(destination: updateURL) {
+                        HStack(spacing: 12) {
+                            iconBadge("square.and.arrow.down.fill", color: .green)
+                            Text("在浏览器中下载")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundStyle(Theme.ink)
+                            Spacer()
+                            Image(systemName: "arrow.up.forward.app")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(Theme.secondary.opacity(0.6))
+                        }
+                        .padding(.vertical, 9)
+                        .padding(.horizontal, 4)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    Text("安装步骤（SideStore）：① 点上面下载，IPA 会存进「文件」；② 打开 LocalDevVPN 点连接；③ 打开 SideStore，点 + 选中刚下载的 IPA，签好自动装上，课表数据不会丢。还没装 SideStore 的话，首次需要在电脑上用 iloader 装一次，装好后以后更新都不用电脑。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .settingsCard()
+            .padding(20)
+        }
+        .scrollIndicators(.hidden)
+        .navigationTitle("关于")
+        .navigationBarTitleDisplayMode(.inline)
+        .background(Theme.background.ignoresSafeArea())
+        .sheet(isPresented: $showChangelog) { ChangelogView() }
+    }
+
     /// Drives the "检查更新" row from `UpdateService`: the `latest.json`
     /// manifest first, the GitHub Releases API path on any manifest failure.
     /// The result is applied to the shared `AppModel` state (row note,
     /// download link, blocking alert) so a silent auto-check surfaces the
     /// same way a manual tap does. The row itself is unchanged — "新版 X" +
     /// download link, "已是最新版", or "检查失败".
-    func checkForUpdate() async {
+    private func checkForUpdate() async {
         checkingUpdate = true
         // A manual re-check must not wipe a finished download: keep the
         // IPA when the new check returns the same version.
@@ -822,6 +916,132 @@ extension SettingsView {
     }
 }
 
+// MARK: - 设置页共用 building blocks（文件级：SettingsView 与各子页共用）
+
+private func iconBadge(_ icon: String, color: Color) -> some View {
+    Image(systemName: icon)
+        .font(.system(size: 15, weight: .semibold))
+        .foregroundStyle(.white)
+        .frame(width: 30, height: 30)
+        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(color))
+}
+
+private func settingsRow(icon: String, color: Color, title: String, value: String?,
+                         destructive: Bool = false, showsChevron: Bool = true, action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+        HStack(spacing: 12) {
+            iconBadge(icon, color: color)
+            Text(title)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(destructive ? .red : Theme.ink)
+            Spacer()
+            if let value {
+                Text(value).font(.system(size: 14)).foregroundStyle(Theme.secondary)
+            }
+            if showsChevron {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Theme.secondary.opacity(0.6))
+            }
+        }
+        .padding(.vertical, 9)
+        .padding(.horizontal, 4)
+        .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+}
+
+private func saveButton(_ title: String, action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+        Text(title)
+            .font(.system(size: 16, weight: .bold))
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .frame(height: 48)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.accent))
+    }
+    .buttonStyle(JournalPressStyle())
+}
+
+private func tintedButton(_ title: String, icon: String, color: Color, action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+            Text(title)
+        }
+        .font(.system(size: 14, weight: .bold))
+        .foregroundStyle(color)
+        .frame(maxWidth: .infinity)
+        .frame(height: 42)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(color.opacity(0.12)))
+    }
+    .buttonStyle(JournalPressStyle())
+}
+
+private func noteCard(_ text: String) -> some View {
+    HStack(alignment: .top, spacing: 8) {
+        Image(systemName: "info.circle.fill")
+            .font(.system(size: 13))
+            .foregroundStyle(Theme.secondary)
+        Text(text)
+            .font(.footnote)
+            .foregroundStyle(Theme.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+    .padding(12)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.background.opacity(0.65)))
+}
+
+private func labeledField(_ title: String, text: Binding<String>) -> some View {
+    VStack(alignment: .leading, spacing: 6) {
+        Text(title).font(.caption.weight(.bold)).foregroundStyle(Theme.secondary)
+        TextField(title, text: text)
+            .font(.system(size: 16, weight: .medium))
+            .padding(.horizontal, 12)
+            .frame(height: 44)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.background))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Theme.line, lineWidth: 1))
+    }
+}
+
+extension View {
+    func settingsCard(padding: CGFloat = 16) -> some View {
+        self
+            .padding(padding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.elevated, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+}
+
+struct ChangelogView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(AppChangelog.entries, id: \.version) { entry in
+                    Section {
+                        ForEach(entry.changes, id: \.self) { change in
+                            HStack(alignment: .top, spacing: 8) {
+                                Text("·").foregroundStyle(.secondary)
+                                Text(change)
+                            }
+                        }
+                    } header: {
+                        Text("\(entry.version) · \(entry.title)")
+                    }
+                }
+            }
+            .navigationTitle("更新日志")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") { dismiss() }
+                }
+            }
+        }
+    }
+}
 
 // MARK: - 校历导入（文件 .ics 确定性解析 / 拍照 AI 识别，都先出草稿确认页）
 
