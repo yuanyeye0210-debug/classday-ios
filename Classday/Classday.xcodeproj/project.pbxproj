@@ -40,6 +40,8 @@
 		733F2FB3538C58B594B698D4 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86D5D62184444E83513DA3CB /* SettingsView.swift */; };
 		2D8424D94FA3A2667CD17AD5 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		E87DC8F736EB083A4A567171 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D8424D94FA3A2667CD17AD5 /* Theme.swift */; };
+		5609B784286356ED68D69B4B /* UpdateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateService.swift; sourceTree = "<group>"; };
+		2F27B7CAFF3C859BCCA93529 /* UpdateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5609B784286356ED68D69B4B /* UpdateService.swift */; };
 		B61FB45E5AE9433BD8745CBB /* WeekTimetableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeekTimetableView.swift; sourceTree = "<group>"; };
 		E16F0E70A6FED7E71CC334D0 /* WeekTimetableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B61FB45E5AE9433BD8745CBB /* WeekTimetableView.swift */; };
 		CE98D3759A65266B46E1437D /* WidgetReloader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetReloader.swift; sourceTree = "<group>"; };
@@ -84,6 +86,7 @@
 				5D97A7BE3AFA00C81F134D4C /* RootView.swift in Sources */,
 				733F2FB3538C58B594B698D4 /* SettingsView.swift in Sources */,
 				E87DC8F736EB083A4A567171 /* Theme.swift in Sources */,
+				2F27B7CAFF3C859BCCA93529 /* UpdateService.swift in Sources */,
 				E16F0E70A6FED7E71CC334D0 /* WeekTimetableView.swift in Sources */,
 				087F048AC70F5F569FC21C26 /* WidgetReloader.swift in Sources */,
 				9C89DD567E96B8FD972C32D6 /* ClassdayShaders.metal in Sources */,
@@ -179,6 +182,7 @@
 				D376DE14109CCEA5852ED22C /* RootView.swift */,
 				86D5D62184444E83513DA3CB /* SettingsView.swift */,
 				2D8424D94FA3A2667CD17AD5 /* Theme.swift */,
+				5609B784286356ED68D69B4B /* UpdateService.swift */,
 				B61FB45E5AE9433BD8745CBB /* WeekTimetableView.swift */,
 				CE98D3759A65266B46E1437D /* WidgetReloader.swift */,
 			);
