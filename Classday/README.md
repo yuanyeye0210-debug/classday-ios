@@ -44,7 +44,7 @@ The entitlements and `AppGroup.identifier` stay on `group.com.classday.shared`. 
 
 Deep links use `classday://course/<uuid>?meeting=<uuid>`. Notification taps and widget taps open the course detail.
 
-## What 2.9.0 does
+## What 2.9.1 does
 
 - Create, edit, and delete courses: name, teacher, location, department, note, kind, color, weeks, one or more weekday/period meetings, reminder lead time.
 - Semester name, start date, week count, and the ten default period clocks. Overlap is detected by weekday, period span, and shared weeks.
@@ -59,7 +59,7 @@ Deep links use `classday://course/<uuid>?meeting=<uuid>`. Notification taps and 
 - Dynamic Type, VoiceOver labels, portrait iPhone layout, light and dark appearance.
 - Demo seed with reset and clear.
 
-### New in 2.4.0–2.9.0
+### New in 2.4.0–2.9.1
 
 - Per-course grading rules (2.4.0): each course can have its own components (project, quiz, exam…) and weights, and the total is computed automatically. Several candidate formulas can compete and the highest wins, the scale can be 20 or 100 points, and a 20-point total is converted to percent for GPA. A course without a rule keeps direct total entry, and the course detail shows the "total / scale · rule-computed" basis.
 - AI grading-rule recognition (2.5.0): photograph a grading-formula screenshot and AI fills the scale, components, and candidate formulas as a draft to check and correct before saving. It uses Gemini vision; the first use asks for a Google AI Studio key, which is then kept in the device keychain.
@@ -68,6 +68,7 @@ Deep links use `classday://course/<uuid>?meeting=<uuid>`. Notification taps and 
 - SideStore update installs (2.4.1, 2.7.1): after 检查更新 downloads a new version, install it through SideStore — download the IPA to Files, connect LocalDevVPN, then tap + in SideStore and pick the IPA — so later updates no longer need a computer and Sideloadly. 2.7.1 also fixed course-page scrolling by switching to the system native list (swipe-to-delete kept, still with a confirmation first) and changed the install package to an English registered name with a Chinese display name, so SideStore no longer blocks the install.
 - Live Activity and update flow (2.8.0): the lock-screen island now follows the current class — it syncs when the app opens and refreshes in the background instead of freezing on a finished class. 检查更新 reads the update list from classday-releases with a fallback to the GitHub Releases API, downloads the IPA in the app with resume and size + SHA-256 verification, and blocks skipping when an update is mandatory or the installed version is below the minimum supported version.
 - Duplicate-course auto-merge (2.9.0): courses with the same name are detected automatically and merged into one course after one confirmation — sessions and weeks are unioned so GPA counts once, conflicting grades are picked by the user instead of being silently overwritten, the timetable is backed up to the timetable library before merging, and an import that creates duplicates shows a banner to go merge.
+- Settings navigation (2.9.1): the 我的 page is now a grouped navigation home — two cards (课表 / 通用） with six rows, each opening a dedicated sub-page for 上课时间, 学期, 假期与不上课时段, 提醒, 数据, 关于 — instead of expanding all six sections inline; the reminders page has its own save button, and unsaved drafts survive going back.
 
 Earlier releases (2.0.0–2.3.9) added smart import — timetable photos, CSV, Excel, Word, PDF, `.ics`, and pasted text, each course confirmed before it is added — eight themes with tilt-following effects and a different haptic feel per theme, plus exam countdowns, homework, and grade records with GPA.
 
@@ -95,7 +96,7 @@ The version number lives in `Classday/VERSION`, the single source of truth. Chan
 Classday/Tools/bump-version.sh 1.1.0
 ```
 
-The command archives the last commit into `VersionArchive/previous`, then writes the new version. It keeps that immediate previous snapshot and deletes older directories inside `VersionArchive` only. A normal commit does not take a snapshot. The current version is `2.9.0`. Details: [Docs/VERSION_BACKUPS.md](Docs/VERSION_BACKUPS.md). Pull requests run `.github/workflows/classday-version-snapshot.yml`, which fails if a version change did not archive the committed version it replaced.
+The command archives the last commit into `VersionArchive/previous`, then writes the new version. It keeps that immediate previous snapshot and deletes older directories inside `VersionArchive` only. A normal commit does not take a snapshot. The current version is `2.9.1`. Details: [Docs/VERSION_BACKUPS.md](Docs/VERSION_BACKUPS.md). Pull requests run `.github/workflows/classday-version-snapshot.yml`, which fails if a version change did not archive the committed version it replaced.
 
 ## Limits
 

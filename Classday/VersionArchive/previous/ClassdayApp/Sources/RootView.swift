@@ -25,10 +25,12 @@ struct RootView: View {
                     .background { ThemeBackground() }
                     .tabItem { Label("课程", systemImage: "books.vertical") }
                     .tag(AppTab.courses)
-                SettingsView()
-                    .background { ThemeBackground() }
-                    .tabItem { Label("我的", systemImage: "person") }
-                    .tag(AppTab.settings)
+                NavigationStack {
+                    SettingsView()
+                        .background { ThemeBackground() }
+                }
+                .tabItem { Label("我的", systemImage: "person") }
+                .tag(AppTab.settings)
             }
             if let presented = model.presented {
                 CourseDetailView(presentation: presented, namespace: zoom)
