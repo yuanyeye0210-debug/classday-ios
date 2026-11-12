@@ -1012,7 +1012,14 @@ struct CalendarImportView: View {
         Task {
             do {
                 let text = try await CalendarRuleRecognizer.recognize(jpegData: data, apiKey: key)
-                appendDrafts(HolidayImporter.parseAI(text, calendar: model.calendar), source: "图片")
+                let periods: [HolidayPeriod]
+                if let result = AIRecognition.parse(text, source: .holiday, calendar: model.calendar),
+                   case .holidays(let parsed) = result.payload {
+                    periods = parsed
+                } else {
+                    periods = []
+                }
+                appendDrafts(periods, source: "图片")
             } catch {
                 note = (error as? LocalizedError)?.errorDescription ?? "识别失败，换一张更清晰的校历图片再试。"
             }
@@ -1028,31 +1035,7 @@ enum CalendarRuleRecognizer {
         {"holidays": [{"name": "时段名称", "start": "YYYY-MM-DD", "end": "YYYY-MM-DD"}, ...]}
         规则：start/end 是该时段的第一天和最后一天（都包含在时段内）；只有一天的时段 start 和 end 相同；年份按图中年份，跨年时段注意结束年份；名称用图中原文（如"圣诞假期""寒假"）。
         """
-        let body: [String: Any] = [
-            "contents": [[
-                "parts": [
-                    ["text": prompt],
-                    ["inlineData": ["mimeType": "image/jpeg", "data": jpegData.base64EncodedString()]]
-                ]
-            ]],
-            "generationConfig": ["responseMimeType": "application/json", "temperature": 0.1]
-        ]
-        var request = URLRequest(url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=\(apiKey)")!)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        let (data, response) = try await URLSession.shared.data(for: request)
-        if let http = response as? HTTPURLResponse, http.statusCode != 200 {
-            throw GradeRuleRecognizer.Failure.badResponse(http.statusCode)
-        }
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let candidates = json["candidates"] as? [[String: Any]],
-              let content = candidates.first?["content"] as? [String: Any],
-              let parts = content["parts"] as? [[String: Any]],
-              let text = parts.first?["text"] as? String else {
-            throw GradeRuleRecognizer.Failure.noText
-        }
-        return text
+        return try await GeminiClient.recognizeImage(jpegData: jpegData, prompt: prompt, apiKey: apiKey)
     }
 }
 
@@ -1239,7 +1222,8 @@ struct MailCancelView: View {
     }
 
     private func applyResult(_ json: String) {
-        guard let draft = CancellationParser.parseAI(json, courses: model.document.courses, calendar: model.calendar) else {
+        guard let result = AIRecognition.parse(json, source: .cancellation, courses: model.document.courses, calendar: model.calendar),
+              case .cancellation(let draft) = result.payload else {
             note = "没从这封邮件里认出停课信息。可以检查一下粘贴的内容，或者直接在假期区手动加一段不上课时段。"
             return
         }
@@ -1274,36 +1258,10 @@ enum MailCancelRecognizer {
     }
 
     static func recognize(text: String, courses: [Course], today: Date, calendar: Calendar, apiKey: String) async throws -> String {
-        try await call(parts: [["text": prompt(courses: courses, today: today, calendar: calendar) + "\n\n邮件内容：\n" + text]], apiKey: apiKey)
+        try await GeminiClient.recognizeText(prompt: prompt(courses: courses, today: today, calendar: calendar) + "\n\n邮件内容：\n" + text, apiKey: apiKey)
     }
 
     static func recognize(jpegData: Data, courses: [Course], today: Date, calendar: Calendar, apiKey: String) async throws -> String {
-        try await call(parts: [
-            ["text": prompt(courses: courses, today: today, calendar: calendar)],
-            ["inlineData": ["mimeType": "image/jpeg", "data": jpegData.base64EncodedString()]]
-        ], apiKey: apiKey)
-    }
-
-    private static func call(parts: [[String: Any]], apiKey: String) async throws -> String {
-        let body: [String: Any] = [
-            "contents": [["parts": parts]],
-            "generationConfig": ["responseMimeType": "application/json", "temperature": 0.1]
-        ]
-        var request = URLRequest(url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=\(apiKey)")!)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        let (data, response) = try await URLSession.shared.data(for: request)
-        if let http = response as? HTTPURLResponse, http.statusCode != 200 {
-            throw GradeRuleRecognizer.Failure.badResponse(http.statusCode)
-        }
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let candidates = json["candidates"] as? [[String: Any]],
-              let content = candidates.first?["content"] as? [String: Any],
-              let parts = content["parts"] as? [[String: Any]],
-              let text = parts.first?["text"] as? String else {
-            throw GradeRuleRecognizer.Failure.noText
-        }
-        return text
+        try await GeminiClient.recognizeImage(jpegData: jpegData, prompt: prompt(courses: courses, today: today, calendar: calendar), apiKey: apiKey)
     }
 }

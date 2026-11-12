@@ -15,6 +15,16 @@ final class V2FeatureTests: XCTestCase {
         XCTAssertFalse(ClassdayThemes.all.contains { $0.name.contains("Watch") })
     }
 
+    // 2.8.0 Task 7 边界：已选省电档时，无低电量/减弱动态标志也不应被抬档。
+    func testSaverStaysSaverWithoutPowerOrMotionFlags() {
+        XCTAssertEqual(ClassdayThemes.effectiveTier(selected: .saver, lowPower: false, reduceMotion: false), .saver)
+    }
+
+    // 2.8.0 Task 7 边界：平衡档遇低电量模式也要降到省电档（与 high 档同规则）。
+    func testBalancedDowngradesOnLowPower() {
+        XCTAssertEqual(ClassdayThemes.effectiveTier(selected: .balanced, lowPower: true, reduceMotion: false), .saver)
+    }
+
     func testOddWeekAndSingleCancellation() {
         var document = DemoData.makeDocument()
         document = TimetableLibrary.settingParity(document, meetingID: DemoData.ID.calculusMonday, parity: .odd)

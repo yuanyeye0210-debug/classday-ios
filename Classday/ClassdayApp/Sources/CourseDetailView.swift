@@ -957,16 +957,10 @@ enum GradeImagePrep {
 
 enum GradeRuleRecognizer {
     enum Failure: LocalizedError {
-        case badResponse(Int)
-        case noText
         case unparsable
 
         var errorDescription: String? {
             switch self {
-            case .badResponse(let code):
-                return "识别服务返回 \(code)，请检查密钥是否有效、额度是否充足。"
-            case .noText:
-                return "识别服务没有返回内容，请稍后再试。"
             case .unparsable:
                 return "没能从这张图里读出记分规则，换一张更清晰、只含公式的图片再试。"
             }
@@ -984,31 +978,9 @@ enum GradeRuleRecognizer {
         - weight 用 0 到 1 的小数（25% 写 0.25），同一条内权重之和应为 1。
         - 分项代号必须与 components 里完全一致。
         """
-        let body: [String: Any] = [
-            "contents": [[
-                "parts": [
-                    ["text": prompt],
-                    ["inlineData": ["mimeType": "image/jpeg", "data": jpegData.base64EncodedString()]]
-                ]
-            ]],
-            "generationConfig": ["responseMimeType": "application/json", "temperature": 0.1]
-        ]
-        var request = URLRequest(url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=\(apiKey)")!)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        let (data, response) = try await URLSession.shared.data(for: request)
-        if let http = response as? HTTPURLResponse, http.statusCode != 200 {
-            throw Failure.badResponse(http.statusCode)
-        }
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let candidates = json["candidates"] as? [[String: Any]],
-              let content = candidates.first?["content"] as? [String: Any],
-              let parts = content["parts"] as? [[String: Any]],
-              let text = parts.first?["text"] as? String else {
-            throw Failure.noText
-        }
-        guard let scheme = GradeSchemeParser.parse(text) else { throw Failure.unparsable }
+        let text = try await GeminiClient.recognizeImage(jpegData: jpegData, prompt: prompt, apiKey: apiKey)
+        guard let result = AIRecognition.parse(text, source: .grade),
+              case .grade(let scheme) = result.payload else { throw Failure.unparsable }
         return scheme
     }
 }

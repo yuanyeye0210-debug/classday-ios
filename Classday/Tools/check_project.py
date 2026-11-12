@@ -57,9 +57,15 @@ def main() -> int:
     check("ClassdayCore" in pbx, "local package missing")
     check("PBXCopyFilesBuildPhase" in pbx and "dstSubfolderSpec = 13" in pbx, "widget is not embedded")
 
-    version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
-    check(f'MARKETING_VERSION: "{version}"' in (ROOT / "project.yml").read_text(encoding="utf-8"), "project.yml version drifted from VERSION")
-    check(f"MARKETING_VERSION = {version};" in pbx, "pbxproj version drifted from VERSION")
+    version_path = ROOT / "VERSION"
+    if version_path.is_file():
+        version = version_path.read_text(encoding="utf-8").strip()
+    else:
+        check(False, "missing Classday/VERSION")
+        version = None
+    if version is not None:
+        check(f'MARKETING_VERSION: "{version}"' in (ROOT / "project.yml").read_text(encoding="utf-8"), "project.yml version drifted from VERSION")
+        check(f"MARKETING_VERSION = {version};" in pbx, "pbxproj version drifted from VERSION")
     check((ROOT / "Tools" / "bump-version.sh").is_file(), "bump-version.sh missing")
 
     archive = ROOT / "VersionArchive"
@@ -71,9 +77,9 @@ def main() -> int:
     if previous.exists():
         stamp = (previous / ".classday-snapshot-version").read_text(encoding="utf-8").strip()
         captured = (previous / "VERSION").read_text(encoding="utf-8").strip()
-        check(stamp == captured and stamp != version, "previous snapshot must be the replaced version, not the current one")
+        check(stamp == captured and (version is None or stamp != version), "previous snapshot must be the replaced version, not the current one")
         check(not (previous / "VersionArchive").exists(), "previous snapshot contains a nested archive")
-    else:
+    elif version is not None:
         check(version == "1.0.0", "VERSION changed without a previous snapshot; use Tools/bump-version.sh")
 
     joined = "\n".join(path.read_text(encoding="utf-8") for path in app_sources + widget_sources)
