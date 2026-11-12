@@ -143,26 +143,35 @@ struct WeekTimetableView: View {
             ForEach(Array(dates.enumerated()), id: \.offset) { _, date in
                 let weekday = SemesterCalendar.isoWeekday(date, calendar: model.calendar)
                 let isToday = model.calendar.isDateInToday(date)
-                Button {
-                    model.select(day: date)
-                } label: {
-                    VStack(spacing: 4) {
-                        Text(ScheduleCopy.weekdayShort(weekday))
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Theme.secondary)
-                        Text(ScheduleCopy.dayNumber(date, calendar: model.calendar))
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(isToday ? Color.white : Theme.secondary)
-                            .frame(width: 28, height: 28)
-                            .background(Circle().fill(isToday ? Theme.accent : Color.clear))
-                    }
-                    .frame(width: columnWidth)
+                let holiday = model.holiday(on: date)
+                // Labels, not buttons. select(day:) used to open the removed
+                // day timetable; it only flips TimetableMode, which nothing shows.
+                VStack(spacing: 3) {
+                    Text(ScheduleCopy.weekdayShort(weekday))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Theme.secondary)
+                    Text(ScheduleCopy.dayNumber(date, calendar: model.calendar))
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(isToday ? Color.white : Theme.secondary)
+                        .frame(width: 28, height: 28)
+                        .background(Circle().fill(isToday ? Theme.accent : Color.clear))
+                    Circle()
+                        .fill(holiday == nil ? Color.clear : Color.orange)
+                        .frame(width: 5, height: 5)
                 }
-                .buttonStyle(PressButtonStyle())
-                .accessibilityLabel("\(ScheduleCopy.weekdayName(weekday)) \(ScheduleCopy.dayNumber(date, calendar: model.calendar))")
+                .frame(width: columnWidth)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(dayCaption(weekday: weekday, date: date, isToday: isToday, holiday: holiday))
                 .accessibilityAddTraits(isToday ? .isSelected : [])
             }
         }
+    }
+
+    private func dayCaption(weekday: Int, date: Date, isToday: Bool, holiday: HolidayPeriod?) -> String {
+        var text = "\(ScheduleCopy.weekdayName(weekday)) \(ScheduleCopy.dayNumber(date, calendar: model.calendar))"
+        if isToday { text += "，今天" }
+        if let holiday { text += "，假期 \(holiday.name)" }
+        return text
     }
 
     private func grid(periods: [PeriodTemplate], timeWidth: CGFloat, columnWidth: CGFloat) -> some View {
@@ -311,37 +320,120 @@ struct WeekTimetableView: View {
     }
 }
 
+private enum WeekLayout: Equatable {
+    case journal
+    case grid
+
+    var title: String {
+        switch self {
+        case .journal: return "周记"
+        case .grid: return "网格"
+        }
+    }
+
+    var hint: String {
+        switch self {
+        case .journal: return "按天列出课程和日程"
+        case .grid: return "按节次显示一周，可以长按拖动改时间"
+        }
+    }
+}
+
 struct WeekJournalView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var eventToEdit: PersonalEvent?
+    @State private var layout: WeekLayout = .journal
+    @Namespace private var gridNamespace
 
     private var motion: Animation? {
         reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.86)
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 12) {
                 header
-                ForEach(1...7, id: \.self) { weekday in
-                    dayCard(weekday: weekday)
-                        .padding(.top, 10)
+                layoutSwitch
+                if layout == .grid {
+                    Text("长按色块拖到新的节次。重叠或超出范围会取消，底部可以撤销。旁白请用「调整时间」。")
+                        .font(.system(size: 12.5, design: .rounded))
+                        .foregroundStyle(Theme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityLabel("网格课表。长按拖动调整时间。时间冲突或超出节次会取消。旁白请在课程上选择调整时间。")
                 }
-                summaryCard
-                    .padding(.top, 14)
             }
             .padding(.horizontal, 20)
             .padding(.top, 10)
-            .padding(.bottom, 28)
+
+            if layout == .grid {
+                WeekTimetableView(namespace: gridNamespace)
+                    .padding(.top, 8)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(1...7, id: \.self) { weekday in
+                            dayCard(weekday: weekday)
+                                .padding(.top, 10)
+                        }
+                        summaryCard
+                            .padding(.top, 14)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 4)
+                    .padding(.bottom, 28)
+                }
+                .scrollIndicators(.hidden)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            }
         }
-        .scrollIndicators(.hidden)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .toolbar(model.presented == nil ? .visible : .hidden, for: .tabBar)
         .sensoryFeedback(.selection, trigger: model.weekIndex)
+        .sensoryFeedback(.selection, trigger: layout)
+        .onChange(of: layout) { _, newLayout in
+            if newLayout == .journal {
+                model.drag = nil
+            }
+        }
         .sheet(item: $eventToEdit) { event in
             EventEditorView(existing: event)
         }
+    }
+
+    private var layoutSwitch: some View {
+        HStack(spacing: 4) {
+            layoutButton(.journal)
+            layoutButton(.grid)
+        }
+        .padding(3)
+        .background(Capsule(style: .continuous).fill(Theme.segment))
+        .fixedSize(horizontal: true, vertical: false)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func layoutButton(_ choice: WeekLayout) -> some View {
+        let selected = layout == choice
+        return Button {
+            withAnimation(motion) { layout = choice }
+        } label: {
+            Text(choice.title)
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundStyle(selected ? Theme.accentInk : Theme.secondary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .background {
+                    if selected {
+                        Capsule(style: .continuous).fill(Theme.elevated)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(choice.title)
+        .accessibilityHint(choice.hint)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private var header: some View {
@@ -381,6 +473,7 @@ struct WeekJournalView: View {
                 }
                 .buttonStyle(JournalPressStyle())
                 .disabled(model.weekIndex <= 1)
+                .accessibilityLabel("上一周")
                 Button {
                     withAnimation(motion) { model.shiftWeek(by: 1) }
                 } label: {
@@ -392,11 +485,13 @@ struct WeekJournalView: View {
                 }
                 .buttonStyle(JournalPressStyle())
                 .disabled(model.weekIndex >= model.document.semester.totalWeeks)
+                .accessibilityLabel("下一周")
             }
         }
         .gesture(
             DragGesture(minimumDistance: 30)
                 .onEnded { value in
+                    guard model.drag == nil else { return }
                     if value.translation.width < -70 {
                         withAnimation(motion) { model.shiftWeek(by: 1) }
                     } else if value.translation.width > 70 {
