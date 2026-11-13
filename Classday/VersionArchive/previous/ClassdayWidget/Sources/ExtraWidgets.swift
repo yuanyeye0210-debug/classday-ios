@@ -214,13 +214,24 @@ struct LockNextView: View {
 }
 
 struct NextClassActivityWidget: Widget {
+    /// Shown instead of the counting timer once the Activity passes its
+    /// `staleDate` (`context.isStale`): the timer would otherwise keep
+    /// counting up past the end of the class.
+    static let staleMessage = "已结束，打开课曜查看下一节"
+
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: NextClassAttributes.self) { context in
             VStack(alignment: .leading) {
-                Text(context.state.phase).font(.caption)
+                if !context.isStale {
+                    Text(context.state.phase).font(.caption)
+                }
                 Text(context.state.title).font(.headline)
                 Text(context.state.location).font(.subheadline)
-                Text(context.state.endsAt, style: .timer).font(.title2.monospacedDigit())
+                if context.isStale {
+                    Text(Self.staleMessage).font(.headline)
+                } else {
+                    Text(context.state.endsAt, style: .timer).font(.title2.monospacedDigit())
+                }
             }
             .padding()
         } dynamicIsland: { context in
@@ -229,7 +240,11 @@ struct NextClassActivityWidget: Widget {
                     Text(context.state.title).font(.headline)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    Text(context.state.endsAt, style: .timer)
+                    if context.isStale {
+                        Text(Self.staleMessage).font(.caption)
+                    } else {
+                        Text(context.state.endsAt, style: .timer)
+                    }
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     Text(context.state.location)
@@ -237,7 +252,11 @@ struct NextClassActivityWidget: Widget {
             } compactLeading: {
                 Image(systemName: "clock")
             } compactTrailing: {
-                Text(context.state.endsAt, style: .timer)
+                if context.isStale {
+                    Image(systemName: "clock")
+                } else {
+                    Text(context.state.endsAt, style: .timer)
+                }
             } minimal: {
                 Image(systemName: "clock")
             }

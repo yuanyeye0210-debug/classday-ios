@@ -102,6 +102,71 @@ final class WidgetNotificationTests: XCTestCase {
         XCTAssertTrue(missing.medium.emptyMessage.contains("小组件"))
     }
 
+    func testTimelinePlanSevenDayHorizonReachesNextMondayFirstClass() {
+        // Friday 16:00: the last class (程序设计 14:00–15:40) has ended.
+        // Under the old 36h horizon the plan stopped at Sunday 04:00 and
+        // Monday's first class was invisible; with the 7-day horizon the
+        // entries must reach Monday 08:00 高等数学.
+        let now = TestSupport.date(2026, 11, 13, 16, 0, calendar: calendar)
+        let plan = WidgetProjection.timelinePlan(now: now, document: document, calendar: calendar)
+        XCTAssertEqual(WidgetProjection.horizon, 7 * 24 * 60 * 60)
+        XCTAssertEqual(plan.entryDates.first, now)
+        XCTAssertEqual(plan.entryDates, plan.entryDates.sorted())
+        XCTAssertLessThanOrEqual(plan.entryDates.count, WidgetProjection.maximumEntries)
+        XCTAssertTrue(plan.entryDates.contains(TestSupport.date(2026, 11, 16, 0, 0, calendar: calendar)))
+        XCTAssertTrue(plan.entryDates.contains(TestSupport.date(2026, 11, 16, 8, 0, calendar: calendar)))
+        // now + 7 midnights (Nov 14–20) + 10 class starts + 10 class ends.
+        XCTAssertEqual(plan.entryDates.count, 28)
+        // refreshAfter is unchanged semantics: the last entry, Friday's
+        // last class end (程序设计 15:40).
+        XCTAssertEqual(plan.refreshAfter, plan.entryDates.last)
+        XCTAssertEqual(plan.refreshAfter, TestSupport.date(2026, 11, 20, 15, 40, calendar: calendar))
+    }
+
+    func testTimelinePlanCapsEntriesAndDropsClassEndsFirst() {
+        // Five classes a day, Monday–Friday: 25 starts + 25 ends + 7
+        // midnights = 57 boundaries in 7 days, over the 40-entry cap.
+        // D6: midnights and class starts are kept first; class ends are
+        // dropped, earliest ends first.
+        var crowded = DemoData.makeDocument()
+        let slots = [(1, 1), (3, 3), (5, 5), (7, 7), (9, 9)]
+        crowded.courses = slots.enumerated().map { index, slot in
+            Course(
+                id: UUID(),
+                name: "课\(index + 1)",
+                teacher: "教师",
+                location: "教室",
+                colorID: "blue",
+                weeks: Array(1...16),
+                meetings: (1...5).map { weekday in
+                    Meeting(id: UUID(), weekday: weekday, startPeriod: slot.0, endPeriod: slot.1)
+                }
+            )
+        }
+        let now = TestSupport.date(2026, 11, 13, 16, 0, calendar: calendar)
+        let plan = WidgetProjection.timelinePlan(now: now, document: crowded, calendar: calendar)
+        XCTAssertEqual(plan.entryDates.count, WidgetProjection.maximumEntries)
+        XCTAssertEqual(plan.entryDates, plan.entryDates.sorted())
+        for day in 14...20 {
+            XCTAssertTrue(
+                plan.entryDates.contains(TestSupport.date(2026, 11, day, 0, 0, calendar: calendar)),
+                "midnight Nov \(day) must be kept"
+            )
+        }
+        // The latest class start in the horizon (Friday Nov 20 14:00)
+        // must survive the cap — a plain chronological truncation would
+        // have cut everything after Wednesday evening instead.
+        XCTAssertTrue(plan.entryDates.contains(TestSupport.date(2026, 11, 20, 14, 0, calendar: calendar)))
+        // Only the 7 earliest ends fit after the 32 priority entries:
+        // Fri 16:55, Fri 19:45, Mon 08:45, 10:55, 14:45, 16:55, 19:45.
+        XCTAssertTrue(plan.entryDates.contains(TestSupport.date(2026, 11, 16, 19, 45, calendar: calendar)))
+        XCTAssertFalse(plan.entryDates.contains(TestSupport.date(2026, 11, 17, 8, 45, calendar: calendar)))
+        XCTAssertFalse(plan.entryDates.contains(TestSupport.date(2026, 11, 20, 14, 45, calendar: calendar)))
+        // refreshAfter is unchanged semantics: the last entry.
+        XCTAssertEqual(plan.refreshAfter, plan.entryDates.last)
+        XCTAssertEqual(plan.refreshAfter, TestSupport.date(2026, 11, 20, 14, 0, calendar: calendar))
+    }
+
     func testNotificationPlanLeadTimeOrderAndCap() {
         let sunday = TestSupport.date(2026, 11, 8, 12, 0, calendar: calendar)
         let planned = NotificationPlan.make(document: document, now: sunday, calendar: calendar)
