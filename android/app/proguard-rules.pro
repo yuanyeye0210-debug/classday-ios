@@ -1,0 +1,4 @@
+-keep class com.classday.app.widget.** { *; }
+-keep class com.classday.app.platform.** { *; }
+-keepattributes *Annotation*, InnerClasses, Signature, EnclosingMethod
+-dontwarn com.google.mlkit.**
