@@ -24,6 +24,25 @@ import java.time.ZoneId
 
 class ScheduleLogicTest {
     @Test
+    fun mergeEntryOnlyCountsCompatibleWholeGroups() {
+        val document = DemoData.makeDocument()
+        val base = document.courses.first().copy(name = "数学", weeks = (1..8).toList())
+        val copy = base.copy(id = "copy", meetings = base.meetings.map { it.copy(id = "copy-${it.id}") })
+        val otherRoom = copy.copy(id = "other", location = "不同教室")
+        fun eligible(courses: List<com.classday.app.core.Course>) =
+            com.classday.app.core.mergeableScheduleGroups(document.copy(courses = courses, weekRules = emptyList()))
+        assertTrue(eligible(listOf(base, otherRoom)).isEmpty())
+        assertTrue(eligible(listOf(base)).isEmpty())
+        assertEquals(1, eligible(listOf(base, copy)).size)
+        // Android has no member exclusions yet; a partial subset must not advertise a usable action.
+        assertTrue(eligible(listOf(base, copy, otherRoom)).isEmpty())
+        val english = base.copy(id = "english", name = "英语")
+        val englishCopy = english.copy(id = "english-copy")
+        val groups = eligible(listOf(base, otherRoom, english, englishCopy))
+        assertEquals(1, groups.size)
+        assertEquals(listOf("english", "english-copy"), groups.single().courses.map { it.id })
+    }
+    @Test
     fun mergeRejectsIncompatibleSchedulesBeforeChangingDocument() {
         val document = DemoData.makeDocument()
         val base = document.courses.first().copy(weeks = (1..8).toList())

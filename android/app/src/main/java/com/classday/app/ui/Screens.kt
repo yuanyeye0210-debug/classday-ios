@@ -805,8 +805,8 @@ private fun DataPage(model: ClassdayModel) {
         Button(onClick = {
             calendarPermission.launch(arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR))
         }) { Text("同步到系统日历") }
-        if (model.duplicates().isNotEmpty()) {
-            Button(onClick = { model.open(Screen.Merge) }) { Text("合并同名课程") }
+        if (model.mergeableGroups().isNotEmpty()) {
+            Button(onClick = { model.open(Screen.Merge) }) { Text("${model.mergeableGroups().size} 组可合并同名课程") }
         }
         OutlinedTextField(libraryName, { libraryName = it }, label = { Text("存入课表库的名字") }, modifier = Modifier.fillMaxWidth())
         Button(onClick = { if (libraryName.isNotBlank()) model.storeLibrary(libraryName) }) { Text("保存当前课表") }

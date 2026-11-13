@@ -150,6 +150,9 @@ fun mergeDuplicateGroup(group: DuplicateGroup, gradeSourceId: String?): Pair<Cou
     return merged to remap
 }
 
+fun mergeableScheduleGroups(document: StoreDocument): List<DuplicateGroup> =
+    findDuplicateGroups(document.courses).filter { canMergeCourseSchedules(it.courses, document) }
+
 fun canMergeCourseSchedules(courses: List<Course>, document: StoreDocument): Boolean {
     val first = courses.firstOrNull() ?: return true
     if (courses.any { it.weeks.toSet() != first.weeks.toSet() || it.location != first.location }) return false

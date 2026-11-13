@@ -289,7 +289,7 @@ class ClassdayModel(app: Application) : AndroidViewModel(app) {
             origin = DataOrigin.user,
         )
         banner = if (outcome.warnings.isEmpty()) "已导入" else outcome.warnings.first()
-        if (findDuplicateGroups(document.courses).isNotEmpty()) banner = "导入后有同名课程，可以去合并"
+        if (mergeableGroups().isNotEmpty()) banner = "导入后有 ${mergeableGroups().size} 组可合并同名课程"
         persist(markUser = true)
     }
 
@@ -322,7 +322,7 @@ class ClassdayModel(app: Application) : AndroidViewModel(app) {
             origin = DataOrigin.user,
         )
         banner = "导入 ${courses.size} 门课、${exams.size} 场考试、${homework.size} 项作业"
-        if (findDuplicateGroups(document.courses).isNotEmpty()) banner = "导入后有同名课程，可以去合并"
+        if (mergeableGroups().isNotEmpty()) banner = "导入后有 ${mergeableGroups().size} 组可合并同名课程"
         persist(markUser = true)
     }
 
@@ -352,6 +352,7 @@ class ClassdayModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun duplicates(): List<DuplicateGroup> = findDuplicateGroups(document.courses)
+    fun mergeableGroups(): List<DuplicateGroup> = com.classday.app.core.mergeableScheduleGroups(document)
 
     fun merge(group: DuplicateGroup, gradeSource: String?) {
         if (!com.classday.app.core.canMergeCourseSchedules(group.courses, document)) {
