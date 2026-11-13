@@ -340,11 +340,17 @@ class ScheduleLogicTest {
                 "2 大学英语,周五,5-6,B205,林老师,1-16周",
             ).joinToString("\n") { it.replace(',', separator) }
             val parsed = ScheduleTextImporter.parseCsv(csv)
-            assertEquals(2, parsed.drafts.size)
-            assertEquals(listOf("高等数学", "大学英语"), parsed.drafts.map { it.name })
-            assertEquals(listOf(1, 3), parsed.drafts.first().meetings.map { it.weekday })
-            assertEquals("陈老师", parsed.drafts.first().teacher)
-            assertEquals(3, parsed.drafts.first().meetings.last().startPeriod)
+            // Continuation rows inherit the name, but a different classroom or a blank
+            // teacher stays a separate draft so one row cannot take another's room.
+            assertEquals(3, parsed.drafts.size)
+            assertEquals(listOf("高等数学", "高等数学", "大学英语"), parsed.drafts.map { it.name })
+            assertEquals(listOf(1), parsed.drafts[0].meetings.map { it.weekday })
+            assertEquals("陈老师", parsed.drafts[0].teacher)
+            assertEquals("A301", parsed.drafts[0].location)
+            assertEquals(listOf(3), parsed.drafts[1].meetings.map { it.weekday })
+            assertEquals("", parsed.drafts[1].teacher)
+            assertEquals("A302", parsed.drafts[1].location)
+            assertEquals(3, parsed.drafts[1].meetings.single().startPeriod)
             assertEquals(1, parsed.unparsed.size)
         }
     }
