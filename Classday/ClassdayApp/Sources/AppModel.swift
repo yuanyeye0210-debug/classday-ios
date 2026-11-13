@@ -171,7 +171,7 @@ final class AppModel {
                     .appendingPathComponent("classday-store-corrupt-\(stamp).json")
                 try? fileManager.copyItem(at: resolved, to: backup)
                 loaded = DemoData.makeDocument()
-                initialError = "课表文件无法读取，已另存一份损坏文件备份，没有直接覆盖。"
+                initialError = "课表文件无法读取，已另存一份损坏文件备份，没有直接覆盖。为避免按演示课表误发提醒，课程、考试和作业提醒已暂停。"
             }
         } else {
             loaded = DemoData.makeDocument()
