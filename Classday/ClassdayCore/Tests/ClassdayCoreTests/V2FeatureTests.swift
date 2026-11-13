@@ -480,7 +480,25 @@ final class SmartImportTests: XCTestCase {
         XCTAssertEqual(result.drafts.count, 1)
         XCTAssertEqual(result.drafts.first?.meetings.count, 2)
         XCTAssertEqual(result.drafts.first?.meetings.map(\.weekday), [2, 4])
+        XCTAssertEqual(result.drafts.first?.location, "教学楼A206")
+        XCTAssertEqual(result.drafts.first?.meetings.map(\.location), ["教学楼A206", "教学楼A206"])
         XCTAssertEqual(result.unparsed, ["这行没有任何课程信息"])
+    }
+
+    func testTextLineWithDistinctRoomsKeepsEachDraftsOwnRoom() {
+        let result = ScheduleTextImporter.parseText(
+            "大学物理 周一 08:00-09:40 教学楼A301 周三 10:10-11:50 教学楼A302"
+        )
+        XCTAssertTrue(result.unparsed.isEmpty)
+        XCTAssertEqual(result.drafts.count, 2)
+        let monday = result.drafts.first { $0.meetings.first?.weekday == 1 }
+        let wednesday = result.drafts.first { $0.meetings.first?.weekday == 3 }
+        XCTAssertEqual(monday?.location, "教学楼A301")
+        XCTAssertEqual(wednesday?.location, "教学楼A302")
+        XCTAssertEqual(monday?.meetings.count, 1)
+        XCTAssertEqual(wednesday?.meetings.count, 1)
+        XCTAssertEqual(monday?.meetings.first?.location, monday?.location)
+        XCTAssertEqual(wednesday?.meetings.first?.location, wednesday?.location)
     }
 
     func testTextMissingLocationFlagsIssueButStaysEditable() {

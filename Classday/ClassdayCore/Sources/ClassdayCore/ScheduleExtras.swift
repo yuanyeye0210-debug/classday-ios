@@ -1085,16 +1085,21 @@ public enum ScheduleTextImporter {
         var order: [String] = []
         var map: [String: ImportedCourseDraft] = [:]
         for (course, meeting) in raw {
-            let key = [course.name, course.teacher, meeting.location, String(course.firstWeek), String(course.lastWeek),
+            // Text lines may specify one shared room after several weekday segments.
+            let location = meeting.location.isEmpty ? course.location : meeting.location
+            var resolvedMeeting = meeting
+            resolvedMeeting.location = location
+            let key = [course.name, course.teacher, location, String(course.firstWeek), String(course.lastWeek),
                        course.customWeeks.map(String.init).joined(separator: ",")].joined(separator: "|")
             if var existing = map[key] {
-                existing.meetings.append(meeting)
-                if existing.location.isEmpty { existing.location = meeting.location }
+                existing.meetings.append(resolvedMeeting)
+                if existing.location.isEmpty { existing.location = location }
                 for issue in course.issues where !existing.issues.contains(issue) { existing.issues.append(issue) }
                 map[key] = existing
             } else {
                 var fresh = course
-                fresh.meetings = [meeting]
+                fresh.location = location
+                fresh.meetings = [resolvedMeeting]
                 map[key] = fresh
                 order.append(key)
             }
