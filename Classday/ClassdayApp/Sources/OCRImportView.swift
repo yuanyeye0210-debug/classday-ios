@@ -184,7 +184,7 @@ struct SmartImportView: View {
         VStack(alignment: .leading, spacing: 12) {
             sectionHeader("确认识别结果", caption: "点开任意一门课就能改，勾选的才会导入")
             ForEach(Array(drafts.enumerated()), id: \.element.id) { index, draft in
-                DraftCard(draft: draft,
+                DraftCard(draft: draftWithPeriodIssues(draft),
                           colorID: Self.palette[index % Self.palette.count],
                           included: !excluded.contains(draft.id),
                           duplicate: model.document.courses.contains { $0.name == draft.name && !draft.name.isEmpty },
@@ -456,6 +456,11 @@ struct SmartImportView: View {
     }
 
     private func importSelected() {
+        let invalid = drafts.filter { !excluded.contains($0.id) && hasInvalidExplicitPeriods($0) }
+        guard invalid.isEmpty else {
+            model.banner = "节次超出当前学期范围或起止倒序，请修改或取消勾选：" + invalid.map(\.name).joined(separator: "、")
+            return
+        }
         let (courses, parities) = buildCourses()
         guard !courses.isEmpty else {
             model.banner = "选中的课程还缺名称或时间，先点开补上"
@@ -503,9 +508,23 @@ struct SmartImportView: View {
         return (built, parities)
     }
 
+    private func hasInvalidExplicitPeriods(_ draft: ImportedCourseDraft) -> Bool {
+        draft.meetings.contains {
+            $0.startPeriod != nil && $0.validatedExplicitPeriodSpan(in: model.document.semester.periods) == nil
+        }
+    }
+
+    private func draftWithPeriodIssues(_ draft: ImportedCourseDraft) -> ImportedCourseDraft {
+        var result = draft
+        if hasInvalidExplicitPeriods(draft) {
+            result.issues.append("节次超出学期范围或倒序")
+        }
+        return result
+    }
+
     private func periodSpan(for meeting: ImportedMeetingDraft, periods: [PeriodTemplate]) -> (Int, Int)? {
-        if let start = meeting.startPeriod {
-            return (start, max(start, meeting.endPeriod ?? start))
+        if meeting.startPeriod != nil {
+            return meeting.validatedExplicitPeriodSpan(in: periods)
         }
         guard let startMinutes = meeting.startMinutes, !periods.isEmpty else { return nil }
         let starts = periods.map { Self.minutes(of: $0.start) }

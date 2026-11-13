@@ -2,6 +2,25 @@ import Foundation
 import XCTest
 import ClassdayCore
 
+final class ImportedPeriodValidationTests: XCTestCase {
+    func testExplicitPeriodsMustExistInSemester() {
+        let periods = DemoData.makeDocument().semester.periods
+        let valid = ImportedMeetingDraft(weekday: 1, startPeriod: 1, endPeriod: 2)
+        XCTAssertEqual(valid.validatedExplicitPeriodSpan(in: periods)?.0, 1)
+        XCTAssertEqual(valid.validatedExplicitPeriodSpan(in: periods)?.1, 2)
+        let single = ImportedMeetingDraft(weekday: 1, startPeriod: 3)
+        XCTAssertEqual(single.validatedExplicitPeriodSpan(in: periods)?.1, 3)
+        for (start, end) in [(11, 12), (0, 2), (6, 3), (1, Int.max)] {
+            let meeting = ImportedMeetingDraft(weekday: 1, startPeriod: start, endPeriod: end)
+            XCTAssertNil(meeting.validatedExplicitPeriodSpan(in: periods))
+        }
+        XCTAssertNil(valid.validatedExplicitPeriodSpan(in: []))
+        XCTAssertNil(valid.validatedExplicitPeriodSpan(in: Array(periods.prefix(1))))
+        let gap = periods.filter { $0.index != 2 }
+        XCTAssertNil(ImportedMeetingDraft(weekday: 1, startPeriod: 1, endPeriod: 3).validatedExplicitPeriodSpan(in: gap))
+    }
+}
+
 final class WidgetIDTests: XCTestCase {
     func testTimelineKindsCoverAllExistingWidgetsWithoutChangingIdentifiers() {
         XCTAssertEqual(WidgetID.timelineKinds, [

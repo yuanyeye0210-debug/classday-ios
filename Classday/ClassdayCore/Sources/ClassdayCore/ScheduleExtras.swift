@@ -668,6 +668,15 @@ public struct ImportedMeetingDraft: Equatable, Sendable, Identifiable {
     public var location: String
     public var parity: Int // per-meeting: 0 = every week, 1 = odd weeks, 2 = even weeks
 
+    public func validatedExplicitPeriodSpan(in periods: [PeriodTemplate]) -> (Int, Int)? {
+        guard let start = startPeriod else { return nil }
+        let end = endPeriod ?? start
+        let indexes = Set(periods.map(\.index))
+        guard start <= end, indexes.contains(start), indexes.contains(end),
+              (start...end).allSatisfy({ indexes.contains($0) }) else { return nil }
+        return (start, end)
+    }
+
     public init(id: UUID = UUID(), weekday: Int, startMinutes: Int? = nil, endMinutes: Int? = nil,
                 startPeriod: Int? = nil, endPeriod: Int? = nil, location: String = "", parity: Int = 0) {
         self.id = id
