@@ -24,6 +24,29 @@ import java.time.ZoneId
 
 class ScheduleLogicTest {
     @Test
+    fun csvGridFindsWeekdayHeaderAfterTitlesWithEitherDelimiter() {
+        for (separator in listOf(",", ";")) {
+            val csv = listOf(
+                "2026秋季学期课表",
+                "班级：软件工程",
+                listOf("节次", "周一", "周二", "周三").joinToString(separator),
+                listOf("1-2", "数学", "", "英语").joinToString(separator),
+                listOf("3-4", "", "物理", "").joinToString(separator),
+            ).joinToString("\n")
+            val result = ScheduleTextImporter.parseCsv(csv)
+            assertTrue(result.unparsed.isEmpty())
+            assertEquals(setOf("数学", "英语", "物理"), result.drafts.map { it.name }.toSet())
+            val math = result.drafts.single { it.name == "数学" }.meetings.single()
+            assertEquals(1, math.weekday)
+            assertEquals(1, math.startPeriod)
+            assertEquals(2, math.endPeriod)
+            val physics = result.drafts.single { it.name == "物理" }.meetings.single()
+            assertEquals(2, physics.weekday)
+            assertEquals(3, physics.startPeriod)
+            assertEquals(4, physics.endPeriod)
+        }
+    }
+    @Test
     fun mergeSelectionChecksParityExclusionsAndGradeChoice() {
         val template = DemoData.makeDocument()
         val original = template.courses.first()

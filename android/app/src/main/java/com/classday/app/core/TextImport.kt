@@ -32,6 +32,15 @@ object ScheduleTextImporter {
     fun parseCsv(text: String): DraftImport {
         val lines = text.removePrefix("\uFEFF").replace("\r\n", "\n").replace('\r', '\n').lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toList()
         if (lines.isEmpty()) return DraftImport(emptyList(), emptyList())
+        val gridHeader = listOf(',', ';').flatMap { delimiter ->
+            lines.take(6).mapIndexedNotNull { index, line ->
+                val days = splitCsv(line, delimiter).mapNotNull { weekdayOf(it) }.distinct().size
+                if (days >= 3) Triple(delimiter, index, days) else null
+            }
+        }.maxByOrNull { it.third }
+        if (gridHeader != null) {
+            return parseGrid(lines.drop(gridHeader.second).map { splitCsv(it, gridHeader.first) })
+        }
         // Score real headers, not the title/notes that Excel exports may prepend.
         val candidates = listOf(',', ';').flatMap { delimiter ->
             val rows = lines.take(6).map { splitCsv(it, delimiter) }
@@ -47,7 +56,6 @@ object ScheduleTextImporter {
         val best = candidates.maxByOrNull { it.third.size }
         val delimiter = best?.first ?: if (lines.first().contains(';') && !lines.first().contains(',')) ';' else ','
         val rows = lines.map { splitCsv(it, delimiter) }
-        if (rows.first().count { weekdayOf(it) != null } >= 3) return parseGrid(rows)
         if (best == null) return DraftImport(emptyList(), lines)
         val columns = best.third
         val grouped = linkedMapOf<CsvCourseKey, CourseDraft>()
