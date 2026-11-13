@@ -45,10 +45,22 @@ import com.classday.app.platform.ClassdayStore
 import java.time.Instant
 import java.time.ZoneId
 
-private data class WidgetSnapshot(val document: StoreDocument, val current: Occurrence?, val next: Occurrence?, val week: Int)
+private data class WidgetSnapshot(val document: StoreDocument, val current: Occurrence?, val next: Occurrence?, val week: Int, val loadFailed: Boolean = false)
+
+@Composable
+private fun StoreFailureContent(context: Context) {
+    Column(modifier = GlanceModifier.fillMaxWidth().padding(12.dp)
+        .background(ColorProvider(Color.White)).cornerRadius(18.dp)
+        .clickable(actionStartActivity(Intent(context, MainActivity::class.java)))) {
+        Text("课表读取失败", style = TextStyle(color = ColorProvider(Color.Black), fontSize = 16.sp, fontWeight = FontWeight.Bold))
+        Text("打开课曜查看详情，原文件已保留", style = TextStyle(color = ColorProvider(Color.DarkGray), fontSize = 12.sp))
+    }
+}
 
 private fun snapshot(context: Context): WidgetSnapshot {
-    val document = ClassdayStore.load(context)
+    val loaded = ClassdayStore.loadWithStatus(context)
+    val document = loaded.document
+    if (loaded.error != null) return WidgetSnapshot(document, null, null, 1, loadFailed = true)
     val calendar = CivilCalendar(ZoneId.systemDefault())
     val now = Instant.now()
     val week = calendar.weekIndex(now, document.semester) ?: 1
@@ -132,6 +144,7 @@ class DelayClassCallback : ActionCallback {
 
 @Composable
 private fun NextClassContent(context: Context, snap: WidgetSnapshot) {
+    if (snap.loadFailed) { StoreFailureContent(context); return }
     val theme = snap.document.appearance.theme
     val item = snap.current ?: snap.next
     val now = System.currentTimeMillis()
@@ -163,6 +176,7 @@ private fun NextClassContent(context: Context, snap: WidgetSnapshot) {
 
 @Composable
 private fun TodayContent(context: Context, snap: WidgetSnapshot) {
+    if (snap.loadFailed) { StoreFailureContent(context); return }
     val theme = snap.document.appearance.theme
     val calendar = CivilCalendar(ZoneId.systemDefault())
     val today = ScheduleEngine.occurrencesOn(Instant.now(), snap.document.courses, snap.document.semester, calendar, snap.document.scheduleContext)
@@ -181,6 +195,7 @@ private fun TodayContent(context: Context, snap: WidgetSnapshot) {
 
 @Composable
 private fun WeekContent(context: Context, snap: WidgetSnapshot) {
+    if (snap.loadFailed) { StoreFailureContent(context); return }
     val theme = snap.document.appearance.theme
     val calendar = CivilCalendar(ZoneId.systemDefault())
     val items = ScheduleEngine.occurrences(snap.week, snap.document.courses, snap.document.semester, calendar, snap.document.scheduleContext)
