@@ -68,6 +68,16 @@ public typealias CourseIDRemap = [UUID: UUID]
 /// slot dedup in `mergeDuplicateGroup`.
 public typealias MeetingIDRemap = [UUID: UUID]
 
+/// Keep review discoverable when excluding other members can produce a safe merge.
+public func hasMergeableCoursePair(_ courses: [Course], context: ScheduleContext) -> Bool {
+    for (index, first) in courses.enumerated() {
+        for second in courses.dropFirst(index + 1) {
+            if canMergeCourseSchedules([first, second], context: context) { return true }
+        }
+    }
+    return false
+}
+
 /// The current merged course can represent only one week set and one room.
 /// Slot deduplication also cannot preserve conflicting parity rules.
 public func canMergeCourseSchedules(_ courses: [Course], context: ScheduleContext) -> Bool {

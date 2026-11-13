@@ -877,7 +877,7 @@ final class AppModel {
     }
 
     var mergeableScheduleGroups: [DuplicateGroup] {
-        duplicateGroups.filter { canMergeCourseSchedules($0.courses, context: document.scheduleContext) }
+        duplicateGroups.filter { hasMergeableCoursePair($0.courses, context: document.scheduleContext) }
     }
 
     /// Opens the merge-review page and clears the post-import banner:

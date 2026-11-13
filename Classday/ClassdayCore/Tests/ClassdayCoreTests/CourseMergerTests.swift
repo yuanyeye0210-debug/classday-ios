@@ -5,6 +5,22 @@ import ClassdayCore
 /// Task 1 (merge-duplicate-courses): name normalization + duplicate grouping.
 /// Tests written first (TDD); implementation is `CourseMerger.swift`.
 final class CourseMergerTests: XCTestCase {
+    func testReviewRemainsAvailableForCompatibleSubset() {
+        let first = makeCourse(name: "数学", meetings: [makeMeeting(weekday: 1, startPeriod: 1, endPeriod: 2)])
+        let second = makeCourse(name: "数学", meetings: [makeMeeting(weekday: 3, startPeriod: 3, endPeriod: 4)])
+        let otherRoom = makeCourse(name: "数学", location: "实验楼")
+        for courses in [[first, second, otherRoom], [otherRoom, second, first]] {
+            XCTAssertFalse(canMergeCourseSchedules(courses, context: .empty))
+            XCTAssertTrue(hasMergeableCoursePair(courses, context: .empty))
+        }
+        XCTAssertFalse(hasMergeableCoursePair([], context: .empty))
+        XCTAssertFalse(hasMergeableCoursePair([first], context: .empty))
+        XCTAssertFalse(hasMergeableCoursePair([first, otherRoom], context: .empty))
+        XCTAssertTrue(hasMergeableCoursePair([first, second], context: .empty))
+        let conflicting = makeCourse(name: "数学", meetings: [makeMeeting(weekday: 1, startPeriod: 1, endPeriod: 2)])
+        let rules = ScheduleContext(weekRules: [MeetingWeekRule(meetingID: first.meetings[0].id, parity: .odd)])
+        XCTAssertFalse(hasMergeableCoursePair([first, conflicting], context: rules))
+    }
     func testMergeScheduleGuardPreservesWeeksRoomsAndConflictingParity() {
         let monday = makeMeeting(weekday: 1, startPeriod: 1, endPeriod: 2)
         let wednesday = makeMeeting(weekday: 3, startPeriod: 3, endPeriod: 4)
