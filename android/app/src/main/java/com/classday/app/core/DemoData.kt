@@ -150,6 +150,13 @@ fun mergeDuplicateGroup(group: DuplicateGroup, gradeSourceId: String?): Pair<Cou
     return merged to remap
 }
 
+fun selectedMergeGroup(group: DuplicateGroup, excluded: Set<String>): DuplicateGroup =
+    group.copy(courses = group.courses.filter { it.id !in excluded })
+
+fun canSubmitCourseMerge(group: DuplicateGroup, chosen: String?, document: StoreDocument): Boolean =
+    group.courses.size >= 2 && canMergeCourseSchedules(group.courses, document) &&
+        (!gradeConflict(group) || group.courses.any { it.id == chosen && it.grade != null })
+
 fun mergeableScheduleGroups(document: StoreDocument): List<DuplicateGroup> =
     findDuplicateGroups(document.courses).filter { group ->
         group.courses.indices.any { index ->

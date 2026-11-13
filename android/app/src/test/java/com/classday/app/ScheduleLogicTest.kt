@@ -24,7 +24,31 @@ import java.time.ZoneId
 
 class ScheduleLogicTest {
     @Test
-    fun mergeEntryOnlyCountsCompatibleWholeGroups() {
+    fun mergeSelectionChecksParityExclusionsAndGradeChoice() {
+        val template = DemoData.makeDocument()
+        val original = template.courses.first()
+        val a = original.copy(id = "a", grade = 80.0)
+        val b = original.copy(id = "b", grade = 90.0, meetings = original.meetings.map { it.copy(id = "b-${it.id}") })
+        val c = original.copy(id = "c", meetings = original.meetings.map { it.copy(id = "c-${it.id}") })
+        val document = template.copy(courses = listOf(a, b, c), weekRules =
+            a.meetings.map { com.classday.app.core.MeetingWeekRule(it.id, WeekParity.odd) } +
+            b.meetings.map { com.classday.app.core.MeetingWeekRule(it.id, WeekParity.odd) } +
+            c.meetings.map { com.classday.app.core.MeetingWeekRule(it.id, WeekParity.even) })
+        val group = com.classday.app.core.DuplicateGroup("same", listOf(a, b, c))
+        assertFalse(com.classday.app.core.canSubmitCourseMerge(group, a.id, document))
+        val selected = com.classday.app.core.selectedMergeGroup(group, setOf(c.id))
+        assertEquals(listOf(a, b), selected.courses)
+        assertFalse(com.classday.app.core.canSubmitCourseMerge(selected, null, document))
+        assertFalse(com.classday.app.core.canSubmitCourseMerge(selected, c.id, document))
+        assertTrue(com.classday.app.core.canSubmitCourseMerge(selected, b.id, document))
+        val merged = com.classday.app.core.applyMerge(document, selected, b.id)!!
+        assertEquals(c, merged.courses.first { it.id == c.id })
+        assertEquals(90.0, merged.courses.first { it.id == a.id }.grade)
+        val single = com.classday.app.core.selectedMergeGroup(group, setOf(b.id, c.id))
+        assertFalse(com.classday.app.core.canSubmitCourseMerge(single, a.id, document))
+    }
+    @Test
+    fun mergeEntryCountsGroupsWithCompatiblePairs() {
         val document = DemoData.makeDocument()
         val base = document.courses.first().copy(name = "数学", weeks = (1..8).toList())
         val copy = base.copy(id = "copy", meetings = base.meetings.map { it.copy(id = "copy-${it.id}") })

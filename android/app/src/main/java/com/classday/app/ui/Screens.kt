@@ -874,7 +874,7 @@ private fun MergePage(model: ClassdayModel) {
         model.duplicates().forEach { group ->
             var chosen by remember(group.normalizedName) { mutableStateOf(group.courses.firstOrNull { it.grade != null }?.id) }
             var excluded by remember(group.normalizedName) { mutableStateOf(setOf<String>()) }
-            val selected = group.copy(courses = group.courses.filter { it.id !in excluded })
+            val selected = com.classday.app.core.selectedMergeGroup(group, excluded)
             Card(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
                 Column(Modifier.padding(12.dp)) {
                     Text(group.courses.first().name, fontWeight = FontWeight.Bold)
@@ -893,8 +893,7 @@ private fun MergePage(model: ClassdayModel) {
                     }
                     val compatible = selected.courses.size >= 2 && com.classday.app.core.canMergeCourseSchedules(selected.courses, model.document)
                     if (!compatible) Text("请保留至少两门排课兼容的课程；可排除周次、教室或单双周不同的成员。", color = model.theme.secondary())
-                    val gradeResolved = !gradeConflict(selected) || selected.courses.any { it.id == chosen && it.grade != null }
-                    Button(enabled = compatible && gradeResolved, onClick = { model.merge(selected, chosen) }) { Text("合并所选课程") }
+                    Button(enabled = com.classday.app.core.canSubmitCourseMerge(selected, chosen, model.document), onClick = { model.merge(selected, chosen) }) { Text("合并所选课程") }
                 }
             }
         }
