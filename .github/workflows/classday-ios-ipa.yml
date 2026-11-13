@@ -8,6 +8,7 @@ on:
       - cursor/shared-app-group-92bb
       - cursor/classday-2-themes-92bb
       - main
+      - 'autoloop/**'
   pull_request:
     branches:
       - main

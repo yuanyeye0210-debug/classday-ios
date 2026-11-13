@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - cursor/android-2-9-2-5547
+      - 'autoloop/**'
     paths:
       - "android/**"
       - ".github/workflows/classday-android-apk.yml"
