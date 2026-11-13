@@ -43,11 +43,13 @@ object ScheduleTextImporter {
         if (rows.first().count { weekdayOf(it) != null } >= 3) return parseGrid(rows)
         if (best == null) return DraftImport(emptyList(), lines)
         val columns = best.third
-        val grouped = linkedMapOf<String, CourseDraft>()
+        val grouped = linkedMapOf<Triple<String, List<Int>, WeekParity>, CourseDraft>()
         val unparsed = mutableListOf<String>()
         var lastName = ""
+        var lastWeeks: Pair<List<Int>, WeekParity>? = null
         for (row in rows.drop(best.second + 1)) {
             val explicitName = cell(row, columns["name"]).trim().replace(Regex("^\\d+[.、．]?\\s+"), "")
+            if (explicitName.isNotEmpty() && explicitName != lastName) lastWeeks = null
             if (explicitName.isNotEmpty()) lastName = explicitName
             val name = explicitName.ifEmpty { lastName }
             if (name.isEmpty()) {
@@ -58,13 +60,16 @@ object ScheduleTextImporter {
             val period = parsePeriodSpan(cell(row, columns["period"]))
             val start = parseClockMinutes(cell(row, columns["start"]))
             val end = parseClockMinutes(cell(row, columns["end"]))
-            val (weeks, parity) = parseWeeks(cell(row, columns["weeks"]))
+            val rawWeeks = cell(row, columns["weeks"])
+            val weekRule = if (rawWeeks.isBlank()) lastWeeks ?: parseWeeks("") else parseWeeks(rawWeeks)
+            val (weeks, parity) = weekRule
             val teacher = cell(row, columns["teacher"])
             val location = cell(row, columns["location"]).ifEmpty { cell(row, columns["place"]) }
             if (weekday == null || (period == null && start == null)) {
                 unparsed += row.joinToString(delimiter.toString())
                 continue
             }
+            lastWeeks = weekRule
             val meeting = MeetingDraft(
                 weekday = weekday,
                 startMinutes = start,
@@ -76,15 +81,16 @@ object ScheduleTextImporter {
                 location = location,
                 parity = parity,
             )
-            val existing = grouped[name]
+            // Different week ranges must not share meetings: their cross-product is incorrect.
+            val key = Triple(name, weeks, parity)
+            val existing = grouped[key]
             if (existing == null) {
-                grouped[name] = CourseDraft(name, teacher, location, weeks, listOf(meeting), parity)
+                grouped[key] = CourseDraft(name, teacher, location, weeks, listOf(meeting), parity)
             } else {
-                grouped[name] = existing.copy(
+                grouped[key] = existing.copy(
                     teacher = existing.teacher.ifEmpty { teacher },
                     location = existing.location.ifEmpty { location },
                     meetings = existing.meetings + meeting,
-                    weeks = if (weeks.isNotEmpty()) weeks else existing.weeks,
                 )
             }
         }

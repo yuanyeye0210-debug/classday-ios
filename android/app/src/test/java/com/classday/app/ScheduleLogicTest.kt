@@ -179,6 +179,36 @@ class ScheduleLogicTest {
     }
 
     @Test
+    fun csvContinuationInheritsWeeksAndKeepsDistinctWeekRanges() {
+        val parsed = ScheduleTextImporter.parseCsv("""
+            课程,星期,节次,周次
+            数学,周一,1-2,1-8周 单周
+            ,周三,3-4,
+            数学,周五,5-6,9-16周
+            ,周二,7-8,
+            英语,周四,1-2,
+        """.trimIndent())
+        assertTrue(parsed.unparsed.isEmpty())
+        assertEquals(3, parsed.drafts.size)
+        val early = parsed.drafts[0]
+        assertEquals((1..8).toList(), early.weeks)
+        assertEquals(WeekParity.odd, early.parity)
+        assertEquals(listOf(1, 3), early.meetings.map { it.weekday })
+        assertTrue(early.meetings.all { it.parity == WeekParity.odd })
+        val late = parsed.drafts[1]
+        assertEquals((9..16).toList(), late.weeks)
+        assertEquals(WeekParity.any, late.parity)
+        assertEquals(listOf(5, 2), late.meetings.map { it.weekday })
+        assertEquals((1..16).toList(), parsed.drafts[2].weeks)
+        assertEquals(WeekParity.any, parsed.drafts[2].parity)
+        val courses = ScheduleTextImporter.toCourses(parsed.drafts, DemoData.makeDocument().semester).first
+        assertEquals((1..8).toList(), courses[0].weeks)
+        assertEquals(listOf(1, 3), courses[0].meetings.map { it.weekday })
+        assertEquals((9..16).toList(), courses[1].weeks)
+        assertEquals(listOf(5, 2), courses[1].meetings.map { it.weekday })
+    }
+
+    @Test
     fun csvImportRejectsPeriodsOutsideSemesterBeforeWriting() {
         val document = DemoData.makeDocument()
         val drafts = ScheduleTextImporter.parseCsv("""

@@ -855,6 +855,7 @@ private fun ImportReviewPage(model: ClassdayModel) {
                 Column(Modifier.padding(12.dp)) {
                     Text(draft.name, fontWeight = FontWeight.Bold)
                     Text(draft.teacher + " " + draft.location, fontSize = 12.sp)
+                    Text("周次：${draft.weeks.joinToString("、")}", fontSize = 12.sp)
                     draft.meetings.forEach { meeting ->
                         Text("${ScheduleCopy.weekdayName(meeting.weekday)} 第 ${meeting.startPeriod ?: "?"} 节 ${meeting.parity.title}", fontSize = 12.sp)
                     }
