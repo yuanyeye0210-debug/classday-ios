@@ -268,6 +268,45 @@ final class V2FeatureTests: XCTestCase {
 }
 
 final class SmartImportTests: XCTestCase {
+    func testCSVCombinedTimeWeeksAreInheritedWithoutWeeksColumn() {
+        let result = ScheduleTextImporter.parseCSV("""
+        课程,上课时间
+        数学,周一 08:00-09:40 1-8周 单周
+        ,周三 10:10-11:50
+        数学,周五 14:00-15:40 9-16周 双周
+        ,周二 08:00-09:40
+        """)
+        XCTAssertTrue(result.unparsed.isEmpty)
+        XCTAssertEqual(result.drafts.count, 2)
+        let early = result.drafts.first { $0.firstWeek == 1 && $0.lastWeek == 8 }
+        XCTAssertEqual(early?.meetings.map(\.weekday), [1, 3])
+        XCTAssertEqual(early?.meetings.map(\.parity), [1, 1])
+        XCTAssertEqual(early?.meetings.map(\.startMinutes), [480, 610])
+        let late = result.drafts.first { $0.firstWeek == 9 && $0.lastWeek == 16 }
+        XCTAssertEqual(late?.meetings.map(\.weekday), [5, 2])
+        XCTAssertEqual(late?.meetings.map(\.parity), [2, 2])
+    }
+
+    func testCSVUnrecognizedNewCourseResetsContinuationWeeks() {
+        let result = ScheduleTextImporter.parseCSV("""
+        课程,星期,节次,周次
+        数学,周一,1-2,1-8周 单周
+        英语,,3-4,9-12周 双周
+        ,周三,3-4,
+        """)
+        XCTAssertEqual(result.unparsed, ["英语,,3-4,9-12周 双周"])
+        XCTAssertEqual(result.drafts.count, 2)
+        let math = result.drafts.first { $0.name == "数学" }
+        XCTAssertEqual(math?.firstWeek, 1)
+        XCTAssertEqual(math?.lastWeek, 8)
+        XCTAssertEqual(math?.meetings.map(\.parity), [1])
+        let english = result.drafts.first { $0.name == "英语" }
+        XCTAssertEqual(english?.firstWeek, 1)
+        XCTAssertEqual(english?.lastWeek, 16)
+        XCTAssertEqual(english?.meetings.map(\.weekday), [3])
+        XCTAssertEqual(english?.meetings.map(\.parity), [0])
+    }
+
     func testCSVContinuationInheritsWeekRangeParityAndCustomWeeks() {
         let result = ScheduleTextImporter.parseCSV("""
         课程,星期,节次,周次
