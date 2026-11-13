@@ -34,8 +34,15 @@ class ScheduleLogicTest {
         assertTrue(eligible(listOf(base, otherRoom)).isEmpty())
         assertTrue(eligible(listOf(base)).isEmpty())
         assertEquals(1, eligible(listOf(base, copy)).size)
-        // Android has no member exclusions yet; a partial subset must not advertise a usable action.
-        assertTrue(eligible(listOf(base, copy, otherRoom)).isEmpty())
+        // The review page can exclude the incompatible member before applying the merge.
+        assertEquals(1, eligible(listOf(base, copy, otherRoom)).size)
+        val source = document.copy(courses = listOf(base, copy, otherRoom), weekRules = emptyList())
+        val selected = com.classday.app.core.DuplicateGroup("数学", listOf(base, copy))
+        val merged = com.classday.app.core.applyMerge(source, selected, base.id)!!
+        assertEquals(2, merged.courses.size)
+        assertEquals(otherRoom, merged.courses.first { it.id == otherRoom.id })
+        assertEquals(base.weeks, merged.courses.first { it.id == base.id }.weeks)
+        assertEquals(base.location, merged.courses.first { it.id == base.id }.location)
         val english = base.copy(id = "english", name = "英语")
         val englishCopy = english.copy(id = "english-copy")
         val groups = eligible(listOf(base, otherRoom, english, englishCopy))

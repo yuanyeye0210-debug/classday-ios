@@ -873,18 +873,28 @@ private fun MergePage(model: ClassdayModel) {
         Text("合并前会先把当前课表存进课表库。仅合并周次、教室及同一时段单双周规则兼容的课程。", color = model.theme.secondary())
         model.duplicates().forEach { group ->
             var chosen by remember(group.normalizedName) { mutableStateOf(group.courses.firstOrNull { it.grade != null }?.id) }
+            var excluded by remember(group.normalizedName) { mutableStateOf(setOf<String>()) }
+            val selected = group.copy(courses = group.courses.filter { it.id !in excluded })
             Card(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
                 Column(Modifier.padding(12.dp)) {
                     Text(group.courses.first().name, fontWeight = FontWeight.Bold)
-                    if (gradeConflict(group)) {
+                    group.courses.forEach { course ->
+                        FilterChip(
+                            selected = course.id !in excluded,
+                            onClick = { excluded = if (course.id in excluded) excluded - course.id else excluded + course.id },
+                            label = { Text("${if (course.id in excluded) "已排除" else "参与合并"} · ${course.teacher} · ${course.location} · ${course.weeks.joinToString(",")}周") }
+                        )
+                    }
+                    if (gradeConflict(selected)) {
                         Text("成绩不一样，选一个保留")
-                        group.courses.filter { it.grade != null }.forEach { course ->
+                        selected.courses.filter { it.grade != null }.forEach { course ->
                             FilterChip(selected = chosen == course.id, onClick = { chosen = course.id }, label = { Text("${course.grade}") }, modifier = Modifier.padding(end = 6.dp))
                         }
                     }
-                    val compatible = com.classday.app.core.canMergeCourseSchedules(group.courses, model.document)
-                    if (!compatible) Text("周次、教室或同一时段单双周不同，请保持独立课程。", color = model.theme.secondary())
-                    Button(enabled = compatible, onClick = { model.merge(group, chosen) }) { Text("合并") }
+                    val compatible = selected.courses.size >= 2 && com.classday.app.core.canMergeCourseSchedules(selected.courses, model.document)
+                    if (!compatible) Text("请保留至少两门排课兼容的课程；可排除周次、教室或单双周不同的成员。", color = model.theme.secondary())
+                    val gradeResolved = !gradeConflict(selected) || selected.courses.any { it.id == chosen && it.grade != null }
+                    Button(enabled = compatible && gradeResolved, onClick = { model.merge(selected, chosen) }) { Text("合并所选课程") }
                 }
             }
         }

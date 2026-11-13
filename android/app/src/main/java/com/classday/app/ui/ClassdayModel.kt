@@ -355,6 +355,7 @@ class ClassdayModel(app: Application) : AndroidViewModel(app) {
     fun mergeableGroups(): List<DuplicateGroup> = com.classday.app.core.mergeableScheduleGroups(document)
 
     fun merge(group: DuplicateGroup, gradeSource: String?) {
+        if (group.courses.size < 2) return
         if (!com.classday.app.core.canMergeCourseSchedules(group.courses, document)) {
             banner = "周次、教室或同一时段单双周不同，已保持独立课程"
             return
