@@ -7,29 +7,21 @@ import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import com.classday.app.MainActivity
 import com.classday.app.core.CivilCalendar
-import com.classday.app.core.ScheduleEngine
+import com.classday.app.core.tilePresentation
 import java.time.Instant
 import java.time.ZoneId
 
 class NextClassTileService : TileService() {
     override fun onStartListening() {
         val tile = qsTile ?: return
-        val loaded = ClassdayStore.loadWithStatus(this)
-        if (loaded.error != null) {
-            tile.label = "课表读取失败"
-            tile.state = Tile.STATE_INACTIVE
-            if (Build.VERSION.SDK_INT >= 29) tile.subtitle = "打开课曜查看详情"
-            tile.updateTile()
-            return
-        }
-        val document = loaded.document
-        val calendar = CivilCalendar(ZoneId.systemDefault())
-        val now = Instant.now()
-        val item = ScheduleEngine.current(now, document.courses, document.semester, calendar, document.scheduleContext)
-            ?: ScheduleEngine.next(now, document.courses, document.semester, calendar, document.scheduleContext)
-        tile.label = "下一节"
-        tile.state = Tile.STATE_ACTIVE
-        if (Build.VERSION.SDK_INT >= 29) tile.subtitle = item?.name ?: "今天没有课"
+        val presentation = tilePresentation(
+            ClassdayStore.loadWithStatus(this),
+            Instant.now(),
+            CivilCalendar(ZoneId.systemDefault()),
+        )
+        tile.label = presentation.label
+        tile.state = if (presentation.active) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
+        if (Build.VERSION.SDK_INT >= 29) tile.subtitle = presentation.subtitle
         tile.updateTile()
     }
 

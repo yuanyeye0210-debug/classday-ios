@@ -39,13 +39,12 @@ import com.classday.app.core.Occurrence
 import com.classday.app.core.OverrideKind
 import com.classday.app.core.ScheduleCopy
 import com.classday.app.core.ScheduleEngine
-import com.classday.app.core.StoreDocument
 import com.classday.app.core.TimetableLibrary
+import com.classday.app.core.WidgetLoadState
+import com.classday.app.core.widgetLoadState
 import com.classday.app.platform.ClassdayStore
 import java.time.Instant
 import java.time.ZoneId
-
-private data class WidgetSnapshot(val document: StoreDocument, val current: Occurrence?, val next: Occurrence?, val week: Int, val loadFailed: Boolean = false)
 
 @Composable
 private fun StoreFailureContent(context: Context) {
@@ -57,20 +56,8 @@ private fun StoreFailureContent(context: Context) {
     }
 }
 
-private fun snapshot(context: Context): WidgetSnapshot {
-    val loaded = ClassdayStore.loadWithStatus(context)
-    val document = loaded.document
-    if (loaded.error != null) return WidgetSnapshot(document, null, null, 1, loadFailed = true)
-    val calendar = CivilCalendar(ZoneId.systemDefault())
-    val now = Instant.now()
-    val week = calendar.weekIndex(now, document.semester) ?: 1
-    return WidgetSnapshot(
-        document,
-        ScheduleEngine.current(now, document.courses, document.semester, calendar, document.scheduleContext),
-        ScheduleEngine.next(now, document.courses, document.semester, calendar, document.scheduleContext),
-        week,
-    )
-}
+private fun snapshot(context: Context): WidgetLoadState =
+    widgetLoadState(ClassdayStore.loadWithStatus(context), Instant.now(), CivilCalendar(ZoneId.systemDefault()))
 
 class NextClassWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
@@ -143,7 +130,7 @@ class DelayClassCallback : ActionCallback {
 }
 
 @Composable
-private fun NextClassContent(context: Context, snap: WidgetSnapshot) {
+private fun NextClassContent(context: Context, snap: WidgetLoadState) {
     if (snap.loadFailed) { StoreFailureContent(context); return }
     val theme = snap.document.appearance.theme
     val item = snap.current ?: snap.next
@@ -175,7 +162,7 @@ private fun NextClassContent(context: Context, snap: WidgetSnapshot) {
 }
 
 @Composable
-private fun TodayContent(context: Context, snap: WidgetSnapshot) {
+private fun TodayContent(context: Context, snap: WidgetLoadState) {
     if (snap.loadFailed) { StoreFailureContent(context); return }
     val theme = snap.document.appearance.theme
     val calendar = CivilCalendar(ZoneId.systemDefault())
@@ -194,7 +181,7 @@ private fun TodayContent(context: Context, snap: WidgetSnapshot) {
 }
 
 @Composable
-private fun WeekContent(context: Context, snap: WidgetSnapshot) {
+private fun WeekContent(context: Context, snap: WidgetLoadState) {
     if (snap.loadFailed) { StoreFailureContent(context); return }
     val theme = snap.document.appearance.theme
     val calendar = CivilCalendar(ZoneId.systemDefault())
