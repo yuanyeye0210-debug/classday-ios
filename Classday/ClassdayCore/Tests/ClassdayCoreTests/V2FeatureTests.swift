@@ -3,6 +3,40 @@ import XCTest
 import ClassdayCore
 
 final class ImportedPeriodValidationTests: XCTestCase {
+    func testExplicitlyAdoptingExistingClockTimesResolvesInvalidPeriods() {
+        let periods = DemoData.makeDocument().semester.periods
+        for (startPeriod, endPeriod) in [(11, 12), (6, 3)] {
+            var meeting = ImportedMeetingDraft(weekday: 1, startMinutes: 480, endMinutes: 580,
+                                               startPeriod: startPeriod, endPeriod: endPeriod,
+                                               location: "A301", parity: 1)
+            let original = meeting
+            meeting.normalizeForClockEditing(in: periods)
+            XCTAssertEqual(meeting, original)
+            XCTAssertNil(meeting.validatedExplicitPeriodSpan(in: periods))
+            XCTAssertTrue(meeting.hasValidClockTime)
+            XCTAssertTrue(meeting.adoptClockTime())
+            var expected = original
+            expected.startPeriod = nil
+            expected.endPeriod = nil
+            XCTAssertEqual(meeting, expected)
+            XCTAssertTrue(meeting.adoptClockTime())
+            XCTAssertEqual(meeting, expected)
+        }
+    }
+
+    func testAdoptingIncompleteOrInvalidClockTimesKeepsOriginalPeriods() {
+        let times: [(Int?, Int?)] = [(nil, nil), (480, nil), (nil, 580),
+                                    (580, 480), (480, 480), (-1, 580), (480, 1440)]
+        for (start, end) in times {
+            var meeting = ImportedMeetingDraft(weekday: 1, startMinutes: start, endMinutes: end,
+                                               startPeriod: 11, endPeriod: 12)
+            let original = meeting
+            XCTAssertFalse(meeting.hasValidClockTime)
+            XCTAssertFalse(meeting.adoptClockTime())
+            XCTAssertEqual(meeting, original)
+        }
+    }
+
     func testEditingPreservesInvalidPeriodsUntilClockTimesAreCorrected() {
         let periods = DemoData.makeDocument().semester.periods
         for original in [

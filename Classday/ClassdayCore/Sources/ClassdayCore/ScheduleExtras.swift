@@ -696,13 +696,25 @@ public struct ImportedMeetingDraft: Equatable, Sendable, Identifiable {
         endPeriod = nil
     }
 
-    /// Explicit user edits replace period notation only after both clock values exist.
+    /// Clock values must describe a complete, ordered range within one day.
+    public var hasValidClockTime: Bool {
+        guard let start = startMinutes, let end = endMinutes else { return false }
+        return (0..<1440).contains(start) && (0..<1440).contains(end) && start < end
+    }
+
+    /// Use only in response to an explicit choice to replace the original period notation.
+    @discardableResult
+    public mutating func adoptClockTime() -> Bool {
+        guard hasValidClockTime else { return false }
+        startPeriod = nil
+        endPeriod = nil
+        return true
+    }
+
+    /// Explicit user edits replace period notation only after both clock values are valid.
     public mutating func setClockTime(_ minutes: Int, isStart: Bool) {
         if isStart { startMinutes = minutes } else { endMinutes = minutes }
-        if let start = startMinutes, let end = endMinutes, start < end {
-            startPeriod = nil
-            endPeriod = nil
-        }
+        adoptClockTime()
     }
 
     public init(id: UUID = UUID(), weekday: Int, startMinutes: Int? = nil, endMinutes: Int? = nil,

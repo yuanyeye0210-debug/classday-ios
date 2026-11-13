@@ -802,12 +802,18 @@ private struct DraftEditorView: View {
             }
             if value.startPeriod != nil,
                value.validatedExplicitPeriodSpan(in: model.document.semester.periods) == nil {
-                Text("原安排第 \(value.startPeriod ?? 0)–\(value.endPeriod ?? value.startPeriod ?? 0) 节不在当前学期节次范围内。请填写有效的开始和结束时间，或删除这个安排；未修正前不能导入。")
+                Text("原安排第 \(value.startPeriod ?? 0)–\(value.endPeriod ?? value.startPeriod ?? 0) 节超出当前学期范围、缺少节次或起止倒序。" + (value.hasValidClockTime ? "请确认采用下方时间，或修改、删除这个安排；未确认前不能导入。" : "请设置有效的开始和结束时间，或删除这个安排；未修正前不能导入。"))
                     .font(.caption).foregroundStyle(.red)
+                if value.hasValidClockTime {
+                    Button("忽略原节次，采用当前时间") {
+                        meeting.wrappedValue.adoptClockTime()
+                    }
+                    .buttonStyle(.bordered)
+                }
             }
             HStack(spacing: 12) {
-                timeField("开始", binding: timeBinding(meeting, isStart: true))
-                timeField("结束", binding: timeBinding(meeting, isStart: false))
+                timeField(value.startMinutes == nil ? "开始（未设置）" : "开始", binding: timeBinding(meeting, isStart: true))
+                timeField(value.endMinutes == nil ? "结束（未设置）" : "结束", binding: timeBinding(meeting, isStart: false))
             }
             VStack(alignment: .leading, spacing: 8) {
                 Text("这个安排的单双周").font(.caption.weight(.bold)).foregroundStyle(Theme.secondary)
