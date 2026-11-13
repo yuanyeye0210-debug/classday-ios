@@ -179,6 +179,28 @@ class ScheduleLogicTest {
     }
 
     @Test
+    fun csvGridKeepsPeriodRangesAndRejectsUnknownTimes() {
+        val parsed = ScheduleTextImporter.parseCsv("""
+            节次,周一,周二,周三
+            1-2,数学,,
+            3-4节,,英语,
+            第5节,,,物理
+            未定,待安排,,
+            6-3,倒序,,
+            21-22,越界,,
+            08:00,缺少结束时间,,
+            09:40-08:00,倒序时间,,
+        """.trimIndent())
+        assertEquals(listOf("数学", "英语", "物理"), parsed.drafts.map { it.name })
+        assertEquals(listOf(1, 3, 5), parsed.drafts.map { it.meetings.single().startPeriod })
+        assertEquals(listOf(2, 4, 5), parsed.drafts.map { it.meetings.single().endPeriod })
+        assertEquals(5, parsed.unparsed.size)
+        val courses = ScheduleTextImporter.toCourses(parsed.drafts, DemoData.makeDocument().semester).first
+        assertEquals(listOf(1, 3, 5), courses.map { it.meetings.single().startPeriod })
+        assertEquals(listOf(2, 4, 5), courses.map { it.meetings.single().endPeriod })
+    }
+
+    @Test
     fun csvFindsHeaderAfterTitleAndKeepsMergedNameContinuations() {
         for (separator in listOf(',', ';')) {
             val csv = listOf(

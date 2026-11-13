@@ -156,8 +156,19 @@ object ScheduleTextImporter {
         val dayColumns = header.mapIndexedNotNull { index, title -> weekdayOf(title)?.let { it to index } }
         if (dayColumns.size < 3) return DraftImport(emptyList(), rows.map { it.joinToString(",") })
         val grouped = linkedMapOf<String, CourseDraft>()
+        val unparsed = mutableListOf<String>()
         for (row in rows.drop(1)) {
-            val span = parseClockRange(row.firstOrNull().orEmpty())
+            val label = row.firstOrNull().orEmpty()
+            val span = parseClockRange(label)?.takeIf { it.second > it.first }
+            val periods = if (span == null && ':' !in label) {
+                parsePeriodSpan(label)?.takeIf { it.second >= it.first }
+            } else null
+            if (span == null && periods == null) {
+                if (dayColumns.any { (_, column) -> !row.getOrNull(column).isNullOrBlank() }) {
+                    unparsed += row.joinToString(",")
+                }
+                continue
+            }
             for ((weekday, column) in dayColumns) {
                 val cell = row.getOrNull(column)?.trim().orEmpty()
                 if (cell.isEmpty()) continue
@@ -168,8 +179,8 @@ object ScheduleTextImporter {
                     weekday = weekday,
                     startMinutes = span?.first,
                     endMinutes = span?.second,
-                    startPeriod = span?.first?.let { ICSImporter.periodGuess(it) },
-                    endPeriod = span?.second?.let { ICSImporter.periodGuess((it - 1).coerceAtLeast(0)) },
+                    startPeriod = periods?.first ?: span?.first?.let { ICSImporter.periodGuess(it) },
+                    endPeriod = periods?.second ?: span?.second?.let { ICSImporter.periodGuess((it - 1).coerceAtLeast(0)) },
                     location = location,
                 )
                 val existing = grouped[name]
@@ -177,7 +188,7 @@ object ScheduleTextImporter {
                 else existing.copy(meetings = existing.meetings + meeting, location = existing.location.ifEmpty { location })
             }
         }
-        return DraftImport(grouped.values.toList(), emptyList())
+        return DraftImport(grouped.values.toList(), unparsed)
     }
 
     private fun mapColumns(header: List<String>): Map<String, Int> {
