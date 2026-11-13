@@ -15,6 +15,7 @@ import com.classday.app.core.CountdownCopy
 import com.classday.app.core.Occurrence
 import com.classday.app.core.ScheduleEngine
 import com.classday.app.core.StoreDocument
+import com.classday.app.core.applyStoredAlarmResult
 import com.classday.app.widget.NextClassWidget
 import com.classday.app.widget.TodayWidget
 import com.classday.app.widget.WeekBoardWidget
@@ -38,17 +39,21 @@ object ClassAlerts {
         scope.launch {
             try {
                 val loaded = com.classday.app.platform.ClassdayStore.loadWithStatus(app)
-                if (loaded.error == null) {
-                    refresh(app, loaded.document)
-                } else {
-                    // An unreadable personal timetable must never schedule demo classes.
-                    app.getSystemService(NotificationManager::class.java).cancel(notificationId)
-                    val pending = PendingIntent.getBroadcast(
-                        app, requestCode, Intent(app, ClassAlarmReceiver::class.java),
-                        PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
-                    )
-                    if (pending != null) app.getSystemService(AlarmManager::class.java).cancel(pending)
-                }
+                applyStoredAlarmResult(
+                    loaded = loaded,
+                    refresh = { refresh(app, it) },
+                    cancelNotification = {
+                        // An unreadable personal timetable must never schedule demo classes.
+                        app.getSystemService(NotificationManager::class.java).cancel(notificationId)
+                    },
+                    cancelAlarm = {
+                        val pending = PendingIntent.getBroadcast(
+                            app, requestCode, Intent(app, ClassAlarmReceiver::class.java),
+                            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
+                        )
+                        if (pending != null) app.getSystemService(AlarmManager::class.java).cancel(pending)
+                    },
+                )
             } finally {
                 done?.invoke()
             }
