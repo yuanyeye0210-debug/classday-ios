@@ -735,6 +735,18 @@ private fun DataPage(model: ClassdayModel) {
             model.importCalendar(parsed.courses, parsed.exams, parsed.homework)
         } else model.importDocument(text, replace = true)
     }
+    val importCsv = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val text = withContext(Dispatchers.IO) {
+                try {
+                    context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+                } catch (_: Exception) { null }
+            }
+            if (text == null) model.banner = "无法读取文件，请重新选择 UTF-8 CSV"
+            else model.stageDrafts(text, csv = true)
+        }
+    }
     val photo = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
@@ -755,6 +767,8 @@ private fun DataPage(model: ClassdayModel) {
         PageTitle("数据", model::back)
         Button(onClick = { export.launch("classday-${model.document.semester.shortName}.json") }) { Text("导出 JSON") }
         Button(onClick = { importJson.launch(arrayOf("application/json", "text/*", "application/octet-stream")) }) { Text("导入 JSON 或 .ics") }
+        Button(onClick = { importCsv.launch(arrayOf("text/*", "application/csv", "application/vnd.ms-excel", "application/octet-stream")) }) { Text("导入 Excel 导出的 CSV") }
+        Text("在 Excel 中另存为 CSV UTF-8（不是 .xlsx）。表头可用：课程名称、星期、节次、教室、教师、周次；也支持开始时间和结束时间。预览确认后追加，不替换现有课程。", color = model.theme.secondary(), fontSize = 12.sp)
         OutlinedTextField(icsUrl, { icsUrl = it }, label = { Text("iCal 订阅地址") }, modifier = Modifier.fillMaxWidth())
         Button(onClick = {
             scope.launch {

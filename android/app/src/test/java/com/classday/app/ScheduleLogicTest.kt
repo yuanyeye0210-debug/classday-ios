@@ -179,6 +179,19 @@ class ScheduleLogicTest {
     }
 
     @Test
+    fun excelUtf8CsvPreservesQuotedCellsAndReportsInvalidRows() {
+        val csv = "\uFEFF课程名称,星期,节次,教室,教师,周次\r\n\"数学,进阶\",周一,1-2,A301,陈老师,1-16周\r\n未安排课程,,,,,\r\n"
+        val parsed = ScheduleTextImporter.parseCsv(csv)
+        assertEquals(1, parsed.drafts.size)
+        assertEquals("数学,进阶", parsed.drafts.single().name)
+        assertEquals(1, parsed.drafts.single().meetings.single().weekday)
+        assertEquals(1, parsed.drafts.single().meetings.single().startPeriod)
+        assertEquals(2, parsed.drafts.single().meetings.single().endPeriod)
+        assertEquals(1, parsed.unparsed.size)
+        assertTrue(ScheduleTextImporter.parseCsv("\uFEFF").drafts.isEmpty())
+    }
+
+    @Test
     fun csvParsesMeetingsParityAndGrid() {
         val csv = """
             课程名称,星期,开始时间,结束时间,教室,教师,周次

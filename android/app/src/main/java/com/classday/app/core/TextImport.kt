@@ -23,7 +23,7 @@ data class DraftImport(val drafts: List<CourseDraft>, val unparsed: List<String>
 
 object ScheduleTextImporter {
     fun parseCsv(text: String): DraftImport {
-        val lines = text.replace("\r\n", "\n").replace('\r', '\n').lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toList()
+        val lines = text.removePrefix("\uFEFF").replace("\r\n", "\n").replace('\r', '\n').lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toList()
         if (lines.isEmpty()) return DraftImport(emptyList(), emptyList())
         val delimiter = if (lines.first().contains(';') && !lines.first().contains(',')) ';' else ','
         val rows = lines.map { splitCsv(it, delimiter) }

@@ -324,10 +324,11 @@ class ClassdayModel(app: Application) : AndroidViewModel(app) {
         persist(markUser = true)
     }
 
-    fun stageDrafts(text: String) {
-        val parsed = ScheduleTextImporter.parseText(text)
+    fun stageDrafts(text: String, csv: Boolean = false) {
+        val parsed = if (csv) ScheduleTextImporter.parseCsv(text) else ScheduleTextImporter.parseText(text)
         importDrafts = parsed.drafts
         importNote = if (parsed.drafts.isEmpty()) "没有认出课程" else "认出 ${parsed.drafts.size} 门，确认后才写入"
+        if (parsed.unparsed.isNotEmpty()) importNote += "；${parsed.unparsed.size} 行未识别，请检查源文件"
         if (parsed.drafts.isNotEmpty()) open(Screen.ImportReview)
         else banner = importNote
     }
