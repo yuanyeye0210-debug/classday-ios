@@ -36,7 +36,11 @@ struct ClassdayApp: App {
                             model.tab = .today
                             model.showExams = true
                         } else if kind == PlannedReminder.Kind.homework.rawValue {
-                            model.tab = .agenda
+                            model.tab = .settings
+                            // Present after the destination tab has mounted its sheet.
+                            DispatchQueue.main.async {
+                                model.showStudyDesk = true
+                            }
                         }
                         return
                     }
