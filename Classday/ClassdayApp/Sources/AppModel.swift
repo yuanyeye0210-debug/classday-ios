@@ -662,14 +662,20 @@ final class AppModel {
     /// snapshot actually changed, so identical content is never re-pushed
     /// (iOS throttles Live Activity updates).
     func refreshLiveActivityIfNeeded(now: Date = Date()) {
+        if loadError != nil {
+            lastLiveActivitySnapshot = nil
+            NextClassActivity.scheduleBackgroundRefresh(document: document, loadError: loadError, calendar: calendar, now: now)
+            NextClassActivity.sync(document: document, loadError: loadError, calendar: calendar)
+            return
+        }
         // Scheduling is NOT diff-gated: a rest-day open (snapshot nil, was
         // nil) must still queue the next boundary, or the background chain
         // is never seeded. Re-submitting replaces the pending request.
-        NextClassActivity.scheduleBackgroundRefresh(document: document, calendar: calendar, now: now)
-        let snapshot = NextClassSnapshot.make(document: document, now: now, calendar: calendar)
+        NextClassActivity.scheduleBackgroundRefresh(document: document, loadError: loadError, calendar: calendar, now: now)
+        let snapshot = NextClassSnapshot.makeForStoredLoad(document: document, loadError: loadError, now: now, calendar: calendar)
         guard NextClassSnapshot.shouldUpdate(previous: lastLiveActivitySnapshot, current: snapshot) else { return }
         lastLiveActivitySnapshot = snapshot
-        NextClassActivity.sync(document: document, calendar: calendar)
+        NextClassActivity.sync(document: document, loadError: loadError, calendar: calendar)
     }
 
     /// The widget extension can rewrite the shared store (e.g. "推迟 10 分钟").

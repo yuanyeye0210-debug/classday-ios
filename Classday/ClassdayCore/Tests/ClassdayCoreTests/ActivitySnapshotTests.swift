@@ -296,4 +296,39 @@ final class ActivitySnapshotTests: XCTestCase {
         let during = NextClassSnapshot.make(document: document, now: at1010, calendar: calendar)
         XCTAssertTrue(NextClassSnapshot.shouldUpdate(previous: before, current: during))
     }
+
+    func testStoredLoadErrorSuppressesLiveActivitySnapshotUntilCleared() {
+        let at0830 = TestSupport.date(2026, 11, 9, 8, 30, calendar: calendar)
+        let at0950 = TestSupport.date(2026, 11, 9, 9, 50, calendar: calendar)
+        let errorMessage = "课表文件无法读取，已另存一份损坏文件备份，没有直接覆盖。"
+
+        let suppressedInProgress = NextClassSnapshot.makeForStoredLoad(
+            document: document,
+            loadError: errorMessage,
+            now: at0830,
+            calendar: calendar
+        )
+        let suppressedUpcoming = NextClassSnapshot.makeForStoredLoad(
+            document: document,
+            loadError: errorMessage,
+            now: at0950,
+            calendar: calendar
+        )
+        XCTAssertNil(suppressedInProgress)
+        XCTAssertNil(suppressedUpcoming)
+
+        let active = NextClassSnapshot.make(document: document, now: at0830, calendar: calendar)
+        XCTAssertNotNil(active)
+        XCTAssertTrue(NextClassSnapshot.shouldUpdate(previous: active, current: suppressedInProgress))
+
+        let restored = NextClassSnapshot.makeForStoredLoad(
+            document: document,
+            loadError: nil,
+            now: at0830,
+            calendar: calendar
+        )
+        XCTAssertEqual(restored, active)
+        XCTAssertEqual(restored?.title, "高等数学")
+        XCTAssertEqual(restored?.phase, "上课中")
+    }
 }

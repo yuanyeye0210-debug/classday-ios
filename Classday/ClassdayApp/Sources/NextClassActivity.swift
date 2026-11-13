@@ -27,7 +27,16 @@ enum NextClassActivity {
         }
     }
 
-    static func scheduleBackgroundRefresh(document: StoreDocument, calendar: Calendar, now: Date = Date()) {
+    static func scheduleBackgroundRefresh(
+        document: StoreDocument,
+        loadError: String? = nil,
+        calendar: Calendar,
+        now: Date = Date()
+    ) {
+        guard loadError == nil else {
+            BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: backgroundTaskID)
+            return
+        }
         // Pre-class wake: when the next change is a midnight flip and the
         // flipped day's first class starts 8+ hours after it, wake 60
         // minutes before that class instead of at midnight — an Activity
@@ -50,14 +59,19 @@ enum NextClassActivity {
         }
     }
 
-    static func sync(document: StoreDocument, calendar: Calendar) {
-        Task { await syncAsync(document: document, calendar: calendar) }
+    static func sync(document: StoreDocument, loadError: String? = nil, calendar: Calendar) {
+        Task { await syncAsync(document: document, loadError: loadError, calendar: calendar) }
     }
 
-    static func syncAsync(document: StoreDocument, calendar: Calendar, now: Date = Date()) async {
+    static func syncAsync(document: StoreDocument, loadError: String? = nil, calendar: Calendar, now: Date = Date()) async {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         let activities = Activity<NextClassAttributes>.activities
-        guard let snapshot = NextClassSnapshot.make(document: document, now: now, calendar: calendar) else {
+        guard let snapshot = NextClassSnapshot.makeForStoredLoad(
+            document: document,
+            loadError: loadError,
+            now: now,
+            calendar: calendar
+        ) else {
             for activity in activities {
                 await activity.end(nil, dismissalPolicy: .immediate)
             }

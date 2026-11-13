@@ -75,6 +75,18 @@ public enum NextClassSnapshot {
         )
     }
 
+    /// Returns the Live Activity snapshot when the store loaded cleanly, or
+    /// `nil` when a load error caused the app to fall back to demo data.
+    public static func makeForStoredLoad(
+        document: StoreDocument,
+        loadError: String?,
+        now: Date = Date(),
+        calendar: Calendar = ClassdayCalendar.make()
+    ) -> Value? {
+        guard loadError == nil else { return nil }
+        return make(document: document, now: now, calendar: calendar)
+    }
+
     /// The next time the snapshot value produced by `make` can change:
     /// the end of the class in progress, the start of the next class, or
     /// the midnight at which the snapshot first appears for a new day
