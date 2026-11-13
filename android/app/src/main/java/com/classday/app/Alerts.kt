@@ -33,6 +33,28 @@ object ClassAlerts {
     private const val requestCode = 2902
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    fun refreshStoredAsync(context: Context, done: (() -> Unit)? = null) {
+        val app = context.applicationContext
+        scope.launch {
+            try {
+                val loaded = com.classday.app.platform.ClassdayStore.loadWithStatus(app)
+                if (loaded.error == null) {
+                    refresh(app, loaded.document)
+                } else {
+                    // An unreadable personal timetable must never schedule demo classes.
+                    app.getSystemService(NotificationManager::class.java).cancel(notificationId)
+                    val pending = PendingIntent.getBroadcast(
+                        app, requestCode, Intent(app, ClassAlarmReceiver::class.java),
+                        PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
+                    )
+                    if (pending != null) app.getSystemService(AlarmManager::class.java).cancel(pending)
+                }
+            } finally {
+                done?.invoke()
+            }
+        }
+    }
+
     fun refreshAsync(context: Context, document: StoreDocument, done: (() -> Unit)? = null) {
         val app = context.applicationContext
         scope.launch {
@@ -145,12 +167,13 @@ object ClassAlerts {
 class ClassAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         val pending = goAsync()
-        ClassAlerts.refreshAsync(context, com.classday.app.platform.ClassdayStore.load(context)) { pending.finish() }
+        ClassAlerts.refreshStoredAsync(context) { pending.finish() }
     }
 }
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
-        ClassAlerts.refreshAsync(context, com.classday.app.platform.ClassdayStore.load(context))
+        val pending = goAsync()
+        ClassAlerts.refreshStoredAsync(context) { pending.finish() }
     }
 }
