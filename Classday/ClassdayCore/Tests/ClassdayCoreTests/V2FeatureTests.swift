@@ -268,6 +268,43 @@ final class V2FeatureTests: XCTestCase {
 }
 
 final class SmartImportTests: XCTestCase {
+    func testCSVKeepsDifferentTeachersAndRoomsSeparate() {
+        let rows = [
+            "数学,周一,1-2,1-9周 单周,张老师,实验楼",
+            "数学,周三,3-4,1-9周 双周,张老师,教学楼",
+            "数学,周五,5-6,1-9周 双周,李老师,实验楼",
+            "数学,周二,7-8,1-9周 单周,张老师,实验楼"
+        ]
+        for ordered in [rows, Array(rows.reversed())] {
+            let result = ScheduleTextImporter.parseCSV("课程,星期,节次,周次,教师,教室\n" + ordered.joined(separator: "\n"))
+            XCTAssertTrue(result.unparsed.isEmpty)
+            XCTAssertEqual(result.drafts.count, 3)
+            let lab = result.drafts.first { $0.teacher == "张老师" && $0.location == "实验楼" }
+            XCTAssertEqual(Set(lab?.meetings.map(\.weekday) ?? []), Set([1, 2]))
+            XCTAssertEqual(lab?.meetings.map(\.parity), [1, 1])
+            for draft in result.drafts {
+                XCTAssertEqual(draft.firstWeek, 1)
+                XCTAssertEqual(draft.lastWeek, 9)
+                XCTAssertTrue(draft.meetings.allSatisfy { $0.location == draft.location })
+                if draft.teacher != "张老师" || draft.location != "实验楼" {
+                    XCTAssertEqual(draft.meetings.count, 1)
+                    XCTAssertEqual(draft.meetings.first?.parity, 2)
+                }
+            }
+        }
+    }
+
+    func testCSVUnknownRoomStaysSeparateFromKnownRoom() {
+        let result = ScheduleTextImporter.parseCSV("""
+        课程,星期,节次,周次,教师,教室
+        数学,周一,1-2,1-9周 单周,张老师,
+        数学,周三,3-4,1-9周 双周,张老师,实验楼
+        """)
+        XCTAssertEqual(result.drafts.count, 2)
+        XCTAssertEqual(result.drafts.first { $0.meetings.first?.weekday == 1 }?.location, "")
+        XCTAssertEqual(result.drafts.first { $0.meetings.first?.weekday == 3 }?.location, "实验楼")
+    }
+
     func testCSVParsesStandardExport() {
         let csv = """
         课程名称,星期,开始时间,结束时间,教室,教师,周次
@@ -342,8 +379,12 @@ final class SmartImportTests: XCTestCase {
         let math = result.drafts.first { $0.name == "高等数学" }
         XCTAssertNotNil(math)
         XCTAssertEqual(math?.teacher, "陈老师")
-        XCTAssertEqual(math?.meetings.count, 2)
+        XCTAssertEqual(math?.meetings.count, 1)
         XCTAssertEqual(math?.meetings.first?.location, "教学楼A301")
+        let continuation = result.drafts.first { $0.name == "高等数学" && $0.location == "教学楼A302" }
+        XCTAssertEqual(continuation?.teacher, "陈老师")
+        XCTAssertEqual(continuation?.meetings.first?.weekday, 3)
+        XCTAssertEqual(continuation?.meetings.count, 1)
         let english = result.drafts.first { $0.name == "大学英语" }
         XCTAssertEqual(english?.customWeeks, [1, 3, 5, 7])
     }

@@ -1085,7 +1085,7 @@ public enum ScheduleTextImporter {
         var order: [String] = []
         var map: [String: ImportedCourseDraft] = [:]
         for (course, meeting) in raw {
-            let key = [course.name, course.teacher, String(course.firstWeek), String(course.lastWeek),
+            let key = [course.name, course.teacher, meeting.location, String(course.firstWeek), String(course.lastWeek),
                        course.customWeeks.map(String.init).joined(separator: ",")].joined(separator: "|")
             if var existing = map[key] {
                 existing.meetings.append(meeting)
