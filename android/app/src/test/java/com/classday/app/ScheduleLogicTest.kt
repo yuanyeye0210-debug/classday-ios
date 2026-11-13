@@ -179,6 +179,30 @@ class ScheduleLogicTest {
     }
 
     @Test
+    fun csvImportRejectsPeriodsOutsideSemesterBeforeWriting() {
+        val document = DemoData.makeDocument()
+        val drafts = ScheduleTextImporter.parseCsv("""
+            节次,周一,周二,周三
+            1-2,数学,,
+            11-12,数学,夜课,
+        """.trimIndent()).drafts
+        val checked = ScheduleTextImporter.validateDrafts(drafts, document.semester)
+        assertEquals(2, checked.unparsed.size)
+        assertEquals(listOf("数学"), checked.drafts.map { it.name })
+        assertEquals(1, checked.drafts.single().meetings.size)
+        val (courses, _) = ScheduleTextImporter.toCourses(drafts, document.semester)
+        assertEquals(1, courses.size)
+        assertEquals(2, courses.single().meetings.single().endPeriod)
+        val saved = document.copy(courses = document.courses + courses)
+        assertTrue(StoreCodec.validate(saved, calendar).isAcceptable)
+        assertNotNull(StoreCodec.importing(StoreCodec.exporting(saved)).document)
+        val onlyInvalid = ScheduleTextImporter.parseCsv("课程,星期,节次\n夜课,周一,11-12").drafts
+        assertTrue(ScheduleTextImporter.toCourses(onlyInvalid, document.semester).first.isEmpty())
+        val shorter = document.semester.copy(periods = document.semester.periods.take(1))
+        assertTrue(ScheduleTextImporter.toCourses(drafts, shorter).first.isEmpty())
+    }
+
+    @Test
     fun csvGridKeepsPeriodRangesAndRejectsUnknownTimes() {
         val parsed = ScheduleTextImporter.parseCsv("""
             节次,周一,周二,周三

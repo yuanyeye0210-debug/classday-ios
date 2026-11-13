@@ -326,15 +326,21 @@ class ClassdayModel(app: Application) : AndroidViewModel(app) {
 
     fun stageDrafts(text: String, csv: Boolean = false) {
         val parsed = if (csv) ScheduleTextImporter.parseCsv(text) else ScheduleTextImporter.parseText(text)
-        importDrafts = parsed.drafts
-        importNote = if (parsed.drafts.isEmpty()) "没有认出课程" else "认出 ${parsed.drafts.size} 门，确认后才写入"
+        val checked = ScheduleTextImporter.validateDrafts(parsed.drafts, document.semester)
+        importDrafts = checked.drafts
+        importNote = if (importDrafts.isEmpty()) "没有可导入的课程" else "认出 ${importDrafts.size} 门，确认后才写入"
         if (parsed.unparsed.isNotEmpty()) importNote += "；${parsed.unparsed.size} 行未识别，请检查源文件"
-        if (parsed.drafts.isNotEmpty()) open(Screen.ImportReview)
+        if (checked.unparsed.isNotEmpty()) importNote += "；已跳过 ${checked.unparsed.size} 项星期或节次超出当前学期范围的安排，请检查学期节次设置"
+        if (importDrafts.isNotEmpty()) open(Screen.ImportReview)
         else banner = importNote
     }
 
     fun confirmDrafts() {
         val (courses, parities) = ScheduleTextImporter.toCourses(importDrafts, document.semester)
+        if (courses.isEmpty()) {
+            banner = "没有可导入的课程，请检查当前学期的节次设置"
+            return
+        }
         document = document.copy(courses = document.courses + courses, origin = DataOrigin.user)
         parities.forEach { (meeting, parity) -> document = TimetableLibrary.settingParity(document, meeting, parity) }
         importDrafts = emptyList()

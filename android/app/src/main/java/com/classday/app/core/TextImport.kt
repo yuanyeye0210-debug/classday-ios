@@ -124,10 +124,27 @@ object ScheduleTextImporter {
         return DraftImport(drafts, unparsed)
     }
 
+    fun validateDrafts(drafts: List<CourseDraft>, semester: Semester): DraftImport {
+        val indexes = semester.periods.map { it.index }.toSet()
+        val rejected = mutableListOf<String>()
+        val valid = drafts.mapNotNull { draft ->
+            val meetings = draft.meetings.filter { meeting ->
+                val start = meeting.startPeriod ?: 1
+                val end = meeting.endPeriod ?: start
+                val acceptable = meeting.weekday in 1..7 && start <= end && start in indexes && end in indexes &&
+                    (start..end).all { it in indexes }
+                if (!acceptable) rejected += "${draft.name}：星期或节次超出当前学期范围"
+                acceptable
+            }
+            if (meetings.isEmpty()) null else draft.copy(meetings = meetings)
+        }
+        return DraftImport(valid, rejected)
+    }
+
     fun toCourses(drafts: List<CourseDraft>, semester: Semester): Pair<List<Course>, List<Pair<String, WeekParity>>> {
         val courses = mutableListOf<Course>()
         val parities = mutableListOf<Pair<String, WeekParity>>()
-        drafts.forEachIndexed { index, draft ->
+        validateDrafts(drafts, semester).drafts.forEachIndexed { index, draft ->
             if (draft.name.isBlank() || draft.meetings.isEmpty()) return@forEachIndexed
             val meetings = draft.meetings.map { meeting ->
                 val start = meeting.startPeriod ?: 1
