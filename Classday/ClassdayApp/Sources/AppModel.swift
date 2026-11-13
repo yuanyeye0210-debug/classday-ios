@@ -876,6 +876,10 @@ final class AppModel {
         findDuplicateGroups(courses: document.courses)
     }
 
+    var mergeableScheduleGroups: [DuplicateGroup] {
+        duplicateGroups.filter { canMergeCourseSchedules($0.courses, context: document.scheduleContext) }
+    }
+
     /// Opens the merge-review page and clears the post-import banner:
     /// reaching the page is the banner's destination.
     func openMergeReview() {
@@ -1111,7 +1115,7 @@ final class AppModel {
             : "导入了 \(newCourses.count) 门课、\(newExams.count) 场考试"
         // Post-import duplicate banner (Task 4, design §5): if the new
         // document has same-name groups, offer the merge-review page.
-        if !duplicateGroups.isEmpty {
+        if !mergeableScheduleGroups.isEmpty {
             showDuplicateImportBanner = true
         }
         persist(markUserEdited: true)

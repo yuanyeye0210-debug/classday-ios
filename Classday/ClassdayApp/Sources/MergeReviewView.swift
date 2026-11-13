@@ -16,6 +16,7 @@ import ClassdayCore
 /// the group's `normalizedName` (unique per group by construction).
 struct MergeReviewView: View {
     var groups: [DuplicateGroup]
+    var context: ScheduleContext = .empty
     var onMerge: ([DuplicateGroup], [String: Set<UUID>], [String: UUID?]) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -147,6 +148,10 @@ struct MergeReviewView: View {
                 Text("至少保留两条才能合并")
                     .font(.system(size: 12, design: .rounded))
                     .foregroundStyle(Theme.secondary)
+            } else if !canMergeCourseSchedules(members, context: context) {
+                Text("周次、教室或同一时段的单双周规则不同，保持独立可避免课表信息丢失。")
+                    .font(.system(size: 12, design: .rounded))
+                    .foregroundStyle(.orange)
             } else if hasGradeConflict(group) && gradeSourceID(for: group) == nil {
                 Text("请先选择保留的成绩")
                     .font(.system(size: 12, design: .rounded))
@@ -247,6 +252,7 @@ struct MergeReviewView: View {
 
     private func canMerge(_ group: DuplicateGroup) -> Bool {
         guard includedMembers(of: group).count >= 2 else { return false }
+        guard canMergeCourseSchedules(includedMembers(of: group), context: context) else { return false }
         if hasGradeConflict(group) {
             return gradeSourceID(for: group) != nil
         }

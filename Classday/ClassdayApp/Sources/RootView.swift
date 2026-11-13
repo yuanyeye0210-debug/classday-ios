@@ -63,13 +63,13 @@ struct RootView: View {
         // user's decisions to `applyCourseMerge` (Task 5); it never
         // merges, backs up, or persists itself.
         .sheet(isPresented: $model.showMergeReview) {
-            MergeReviewView(groups: model.duplicateGroups) { groups, exclusions, gradeChoices in
+            MergeReviewView(groups: model.duplicateGroups, context: model.document.scheduleContext) { groups, exclusions, gradeChoices in
                 model.applyCourseMerge(groups: groups, exclusions: exclusions, gradeChoices: gradeChoices)
             }
         }
         .overlay(alignment: .top) {
             VStack(spacing: 8) {
-                if model.showDuplicateImportBanner, !model.duplicateGroups.isEmpty {
+                if model.showDuplicateImportBanner, !model.mergeableScheduleGroups.isEmpty {
                     duplicateImportBanner
                 }
                 if let banner = model.banner {
@@ -260,7 +260,7 @@ struct RootView: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "square.stack.3d.up")
-                    Text("发现 \(model.duplicateGroups.count) 组同名课程，去合并")
+                    Text("发现 \(model.mergeableScheduleGroups.count) 组可合并同名课程，去合并")
                         .lineLimit(1)
                     Image(systemName: "chevron.right")
                         .font(.system(size: 11, weight: .bold))
@@ -919,7 +919,7 @@ struct CoursesView: View {
 
             // Merge-review entry (Task 4, design §5): only when
             // same-name groups exist; shows the group count.
-            if !model.duplicateGroups.isEmpty {
+            if !model.mergeableScheduleGroups.isEmpty {
                 Button {
                     model.openMergeReview()
                 } label: {
@@ -928,7 +928,7 @@ struct CoursesView: View {
                             .font(.system(size: 16, weight: .bold))
                             .foregroundStyle(Theme.courseInk("orange", scheme: scheme))
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("发现 \(model.duplicateGroups.count) 组同名课程")
+                            Text("发现 \(model.mergeableScheduleGroups.count) 组可合并同名课程")
                                 .font(.system(size: 15, weight: .bold, design: .rounded))
                                 .foregroundStyle(Theme.ink)
                             Text("合并后成绩只需录一次")
