@@ -34,7 +34,12 @@ object ScheduleTextImporter {
         if (lines.isEmpty()) return DraftImport(emptyList(), emptyList())
         val gridHeader = listOf(',', ';').flatMap { delimiter ->
             lines.take(6).mapIndexedNotNull { index, line ->
-                val days = splitCsv(line, delimiter).mapNotNull { weekdayOf(it) }.distinct().size
+                val cells = splitCsv(line, delimiter)
+                // A grid starts with a time/period label, followed by weekday columns.
+                // Numeric data rows such as 1,2,3 must not become headers.
+                val days = if (weekdayOf(cells.first()) == null) {
+                    cells.drop(1).mapNotNull { weekdayOf(it) }.distinct().size
+                } else 0
                 if (days >= 3) Triple(delimiter, index, days) else null
             }
         }.maxByOrNull { it.third }

@@ -24,6 +24,19 @@ import java.time.ZoneId
 
 class ScheduleLogicTest {
     @Test
+    fun csvNumericDataRowsAreNotGridHeaders() {
+        for (separator in listOf(",", ";")) {
+            for (values in listOf(listOf("1", "2", "3"), listOf("1", "2", "3", "4"))) {
+                val header = listOf("a", "b", "c", "d").take(values.size).joinToString(separator)
+                val row = values.joinToString(separator)
+                val result = ScheduleTextImporter.parseCsv("$header\n$row")
+                assertTrue(result.drafts.isEmpty())
+                assertEquals(listOf(header, row), result.unparsed)
+            }
+        }
+    }
+
+    @Test
     fun csvGridFindsWeekdayHeaderAfterTitlesWithEitherDelimiter() {
         for (separator in listOf(",", ";")) {
             val csv = listOf(
