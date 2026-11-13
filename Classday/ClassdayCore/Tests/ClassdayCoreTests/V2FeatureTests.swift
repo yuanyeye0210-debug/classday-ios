@@ -2,6 +2,17 @@ import Foundation
 import XCTest
 import ClassdayCore
 
+final class WidgetIDTests: XCTestCase {
+    func testTimelineKindsCoverAllExistingWidgetsWithoutChangingIdentifiers() {
+        XCTAssertEqual(WidgetID.timelineKinds, [
+            "NextClassWidget", "TodayCoursesWidget", "FanStackWidget", "WeekBoardWidget", "LockNextWidget"
+        ])
+        XCTAssertEqual(Set(WidgetID.timelineKinds).count, WidgetID.timelineKinds.count)
+        XCTAssertEqual(WidgetID.nextClassControl, "NextClassControl")
+        XCTAssertFalse(WidgetID.timelineKinds.contains(WidgetID.nextClassControl))
+    }
+}
+
 final class RoomNavigationTests: XCTestCase {
     func testSearchUsesQueryAndPreservesSpecialCharacters() throws {
         let pin = RoomPin(name: "Room", query: "  教学楼 A&B #2  ")
