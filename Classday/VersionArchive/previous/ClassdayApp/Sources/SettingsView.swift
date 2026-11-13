@@ -850,6 +850,13 @@ struct AboutSettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                // T4 (D7)：后台刷新被关掉时才提示。只读
+                // UIApplication.shared.backgroundRefreshStatus 的当前状态，
+                // 不引导改系统设置以外的事，不新增权限请求。
+                if UIApplication.shared.backgroundRefreshStatus == .denied {
+                    Divider()
+                    noteCard("后台刷新已关，锁屏下一节只在打开 App 后更新。")
+                }
             }
             .settingsCard()
             .padding(20)
