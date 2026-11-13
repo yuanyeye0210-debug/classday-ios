@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="next"
+        android:enabled="true"
+        android:shortcutShortLabel="@string/shortcut_next"
+        android:shortcutLongLabel="@string/shortcut_next">
+        <intent
+            android:action="com.classday.app.OPEN_NEXT"
+            android:targetPackage="com.classday.app"
+            android:targetClass="com.classday.app.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="today"
+        android:enabled="true"
+        android:shortcutShortLabel="@string/shortcut_today"
+        android:shortcutLongLabel="@string/shortcut_today">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="classday://course/today"
+            android:targetPackage="com.classday.app"
+            android:targetClass="com.classday.app.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="update"
+        android:enabled="true"
+        android:shortcutShortLabel="@string/shortcut_update"
+        android:shortcutLongLabel="@string/shortcut_update">
+            <intent
+                android:action="android.intent.action.VIEW"
+                android:data="classday://about"
+                android:targetPackage="com.classday.app"
+                android:targetClass="com.classday.app.MainActivity" />
+    </shortcut>
+</shortcuts>
