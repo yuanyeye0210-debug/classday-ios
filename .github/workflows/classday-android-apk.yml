@@ -48,39 +48,18 @@ jobs:
           echo "ANDROID_HOME=$HOME/android-sdk" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> "$GITHUB_ENV"
 
-      - name: Restore release keystore
-        id: keystore
-        uses: actions/cache@v4
-        with:
-          path: android/keystore/release.jks
-          key: classday-android-release-keystore-v1
-
       - name: Prepare signing key
         env:
           CLASSDAY_KEYSTORE_BASE64: ${{ secrets.CLASSDAY_KEYSTORE_BASE64 }}
-          CLASSDAY_STORE_PASSWORD: ${{ secrets.CLASSDAY_STORE_PASSWORD }}
-          CLASSDAY_KEY_ALIAS: ${{ secrets.CLASSDAY_KEY_ALIAS }}
-          CLASSDAY_KEY_PASSWORD: ${{ secrets.CLASSDAY_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          mkdir -p android/keystore
-          STORE_PASS="${CLASSDAY_STORE_PASSWORD:-classday-android-release}"
-          [ -n "$STORE_PASS" ] || STORE_PASS="classday-android-release"
-          ALIAS="${CLASSDAY_KEY_ALIAS:-classday}"
-          [ -n "$ALIAS" ] || ALIAS="classday"
-          KEY_PASS="${CLASSDAY_KEY_PASSWORD:-$STORE_PASS}"
-          [ -n "$KEY_PASS" ] || KEY_PASS="$STORE_PASS"
-          if [ -n "${CLASSDAY_KEYSTORE_BASE64}" ]; then
-            printf '%s' "$CLASSDAY_KEYSTORE_BASE64" | base64 -d > android/keystore/release.jks
-          elif [ ! -f android/keystore/release.jks ]; then
-            keytool -genkeypair -v \
-              -keystore android/keystore/release.jks \
-              -alias "$ALIAS" \
-              -keyalg RSA -keysize 2048 -validity 10000 \
-              -storepass "$STORE_PASS" \
-              -keypass "$KEY_PASS" \
-              -dname "CN=Classday, OU=Heptara, O=Classday, L=Shanghai, ST=Shanghai, C=CN"
+          if [ -z "${CLASSDAY_KEYSTORE_BASE64}" ]; then
+            echo "CLASSDAY_KEYSTORE_BASE64 secret is required; refusing to generate a new keystore."
+            exit 1
           fi
+          mkdir -p android/keystore
+          printf '%s' "$CLASSDAY_KEYSTORE_BASE64" | base64 -d > android/keystore/release.jks
+          test -s android/keystore/release.jks
 
       - name: Unit tests and release APK
         working-directory: android
