@@ -768,7 +768,7 @@ struct AboutSettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Divider()
                 settingsRow(icon: "newspaper.fill", color: .indigo,
-                            title: "更新日志", value: AppChangelog.entries.first?.version) {
+                            title: "更新日志", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) {
                     showChangelog = true
                 }
                 Divider().padding(.leading, 58)

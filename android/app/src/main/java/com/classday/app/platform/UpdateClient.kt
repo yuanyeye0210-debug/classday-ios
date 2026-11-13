@@ -14,7 +14,7 @@ import java.net.URL
 import java.security.MessageDigest
 
 object UpdateClient {
-    const val current = "2.9.2"
+    val current: String = com.classday.app.BuildConfig.VERSION_NAME
 
     fun check(context: Context): String {
         val manifest = try {

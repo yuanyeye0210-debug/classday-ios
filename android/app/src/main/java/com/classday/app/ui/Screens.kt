@@ -878,7 +878,7 @@ private fun MergePage(model: ClassdayModel) {
 private fun AboutPage(model: ClassdayModel) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var status by remember { mutableStateOf("版本 2.9.2") }
+    var status by remember { mutableStateOf("版本 ${com.classday.app.BuildConfig.VERSION_NAME}") }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         PageTitle("关于", model::back)
         Text("课曜 / Heptara", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
