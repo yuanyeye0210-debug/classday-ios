@@ -11,7 +11,7 @@ Kinds are `WidgetID` in ClassdayCore. The app calls `WidgetCenter.reloadTimeline
 
 ## Timeline
 
-`WidgetProjection.timelinePlan` builds entries from the current instant, each class start and end, and local midnights inside a 36-hour horizon. The count is capped at 40. The reload policy is `.after` the last entry, and never sooner than 15 minutes when the horizon is empty. That is how the widget moves from 待上课 to 上课中 without another budgeted reload.
+`WidgetProjection.timelinePlan` builds entries from the current instant, each class start and end, and local midnights inside a 7-day horizon. The count is capped at 40. The reload policy is `.after` the last entry, and never sooner than 15 minutes when the horizon is empty. That is how the widget moves from 待上课 to 上课中 without another budgeted reload.
 
 WidgetKit still decides whether a reload request runs. A burst of edits can be coalesced. The on-disk JSON is the source of truth the next time a timeline is built.
 
