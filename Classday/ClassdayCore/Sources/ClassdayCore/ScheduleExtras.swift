@@ -129,6 +129,23 @@ public struct RoomPin: Codable, Equatable, Hashable, Sendable, Identifiable {
     }
 }
 
+public enum RoomNavigation {
+    public static func hasValidCoordinates(_ pin: RoomPin?) -> Bool {
+        guard let latitude = pin?.latitude, let longitude = pin?.longitude else { return false }
+        return latitude.isFinite && longitude.isFinite
+            && (-90...90).contains(latitude) && (-180...180).contains(longitude)
+    }
+
+    public static func searchURL(location: String, pin: RoomPin?) -> URL? {
+        let query = pin?.query.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let destination = query.isEmpty ? location.trimmingCharacters(in: .whitespacesAndNewlines) : query
+        guard !destination.isEmpty else { return nil }
+        var components = URLComponents(string: "https://maps.apple.com/")!
+        components.queryItems = [URLQueryItem(name: "q", value: destination)]
+        return components.url
+    }
+}
+
 public struct StoredTimetable: Codable, Equatable, Hashable, Sendable, Identifiable {
     public var id: UUID
     public var name: String

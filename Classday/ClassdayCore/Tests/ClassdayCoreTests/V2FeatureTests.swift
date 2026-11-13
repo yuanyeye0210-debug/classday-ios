@@ -2,6 +2,32 @@ import Foundation
 import XCTest
 import ClassdayCore
 
+final class RoomNavigationTests: XCTestCase {
+    func testSearchUsesQueryAndPreservesSpecialCharacters() throws {
+        let pin = RoomPin(name: "Room", query: "  教学楼 A&B #2  ")
+        let url = try XCTUnwrap(RoomNavigation.searchURL(location: "Other", pin: pin))
+        let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        XCTAssertEqual(components.host, "maps.apple.com")
+        XCTAssertEqual(components.queryItems, [URLQueryItem(name: "q", value: "教学楼 A&B #2")])
+    }
+
+    func testSearchFallsBackToLocationAndRejectsEmptyDestination() throws {
+        let pin = RoomPin(name: "Room", query: " \n ")
+        let url = try XCTUnwrap(RoomNavigation.searchURL(location: " Library ", pin: pin))
+        XCTAssertEqual(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first?.value, "Library")
+        XCTAssertNil(RoomNavigation.searchURL(location: " \n ", pin: nil))
+    }
+
+    func testCoordinatesMustBeCompleteFiniteAndInRange() {
+        XCTAssertFalse(RoomNavigation.hasValidCoordinates(nil))
+        XCTAssertFalse(RoomNavigation.hasValidCoordinates(RoomPin(name: "Room", latitude: 51)))
+        XCTAssertFalse(RoomNavigation.hasValidCoordinates(RoomPin(name: "Room", latitude: .nan, longitude: 0)))
+        XCTAssertFalse(RoomNavigation.hasValidCoordinates(RoomPin(name: "Room", latitude: 91, longitude: 0)))
+        XCTAssertFalse(RoomNavigation.hasValidCoordinates(RoomPin(name: "Room", latitude: 0, longitude: 181)))
+        XCTAssertTrue(RoomNavigation.hasValidCoordinates(RoomPin(name: "Room", latitude: 51.5, longitude: -0.1)))
+    }
+}
+
 final class V2FeatureTests: XCTestCase {
     private let calendar = TestSupport.calendar()
 
