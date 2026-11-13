@@ -872,7 +872,7 @@ private fun MergePage(model: ClassdayModel) {
         PageTitle("合并同名课程", model::back)
         Text("合并前会先把当前课表存进课表库。仅合并周次、教室及同一时段单双周规则兼容的课程。", color = model.theme.secondary())
         model.duplicates().forEach { group ->
-            var chosen by remember(group.normalizedName) { mutableStateOf(group.courses.firstOrNull { it.grade != null }?.id) }
+            var chosen by remember(group.normalizedName) { mutableStateOf<String?>(null) }
             var excluded by remember(group.normalizedName) { mutableStateOf(setOf<String>()) }
             val selected = com.classday.app.core.selectedMergeGroup(group, excluded)
             Card(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
@@ -886,7 +886,7 @@ private fun MergePage(model: ClassdayModel) {
                         )
                     }
                     if (gradeConflict(selected)) {
-                        Text("成绩不一样，选一个保留")
+                        Text("成绩不一样，请先选择要保留的成绩")
                         selected.courses.filter { it.grade != null }.forEach { course ->
                             FilterChip(selected = chosen == course.id, onClick = { chosen = course.id }, label = { Text("${course.grade}") }, modifier = Modifier.padding(end = 6.dp))
                         }
