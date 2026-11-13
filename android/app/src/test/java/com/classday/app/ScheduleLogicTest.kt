@@ -23,6 +23,27 @@ import java.time.Instant
 import java.time.ZoneId
 
 class ScheduleLogicTest {
+    @Test
+    fun mergeRejectsIncompatibleSchedulesBeforeChangingDocument() {
+        val document = DemoData.makeDocument()
+        val base = document.courses.first().copy(weeks = (1..8).toList())
+        val duplicate = base.copy(id = "duplicate-course", meetings = base.meetings.map { it.copy(id = "copy-${it.id}") })
+        fun group(other: com.classday.app.core.Course) = com.classday.app.core.DuplicateGroup("same", listOf(base, other))
+        val current = document.copy(courses = listOf(base, duplicate), weekRules = emptyList())
+        assertTrue(com.classday.app.core.canMergeCourseSchedules(listOf(base, duplicate), current))
+        assertNotNull(com.classday.app.core.applyMerge(current, group(duplicate), base.id))
+        for (other in listOf(duplicate.copy(weeks = (9..16).toList()), duplicate.copy(location = "另一间教室"))) {
+            val source = current.copy(courses = listOf(base, other))
+            assertFalse(com.classday.app.core.canMergeCourseSchedules(listOf(base, other), source))
+            assertEquals(null, com.classday.app.core.applyMerge(source, group(other), base.id))
+            assertEquals(listOf(base, other), source.courses)
+        }
+        val odd = com.classday.app.core.MeetingWeekRule(base.meetings.first().id, WeekParity.odd)
+        val even = com.classday.app.core.MeetingWeekRule(duplicate.meetings.first().id, WeekParity.even)
+        val conflicting = current.copy(weekRules = listOf(odd, even))
+        assertEquals(null, com.classday.app.core.applyMerge(conflicting, group(duplicate), base.id))
+        assertTrue(com.classday.app.core.canMergeCourseSchedules(listOf(base, duplicate), current.copy(weekRules = listOf(odd, even.copy(parity = WeekParity.odd)))))
+    }
     private val calendar = CivilCalendar(ZoneId.of("Asia/Shanghai"))
 
     @Test

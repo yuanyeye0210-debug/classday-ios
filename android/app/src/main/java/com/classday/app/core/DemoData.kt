@@ -150,7 +150,21 @@ fun mergeDuplicateGroup(group: DuplicateGroup, gradeSourceId: String?): Pair<Cou
     return merged to remap
 }
 
+fun canMergeCourseSchedules(courses: List<Course>, document: StoreDocument): Boolean {
+    val first = courses.firstOrNull() ?: return true
+    if (courses.any { it.weeks.toSet() != first.weeks.toSet() || it.location != first.location }) return false
+    val parities = mutableMapOf<MeetingSlot, WeekParity>()
+    for (course in courses) for (meeting in course.meetings) {
+        val slot = MeetingSlot(meeting.weekday, meeting.startPeriod, meeting.endPeriod)
+        val parity = document.parity(meeting.id)
+        if (parities[slot]?.let { it != parity } == true) return false
+        parities[slot] = parity
+    }
+    return true
+}
+
 fun applyMerge(document: StoreDocument, group: DuplicateGroup, gradeSourceId: String?): StoreDocument? {
+    if (!canMergeCourseSchedules(group.courses, document)) return null
     val merged = mergeDuplicateGroup(group, gradeSourceId) ?: return null
     val (course, remap) = merged
     val meetingRemap = droppedMeetingRemap(group)

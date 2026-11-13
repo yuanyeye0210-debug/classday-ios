@@ -870,7 +870,7 @@ private fun ImportReviewPage(model: ClassdayModel) {
 private fun MergePage(model: ClassdayModel) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         PageTitle("合并同名课程", model::back)
-        Text("合并前会先把当前课表存进课表库。周次和上课时间取并集。", color = model.theme.secondary())
+        Text("合并前会先把当前课表存进课表库。仅合并周次、教室及同一时段单双周规则兼容的课程。", color = model.theme.secondary())
         model.duplicates().forEach { group ->
             var chosen by remember(group.normalizedName) { mutableStateOf(group.courses.firstOrNull { it.grade != null }?.id) }
             Card(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
@@ -882,7 +882,9 @@ private fun MergePage(model: ClassdayModel) {
                             FilterChip(selected = chosen == course.id, onClick = { chosen = course.id }, label = { Text("${course.grade}") }, modifier = Modifier.padding(end = 6.dp))
                         }
                     }
-                    Button(onClick = { model.merge(group, chosen) }) { Text("合并") }
+                    val compatible = com.classday.app.core.canMergeCourseSchedules(group.courses, model.document)
+                    if (!compatible) Text("周次、教室或同一时段单双周不同，请保持独立课程。", color = model.theme.secondary())
+                    Button(enabled = compatible, onClick = { model.merge(group, chosen) }) { Text("合并") }
                 }
             }
         }

@@ -354,6 +354,10 @@ class ClassdayModel(app: Application) : AndroidViewModel(app) {
     fun duplicates(): List<DuplicateGroup> = findDuplicateGroups(document.courses)
 
     fun merge(group: DuplicateGroup, gradeSource: String?) {
+        if (!com.classday.app.core.canMergeCourseSchedules(group.courses, document)) {
+            banner = "周次、教室或同一时段单双周不同，已保持独立课程"
+            return
+        }
         val backup = TimetableLibrary.storingCurrent(document, document.semester.shortName.ifBlank { "合并前" })
         val merged = applyMerge(backup, group, gradeSource)
         if (merged == null) {
