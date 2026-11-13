@@ -167,6 +167,53 @@ final class WidgetNotificationTests: XCTestCase {
         XCTAssertEqual(plan.refreshAfter, TestSupport.date(2026, 11, 20, 14, 0, calendar: calendar))
     }
 
+    func testExtrasUseDefaultLeadAndSkipCompletedPastAndMuted() {
+        var doc = document
+        doc.courses = []
+        doc.semester.defaultReminderMinutes = 10
+        doc.exams = [ExamEvent(courseName: "Exam", location: "Hall", startISO: "2026-11-09T09:00", endISO: "2026-11-09T10:00")]
+        doc.homework = [
+            HomeworkTask(courseName: "Course", title: "Pending", dueISO: "2026-11-09T10:00"),
+            HomeworkTask(courseName: "Course", title: "Done", dueISO: "2026-11-09T10:00", done: true),
+            HomeworkTask(courseName: "Course", title: "Past", dueISO: "2026-11-08T10:00")
+        ]
+        let now = TestSupport.date(2026, 11, 9, 8, calendar: calendar)
+        let plan = NotificationPlan.make(document: doc, now: now, calendar: calendar)
+        XCTAssertEqual(plan.map(\.kind), [.exam, .homework])
+        XCTAssertEqual(plan[0].fireDate, TestSupport.date(2026, 11, 9, 8, 50, calendar: calendar))
+        XCTAssertEqual(plan[1].fireDate, TestSupport.date(2026, 11, 9, 9, 50, calendar: calendar))
+        XCTAssertTrue(plan.allSatisfy { $0.courseID == nil && $0.meetingID == nil })
+        let later = NotificationPlan.make(document: doc, now: TestSupport.date(2026, 11, 9, 8, 55, calendar: calendar), calendar: calendar)
+        XCTAssertEqual(later.map(\.kind), [.homework])
+        doc.semester.defaultReminderMinutes = 0
+        XCTAssertTrue(NotificationPlan.make(document: doc, now: now, calendar: calendar).isEmpty)
+    }
+
+    func testMixedRemindersSortBeforeTruncationAndBreakTiesByKind() {
+        var doc = document
+        doc.exams = [ExamEvent(courseName: "Exam", location: "Hall", startISO: "2026-11-09T08:00", endISO: "2026-11-09T09:00")]
+        doc.homework = [HomeworkTask(courseName: "Course", title: "Task", dueISO: "2026-11-09T08:00")]
+        doc.semester.defaultReminderMinutes = 10
+        let now = TestSupport.date(2026, 11, 8, 12, calendar: calendar)
+        let plan = NotificationPlan.make(document: doc, now: now, calendar: calendar, limit: 3)
+        XCTAssertEqual(plan.map(\.kind), [.exam, .homework, .course])
+        XCTAssertEqual(NotificationPlan.make(document: doc, now: now, calendar: calendar, limit: 1).first?.kind, .exam)
+        XCTAssertTrue(NotificationPlan.make(document: doc, now: now, calendar: calendar, limit: 0).isEmpty)
+    }
+
+    func testExtrasOutsideSemesterStillRespectHardCapAndStableIDs() {
+        var doc = document
+        doc.courses = []
+        doc.semester.defaultReminderMinutes = 10
+        doc.exams = []
+        doc.homework = (0..<70).map { HomeworkTask(courseName: "Course", title: "Task \($0)", dueISO: "2030-01-02T10:00") }
+        let now = TestSupport.date(2030, 1, 1, calendar: calendar)
+        let plan = NotificationPlan.make(document: doc, now: now, calendar: calendar, limit: 100)
+        XCTAssertEqual(plan.count, 60)
+        XCTAssertEqual(Set(plan.map(\.id)).count, 60)
+        XCTAssertEqual(plan, NotificationPlan.make(document: doc, now: now, calendar: calendar, limit: 100))
+    }
+
     func testNotificationPlanLeadTimeOrderAndCap() {
         let sunday = TestSupport.date(2026, 11, 8, 12, 0, calendar: calendar)
         let planned = NotificationPlan.make(document: document, now: sunday, calendar: calendar)

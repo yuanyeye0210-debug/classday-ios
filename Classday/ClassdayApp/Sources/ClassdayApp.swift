@@ -31,6 +31,15 @@ struct ClassdayApp: App {
                     }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .classdayOpenCourse)) { note in
+                    if let kind = note.userInfo?["reminderKind"] as? Int {
+                        if kind == PlannedReminder.Kind.exam.rawValue {
+                            model.tab = .today
+                            model.showExams = true
+                        } else if kind == PlannedReminder.Kind.homework.rawValue {
+                            model.tab = .agenda
+                        }
+                        return
+                    }
                     guard let courseID = note.userInfo?["courseID"] as? UUID else { return }
                     let meetingID = note.userInfo?["meetingID"] as? UUID
                     model.openCourse(courseID, meeting: meetingID)

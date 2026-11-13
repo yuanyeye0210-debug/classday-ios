@@ -487,7 +487,7 @@ struct ReminderSettingsView: View {
                     errorText = saveSemester(semester)
                 }
                 .disabled(!didLoadSemester)
-                noteCard("开启某门课的提醒时才会向系统请求权限。允许后，课曜会在本地安排最多 \(NotificationPlan.pendingLimit) 条即将上课的通知。")
+                noteCard("开启某门课的提醒时才会向系统请求权限。允许后，课曜会安排最近的最多 \(NotificationPlan.pendingLimit) 条课程、考试和未完成作业通知。考试和作业使用默认提前分钟数，默认不提醒时关闭；同一时刻优先考试、作业、课程。")
             }
             .settingsCard()
             .padding(20)
