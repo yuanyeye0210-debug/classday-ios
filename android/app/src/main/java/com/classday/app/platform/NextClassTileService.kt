@@ -10,19 +10,45 @@ import com.classday.app.core.CivilCalendar
 import com.classday.app.core.tilePresentation
 import java.time.Instant
 import java.time.ZoneId
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class NextClassTileService : TileService() {
+    private val refreshScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var refreshJob: Job? = null
+
     override fun onStartListening() {
-        val tile = qsTile ?: return
-        val presentation = tilePresentation(
-            ClassdayStore.loadWithStatus(this),
-            Instant.now(),
-            CivilCalendar(ZoneId.systemDefault()),
-        )
-        tile.label = presentation.label
-        tile.state = if (presentation.active) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
-        if (Build.VERSION.SDK_INT >= 29) tile.subtitle = presentation.subtitle
-        tile.updateTile()
+        super.onStartListening()
+        refreshJob?.cancel()
+        refreshJob = refreshScope.launch {
+            val presentation = withContext(Dispatchers.IO) {
+                tilePresentation(
+                    ClassdayStore.loadWithStatus(applicationContext),
+                    Instant.now(),
+                    CivilCalendar(ZoneId.systemDefault()),
+                )
+            }
+            val tile = qsTile ?: return@launch
+            tile.label = presentation.label
+            tile.state = if (presentation.active) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
+            if (Build.VERSION.SDK_INT >= 29) tile.subtitle = presentation.subtitle
+            tile.updateTile()
+        }
+    }
+
+    override fun onStopListening() {
+        refreshJob?.cancel()
+        super.onStopListening()
+    }
+
+    override fun onDestroy() {
+        refreshScope.cancel()
+        super.onDestroy()
     }
 
     @SuppressLint("StartActivityAndCollapseDeprecated")
