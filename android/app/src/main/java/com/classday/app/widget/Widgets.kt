@@ -103,7 +103,9 @@ class MarkArrivedCallback : ActionCallback {
 
 class DelayClassCallback : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: androidx.glance.action.ActionParameters) {
-        val document = ClassdayStore.load(context)
+        val loaded = ClassdayStore.loadWithStatus(context)
+        if (loaded.error != null) return
+        val document = loaded.document
         val calendar = CivilCalendar(ZoneId.systemDefault())
         val now = Instant.now()
         val target = ScheduleEngine.next(now, document.courses, document.semester, calendar, document.scheduleContext)
@@ -119,7 +121,11 @@ class DelayClassCallback : ActionCallback {
                 delayMinutes = 10,
             ),
         )
-        ClassdayStore.save(context, updated)
+        try {
+            ClassdayStore.save(context, updated)
+        } catch (_: Exception) {
+            return
+        }
         com.classday.app.ClassAlerts.refresh(context, updated)
     }
 }

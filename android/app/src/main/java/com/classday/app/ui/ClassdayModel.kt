@@ -59,9 +59,11 @@ sealed class Screen {
 }
 
 class ClassdayModel(app: Application) : AndroidViewModel(app) {
-    var document by mutableStateOf(ClassdayStore.load(app))
+    private val initialLoad = ClassdayStore.loadWithStatus(app)
+    private var lastSavedDocument = initialLoad.document
+    var document by mutableStateOf(initialLoad.document)
         private set
-    var banner by mutableStateOf<String?>(null)
+    var banner by mutableStateOf(initialLoad.error)
     var weekShift by mutableStateOf(0)
     var screen by mutableStateOf<Screen>(Screen.Week)
     var reminderDraft by mutableStateOf<Int?>(null)
@@ -421,7 +423,14 @@ class ClassdayModel(app: Application) : AndroidViewModel(app) {
         if (markUser && document.origin == DataOrigin.demo) {
             document = document.copy(origin = DataOrigin.user)
         }
-        ClassdayStore.save(getApplication(), document)
+        try {
+            ClassdayStore.save(getApplication(), document)
+            lastSavedDocument = document
+        } catch (error: Exception) {
+            document = lastSavedDocument
+            banner = error.message ?: "未能保存课表，已恢复到上次保存的内容"
+            return
+        }
         ClassAlerts.refreshAsync(getApplication(), document)
     }
 }

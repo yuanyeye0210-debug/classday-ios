@@ -8,9 +8,9 @@ import android.net.Uri
 import android.provider.CalendarContract
 import com.classday.app.core.CivilCalendar
 import com.classday.app.core.ScheduleEngine
-import com.classday.app.core.StoreCodec
 import com.classday.app.core.StoreDocument
-import com.classday.app.core.DemoData
+import com.classday.app.core.ProtectedStoreFile
+import com.classday.app.core.StoreLoadResult
 import java.io.File
 import java.time.ZoneId
 
@@ -19,29 +19,13 @@ object ClassdayStore {
 
     fun file(context: Context): File = File(context.filesDir, fileName)
 
-    fun load(context: Context): StoreDocument {
-        val file = file(context)
-        if (!file.exists()) {
-            val demo = DemoData.makeDocument()
-            file.writeText(StoreCodec.exporting(demo))
-            return demo
-        }
-        val outcome = StoreCodec.importing(file.readText())
-        return outcome.document ?: DemoData.makeDocument()
-    }
+    fun load(context: Context): StoreDocument = loadWithStatus(context).document
 
-    fun save(context: Context, document: StoreDocument) {
-        val file = file(context)
-        file.parentFile?.mkdirs()
-        val backupDir = File(context.filesDir, "backups")
-        backupDir.mkdirs()
-        if (file.exists()) {
-            val stamp = System.currentTimeMillis()
-            file.copyTo(File(backupDir, "classday-$stamp.json"), overwrite = true)
-            backupDir.listFiles()?.sortedByDescending { it.lastModified() }?.drop(3)?.forEach { it.delete() }
-        }
-        file.writeText(StoreCodec.exporting(document))
-    }
+    @Synchronized
+    fun loadWithStatus(context: Context): StoreLoadResult = ProtectedStoreFile(file(context)).load()
+
+    @Synchronized
+    fun save(context: Context, document: StoreDocument) = ProtectedStoreFile(file(context)).save(document)
 }
 
 object CalendarSync {
