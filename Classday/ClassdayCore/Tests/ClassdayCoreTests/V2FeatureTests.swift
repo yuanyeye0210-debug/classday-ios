@@ -268,6 +268,36 @@ final class V2FeatureTests: XCTestCase {
 }
 
 final class SmartImportTests: XCTestCase {
+    func testCSVContinuationInheritsWeekRangeParityAndCustomWeeks() {
+        let result = ScheduleTextImporter.parseCSV("""
+        课程,星期,节次,周次
+        数学,周一,1-2,1-8周 单周
+        ,周三,3-4,
+        数学,周五,5-6,9-16周
+        ,周二,7-8,
+        英语,周四,1-2,
+        化学,周一,1-2,"1,3,5,7周"
+        ,周三,3-4,
+        """)
+        XCTAssertTrue(result.unparsed.isEmpty)
+        XCTAssertEqual(result.drafts.count, 4)
+        let early = result.drafts[0]
+        XCTAssertEqual(early.firstWeek, 1)
+        XCTAssertEqual(early.lastWeek, 8)
+        XCTAssertEqual(early.meetings.map(\.weekday), [1, 3])
+        XCTAssertEqual(early.meetings.map(\.parity), [1, 1])
+        let late = result.drafts[1]
+        XCTAssertEqual(late.firstWeek, 9)
+        XCTAssertEqual(late.lastWeek, 16)
+        XCTAssertEqual(late.meetings.map(\.weekday), [5, 2])
+        XCTAssertEqual(late.meetings.map(\.parity), [0, 0])
+        XCTAssertEqual(result.drafts[2].firstWeek, 1)
+        XCTAssertEqual(result.drafts[2].lastWeek, 16)
+        XCTAssertEqual(result.drafts[2].meetings.first?.parity, 0)
+        XCTAssertEqual(result.drafts[3].customWeeks, [1, 3, 5, 7])
+        XCTAssertEqual(result.drafts[3].meetings.map(\.weekday), [1, 3])
+    }
+
     func testCSVKeepsDifferentTeachersAndRoomsSeparate() {
         let rows = [
             "数学,周一,1-2,1-9周 单周,张老师,实验楼",

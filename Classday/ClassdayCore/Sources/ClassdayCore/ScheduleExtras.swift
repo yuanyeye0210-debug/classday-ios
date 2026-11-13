@@ -838,12 +838,14 @@ public enum ScheduleTextImporter {
         var rawMeetings: [(course: ImportedCourseDraft, meeting: ImportedMeetingDraft)] = []
         var unparsed: [String] = []
         var lastName = "", lastTeacher = ""
+        var lastWeeks: (first: Int, last: Int, custom: [Int], parity: Int)?
         for row in rows.dropFirst(header.index + 1) {
             func cell(_ key: String) -> String {
                 guard let index = columns[key], index < row.count else { return "" }
                 return row[index].trimmingCharacters(in: .whitespaces)
             }
             var name = cleanCourseName(cell("name"))
+            if !name.isEmpty && name != lastName { lastWeeks = nil }
             if name.isEmpty { name = lastName } else { lastName = name }
             var teacher = cell("teacher")
             if teacher.isEmpty { teacher = lastTeacher } else { lastTeacher = teacher }
@@ -870,7 +872,11 @@ public enum ScheduleTextImporter {
                 meeting.endPeriod = periods.1
             }
             if meeting.location.isEmpty, let found = locationToken(in: combined) { meeting.location = found }
-            let weeksInfo = explicitWeeks(in: cell("weeks").isEmpty ? combined : cell("weeks"))
+            let weekText = cell("weeks")
+            let combinedHasWeeks = firstMatch(#"\d\s*周|单周|双周"#, in: combined) != nil
+            let weeksInfo = weekText.isEmpty && !combinedHasWeeks
+                ? (lastWeeks ?? explicitWeeks(in: ""))
+                : explicitWeeks(in: weekText.isEmpty ? combined : weekText)
             meeting.parity = weeksInfo.parity
             var issues: [String] = []
             if meeting.startMinutes == nil && meeting.startPeriod == nil { issues.append("时间没认出") }
@@ -880,6 +886,7 @@ public enum ScheduleTextImporter {
                 firstWeek: weeksInfo.first, lastWeek: weeksInfo.last, customWeeks: weeksInfo.custom,
                 meetings: [], issues: issues, sourceLine: row.joined(separator: ","))
             rawMeetings.append((course, meeting))
+            if meeting.startMinutes != nil || meeting.startPeriod != nil { lastWeeks = weeksInfo }
         }
         guard !rawMeetings.isEmpty else { return nil }
         return (group(rawMeetings), unparsed)
