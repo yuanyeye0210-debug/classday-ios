@@ -68,4 +68,50 @@ class ProtectedStoreFileTest {
         val backup = File(temporary.root, "backups").listFiles()!!.single()
         assertEquals(original, StoreCodec.importing(backup.readText()).document)
     }
+
+    @Test
+    fun repeatedSavesPruneOldestBackupsBeyondLimit() {
+        val file = File(temporary.root, "store.json")
+        val store = ProtectedStoreFile(file)
+        val limit = ProtectedStoreFile.DEFAULT_MAX_BACKUPS
+        val base = DemoData.makeDocument()
+        store.save(base.copy(semester = base.semester.copy(name = "学期-0")))
+        for (index in 1..(limit + 2)) {
+            store.save(base.copy(semester = base.semester.copy(name = "学期-$index")))
+        }
+        val backups = File(temporary.root, "backups").listFiles()!!.filter { it.isFile }
+        assertEquals(limit, backups.size)
+        val retainedNames = backups
+            .mapNotNull { StoreCodec.importing(it.readText()).document?.semester?.name }
+            .toSet()
+        assertEquals((2..(limit + 1)).map { "学期-$it" }.toSet(), retainedNames)
+        assertEquals("学期-${limit + 2}", store.load().document.semester.name)
+    }
+
+    @Test
+    fun distinctInvalidFilesPruneOldestRecoveryCopiesWhileKeepingCurrentAndDeduplicating() {
+        val file = File(temporary.root, "store.json")
+        val store = ProtectedStoreFile(file)
+        val limit = ProtectedStoreFile.DEFAULT_MAX_RECOVERY_FILES
+        for (index in 1..limit) {
+            file.writeText("{corrupt-$index")
+            assertNotNull(store.load().error)
+        }
+        // Encountering corrupt-1 again refreshes its recency without creating a duplicate file.
+        file.writeText("{corrupt-1")
+        assertNotNull(store.load().error)
+        assertEquals(limit, File(temporary.root, "recovery").listFiles()!!.filter { it.isFile }.size)
+
+        for (index in (limit + 1)..(limit + 2)) {
+            file.writeText("{corrupt-$index")
+            assertNotNull(store.load().error)
+        }
+        // Re-loading the latest invalid file must deduplicate without evicting another copy.
+        assertNotNull(store.load().error)
+        val recoveries = File(temporary.root, "recovery").listFiles()!!.filter { it.isFile }
+        assertEquals(limit, recoveries.size)
+        val retainedContents = recoveries.map { it.readText() }.toSet()
+        val expected = (listOf(1) + (4..(limit + 2))).map { "{corrupt-$it" }.toSet()
+        assertEquals(expected, retainedContents)
+    }
 }
