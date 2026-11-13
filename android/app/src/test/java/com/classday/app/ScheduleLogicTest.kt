@@ -179,6 +179,38 @@ class ScheduleLogicTest {
     }
 
     @Test
+    fun csvSameWeeksKeepOddEvenAndEveryWeekMeetingsInOneCourse() {
+        for (rules in listOf(
+            listOf("1-9周 单周", "1-9周 双周", "1-9周"),
+            listOf("1-9周", "1-9周 单周", "1-9周 双周"),
+        )) {
+            val parsed = ScheduleTextImporter.parseCsv("""
+                课程,星期,节次,周次
+                数学,周一,1-2,${rules[0]}
+                数学,周三,3-4,${rules[1]}
+                数学,周五,5-6,${rules[2]}
+            """.trimIndent())
+            assertTrue(parsed.unparsed.isEmpty())
+            val draft = parsed.drafts.single()
+            assertEquals((1..9).toList(), draft.weeks)
+            assertEquals(WeekParity.any, draft.parity)
+            val expected = if (rules[0].contains("单周")) {
+                listOf(WeekParity.odd, WeekParity.even, WeekParity.any)
+            } else {
+                listOf(WeekParity.any, WeekParity.odd, WeekParity.even)
+            }
+            assertEquals(expected, draft.meetings.map { it.parity })
+            val (courses, parities) = ScheduleTextImporter.toCourses(listOf(draft), DemoData.makeDocument().semester)
+            val course = courses.single()
+            assertEquals((1..9).toList(), course.weeks)
+            assertEquals(listOf(1, 3, 5), course.meetings.map { it.weekday })
+            val rulesByMeeting = parities.toMap()
+            assertEquals(2, rulesByMeeting.size)
+            assertEquals(expected, course.meetings.map { rulesByMeeting[it.id] ?: WeekParity.any })
+        }
+    }
+
+    @Test
     fun csvContinuationInheritsWeeksAndKeepsDistinctWeekRanges() {
         val parsed = ScheduleTextImporter.parseCsv("""
             课程,星期,节次,周次

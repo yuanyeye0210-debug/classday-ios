@@ -43,7 +43,7 @@ object ScheduleTextImporter {
         if (rows.first().count { weekdayOf(it) != null } >= 3) return parseGrid(rows)
         if (best == null) return DraftImport(emptyList(), lines)
         val columns = best.third
-        val grouped = linkedMapOf<Triple<String, List<Int>, WeekParity>, CourseDraft>()
+        val grouped = linkedMapOf<Pair<String, List<Int>>, CourseDraft>()
         val unparsed = mutableListOf<String>()
         var lastName = ""
         var lastWeeks: Pair<List<Int>, WeekParity>? = null
@@ -82,7 +82,7 @@ object ScheduleTextImporter {
                 parity = parity,
             )
             // Different week ranges must not share meetings: their cross-product is incorrect.
-            val key = Triple(name, weeks, parity)
+            val key = name to weeks
             val existing = grouped[key]
             if (existing == null) {
                 grouped[key] = CourseDraft(name, teacher, location, weeks, listOf(meeting), parity)
@@ -91,6 +91,8 @@ object ScheduleTextImporter {
                     teacher = existing.teacher.ifEmpty { teacher },
                     location = existing.location.ifEmpty { location },
                     meetings = existing.meetings + meeting,
+                    // Each meeting owns its rule; a mixed course must not supply an odd/even fallback.
+                    parity = if (existing.parity == parity) parity else WeekParity.any,
                 )
             }
         }
