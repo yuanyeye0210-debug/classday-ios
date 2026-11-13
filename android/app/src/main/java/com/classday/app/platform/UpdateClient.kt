@@ -87,7 +87,7 @@ object UpdateClient {
 
     private fun http(url: String): String {
         val connection = URL(url).openConnection() as HttpURLConnection
-        connection.setRequestProperty("User-Agent", "Classday-Android/2.9.2")
+        connection.setRequestProperty("User-Agent", "Classday-Android/$current")
         connection.connectTimeout = 15000
         connection.readTimeout = 20000
         return connection.inputStream.bufferedReader().readText()

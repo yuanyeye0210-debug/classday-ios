@@ -883,7 +883,7 @@ private fun AboutPage(model: ClassdayModel) {
         PageTitle("关于", model::back)
         Text("课曜 / Heptara", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
         Text(status)
-        Text("和 iOS 2.9.2 共用同一份课表 JSON、ICS 和 classday:// 分享。", modifier = Modifier.padding(top = 8.dp))
+        Text("和 iOS 版共用同一份课表 JSON、ICS 和 classday:// 分享。", modifier = Modifier.padding(top = 8.dp))
         Text("常驻通知在课程结束后会写成「已结束，打开课曜查看下一节」，倒计时不再往上数。", modifier = Modifier.padding(top = 8.dp), color = model.theme.secondary())
         Button(onClick = {
             scope.launch {
