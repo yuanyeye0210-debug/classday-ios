@@ -682,6 +682,7 @@ final class AppModel {
               reloaded != document else { return }
         document = reloaded
         storeFileModified = modified
+        loadError = nil
         presented = nil
         undo = nil
         drag = nil
@@ -1183,7 +1184,7 @@ final class AppModel {
 
     private func refreshReminders() async {
         await ReminderScheduler.shared.apply(
-            NotificationPlan.make(document: document, now: Date(), calendar: calendar),
+            NotificationPlan.makeForStoredLoad(document: document, loadError: loadError, now: Date(), calendar: calendar),
             calendar: calendar
         )
     }

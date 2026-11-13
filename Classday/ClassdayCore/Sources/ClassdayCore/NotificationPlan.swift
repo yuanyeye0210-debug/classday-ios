@@ -77,6 +77,19 @@ public enum NotificationPlan {
         return capped(planned, limit: limit)
     }
 
+    /// Returns planned reminders when the store loaded cleanly, or an empty
+    /// plan when a load error caused the app to fall back to demo data.
+    public static func makeForStoredLoad(
+        document: StoreDocument,
+        loadError: String?,
+        now: Date,
+        calendar: Calendar,
+        limit: Int = pendingLimit
+    ) -> [PlannedReminder] {
+        guard loadError == nil else { return [] }
+        return make(document: document, now: now, calendar: calendar, limit: limit)
+    }
+
     private static func capped(_ reminders: [PlannedReminder], limit: Int) -> [PlannedReminder] {
         Array(reminders.sorted {
             if $0.fireDate != $1.fireDate { return $0.fireDate < $1.fireDate }

@@ -240,4 +240,29 @@ final class WidgetNotificationTests: XCTestCase {
         XCTAssertEqual(capped.count, 2)
         XCTAssertLessThan(capped[0].fireDate, capped[1].fireDate)
     }
+
+    func testStoredLoadErrorSuppressesDemoRemindersUntilCleared() {
+        var doc = document
+        doc.semester.defaultReminderMinutes = 10
+        doc.exams = [ExamEvent(courseName: "Exam", location: "Hall", startISO: "2026-11-09T09:00", endISO: "2026-11-09T10:00")]
+        doc.homework = [HomeworkTask(courseName: "Course", title: "Pending", dueISO: "2026-11-09T10:00")]
+        let sunday = TestSupport.date(2026, 11, 8, 12, 0, calendar: calendar)
+
+        let suppressed = NotificationPlan.makeForStoredLoad(
+            document: doc,
+            loadError: "课表文件无法读取，已另存一份损坏文件备份，没有直接覆盖。",
+            now: sunday,
+            calendar: calendar
+        )
+        XCTAssertTrue(suppressed.isEmpty)
+
+        let restored = NotificationPlan.makeForStoredLoad(
+            document: doc,
+            loadError: nil,
+            now: sunday,
+            calendar: calendar
+        )
+        XCTAssertEqual(restored, NotificationPlan.make(document: doc, now: sunday, calendar: calendar))
+        XCTAssertFalse(restored.isEmpty)
+    }
 }
