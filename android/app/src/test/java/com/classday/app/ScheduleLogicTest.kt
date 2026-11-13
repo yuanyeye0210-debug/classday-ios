@@ -179,6 +179,28 @@ class ScheduleLogicTest {
     }
 
     @Test
+    fun csvFindsHeaderAfterTitleAndKeepsMergedNameContinuations() {
+        for (separator in listOf(',', ';')) {
+            val csv = listOf(
+                "2026秋课表",
+                "课程说明：以教务安排为准",
+                "课程名称,星期,节次,教室,教师,周次",
+                ",周一,1-2,A301,陈老师,1-16周",
+                "1 高等数学,周一,1-2,A301,陈老师,1-16周",
+                ",周三,3-4,A302,,1-16周",
+                "2 大学英语,周五,5-6,B205,林老师,1-16周",
+            ).joinToString("\n") { it.replace(',', separator) }
+            val parsed = ScheduleTextImporter.parseCsv(csv)
+            assertEquals(2, parsed.drafts.size)
+            assertEquals(listOf("高等数学", "大学英语"), parsed.drafts.map { it.name })
+            assertEquals(listOf(1, 3), parsed.drafts.first().meetings.map { it.weekday })
+            assertEquals("陈老师", parsed.drafts.first().teacher)
+            assertEquals(3, parsed.drafts.first().meetings.last().startPeriod)
+            assertEquals(1, parsed.unparsed.size)
+        }
+    }
+
+    @Test
     fun excelUtf8CsvPreservesQuotedCellsAndReportsInvalidRows() {
         val csv = "\uFEFF课程名称,星期,节次,教室,教师,周次\r\n\"数学,进阶\",周一,1-2,A301,陈老师,1-16周\r\n未安排课程,,,,,\r\n"
         val parsed = ScheduleTextImporter.parseCsv(csv)

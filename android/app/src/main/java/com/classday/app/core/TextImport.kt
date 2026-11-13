@@ -25,16 +25,31 @@ object ScheduleTextImporter {
     fun parseCsv(text: String): DraftImport {
         val lines = text.removePrefix("\uFEFF").replace("\r\n", "\n").replace('\r', '\n').lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toList()
         if (lines.isEmpty()) return DraftImport(emptyList(), emptyList())
-        val delimiter = if (lines.first().contains(';') && !lines.first().contains(',')) ';' else ','
+        // Score real headers, not the title/notes that Excel exports may prepend.
+        val candidates = listOf(',', ';').flatMap { delimiter ->
+            val rows = lines.take(6).map { splitCsv(it, delimiter) }
+            rows.mapIndexedNotNull { index, row ->
+                val columns = mapColumns(row.map { it.trim() })
+                if (row.size > 1 && columns["name"] != null && columns["weekday"] != null &&
+                    columns["name"] != columns["weekday"] &&
+                    (columns["period"] != null || columns["start"] != null)) {
+                    Triple(delimiter, index, columns)
+                } else null
+            }
+        }
+        val best = candidates.maxByOrNull { it.third.size }
+        val delimiter = best?.first ?: if (lines.first().contains(';') && !lines.first().contains(',')) ';' else ','
         val rows = lines.map { splitCsv(it, delimiter) }
-        val header = rows.first().map { it.trim() }
-        if (header.count { weekdayOf(it) != null } >= 3) return parseGrid(rows)
-        val columns = mapColumns(header)
-        if (columns["name"] == null) return DraftImport(emptyList(), lines)
+        if (rows.first().count { weekdayOf(it) != null } >= 3) return parseGrid(rows)
+        if (best == null) return DraftImport(emptyList(), lines)
+        val columns = best.third
         val grouped = linkedMapOf<String, CourseDraft>()
         val unparsed = mutableListOf<String>()
-        for (row in rows.drop(1)) {
-            val name = cell(row, columns["name"]).trim()
+        var lastName = ""
+        for (row in rows.drop(best.second + 1)) {
+            val explicitName = cell(row, columns["name"]).trim().replace(Regex("^\\d+[.、．]?\\s+"), "")
+            if (explicitName.isNotEmpty()) lastName = explicitName
+            val name = explicitName.ifEmpty { lastName }
             if (name.isEmpty()) {
                 unparsed += row.joinToString(delimiter.toString())
                 continue
