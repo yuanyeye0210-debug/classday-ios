@@ -800,6 +800,11 @@ private struct DraftEditorView: View {
                     .buttonStyle(JournalPressStyle())
                 }
             }
+            if value.startPeriod != nil,
+               value.validatedExplicitPeriodSpan(in: model.document.semester.periods) == nil {
+                Text("原安排第 \(value.startPeriod ?? 0)–\(value.endPeriod ?? value.startPeriod ?? 0) 节不在当前学期节次范围内。请填写有效的开始和结束时间，或删除这个安排；未修正前不能导入。")
+                    .font(.caption).foregroundStyle(.red)
+            }
             HStack(spacing: 12) {
                 timeField("开始", binding: timeBinding(meeting, isStart: true))
                 timeField("结束", binding: timeBinding(meeting, isStart: false))
@@ -856,16 +861,7 @@ private struct DraftEditorView: View {
     /// Period-based drafts are converted to clock times for editing, using the
     /// semester's period table.
     private func normalize(_ meeting: inout ImportedMeetingDraft) {
-        guard meeting.startMinutes == nil, let start = meeting.startPeriod else { return }
-        let periods = model.document.semester.periods
-        if let period = periods.first(where: { $0.index == start }) {
-            meeting.startMinutes = SmartImportView.minutes(of: period.start)
-        }
-        if let end = meeting.endPeriod, let period = periods.first(where: { $0.index == end }) {
-            meeting.endMinutes = SmartImportView.minutes(of: period.end)
-        }
-        meeting.startPeriod = nil
-        meeting.endPeriod = nil
+        meeting.normalizeForClockEditing(in: model.document.semester.periods)
     }
 
     private func timeBinding(_ meeting: Binding<ImportedMeetingDraft>, isStart: Bool) -> Binding<Date> {
@@ -877,7 +873,7 @@ private struct DraftEditorView: View {
             set: { date in
                 let components = Calendar.current.dateComponents([.hour, .minute], from: date)
                 let minutes = (components.hour ?? 0) * 60 + (components.minute ?? 0)
-                if isStart { meeting.wrappedValue.startMinutes = minutes } else { meeting.wrappedValue.endMinutes = minutes }
+                meeting.wrappedValue.setClockTime(minutes, isStart: isStart)
             }
         )
     }

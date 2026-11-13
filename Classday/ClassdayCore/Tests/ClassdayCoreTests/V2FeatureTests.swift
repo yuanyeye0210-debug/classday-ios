@@ -3,6 +3,42 @@ import XCTest
 import ClassdayCore
 
 final class ImportedPeriodValidationTests: XCTestCase {
+    func testEditingPreservesInvalidPeriodsUntilClockTimesAreCorrected() {
+        let periods = DemoData.makeDocument().semester.periods
+        for original in [
+            ImportedMeetingDraft(weekday: 1, startPeriod: 11, endPeriod: 12),
+            ImportedMeetingDraft(weekday: 1, startMinutes: 480, endMinutes: 540, startPeriod: 11, endPeriod: 12),
+            ImportedMeetingDraft(weekday: 1, startPeriod: 6, endPeriod: 3)
+        ] {
+            var meeting = original
+            meeting.normalizeForClockEditing(in: periods)
+            meeting.normalizeForClockEditing(in: periods)
+            XCTAssertEqual(meeting, original)
+            XCTAssertNil(meeting.validatedExplicitPeriodSpan(in: periods))
+            meeting.setClockTime(600, isStart: true)
+            XCTAssertEqual(meeting.startPeriod, original.startPeriod)
+            meeting.setClockTime(660, isStart: false)
+            XCTAssertNil(meeting.startPeriod)
+            XCTAssertNil(meeting.endPeriod)
+            XCTAssertEqual(meeting.startMinutes, 600)
+            XCTAssertEqual(meeting.endMinutes, 660)
+            XCTAssertEqual(meeting.id, original.id)
+        }
+    }
+
+    func testValidPeriodsNormalizeIncludingSinglePeriodAndKeepMissingIndexes() {
+        let periods = DemoData.makeDocument().semester.periods
+        var single = ImportedMeetingDraft(weekday: 1, startPeriod: 1)
+        single.normalizeForClockEditing(in: periods)
+        XCTAssertNotNil(single.startMinutes)
+        XCTAssertNotNil(single.endMinutes)
+        XCTAssertNil(single.startPeriod)
+        let original = ImportedMeetingDraft(weekday: 1, startPeriod: 1, endPeriod: 3)
+        var gap = original
+        gap.normalizeForClockEditing(in: periods.filter { $0.index != 2 })
+        XCTAssertEqual(gap, original)
+    }
+
     func testExplicitPeriodsMustExistInSemester() {
         let periods = DemoData.makeDocument().semester.periods
         let valid = ImportedMeetingDraft(weekday: 1, startPeriod: 1, endPeriod: 2)

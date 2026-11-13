@@ -677,6 +677,34 @@ public struct ImportedMeetingDraft: Equatable, Sendable, Identifiable {
         return (start, end)
     }
 
+    /// Keep unresolved explicit periods intact so merely opening the editor cannot lose an arrangement.
+    public mutating func normalizeForClockEditing(in periods: [PeriodTemplate]) {
+        guard startMinutes == nil,
+              let span = validatedExplicitPeriodSpan(in: periods),
+              let first = periods.first(where: { $0.index == span.0 }),
+              let last = periods.first(where: { $0.index == span.1 }) else { return }
+        func minutes(_ clock: String) -> Int? {
+            let parts = clock.split(separator: ":")
+            guard parts.count == 2, let hour = Int(parts[0]), let minute = Int(parts[1]),
+                  (0...23).contains(hour), (0...59).contains(minute) else { return nil }
+            return hour * 60 + minute
+        }
+        guard let start = minutes(first.start), let end = minutes(last.end), start < end else { return }
+        startMinutes = start
+        endMinutes = end
+        startPeriod = nil
+        endPeriod = nil
+    }
+
+    /// Explicit user edits replace period notation only after both clock values exist.
+    public mutating func setClockTime(_ minutes: Int, isStart: Bool) {
+        if isStart { startMinutes = minutes } else { endMinutes = minutes }
+        if let start = startMinutes, let end = endMinutes, start < end {
+            startPeriod = nil
+            endPeriod = nil
+        }
+    }
+
     public init(id: UUID = UUID(), weekday: Int, startMinutes: Int? = nil, endMinutes: Int? = nil,
                 startPeriod: Int? = nil, endPeriod: Int? = nil, location: String = "", parity: Int = 0) {
         self.id = id
