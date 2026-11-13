@@ -68,6 +68,25 @@ public typealias CourseIDRemap = [UUID: UUID]
 /// slot dedup in `mergeDuplicateGroup`.
 public typealias MeetingIDRemap = [UUID: UUID]
 
+/// The current merged course can represent only one week set and one room.
+/// Slot deduplication also cannot preserve conflicting parity rules.
+public func canMergeCourseSchedules(_ courses: [Course], context: ScheduleContext) -> Bool {
+    guard let first = courses.first else { return true }
+    guard courses.allSatisfy({ Set($0.weeks) == Set(first.weeks) && $0.location == first.location }) else {
+        return false
+    }
+    var parityBySlot: [MeetingSlot: WeekParity] = [:]
+    for course in courses {
+        for meeting in course.meetings {
+            let slot = MeetingSlot(weekday: meeting.weekday, startPeriod: meeting.startPeriod, endPeriod: meeting.endPeriod)
+            let parity = context.parity(for: meeting.id)
+            if let existing = parityBySlot[slot], existing != parity { return false }
+            parityBySlot[slot] = parity
+        }
+    }
+    return true
+}
+
 /// Rewrites the `courseID` of every override anchored on a deleted course
 /// to its survivor id (design §4). `meetingID` and all other fields are
 /// untouched; overrides on unmapped course ids are returned unchanged, in

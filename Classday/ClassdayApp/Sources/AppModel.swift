@@ -914,6 +914,7 @@ final class AppModel {
             let removedIDs: Set<UUID>
         }
         var computed: [ComputedMerge] = []
+        var skippedSchedules = false
         var combinedRemap: CourseIDRemap = [:]
         var combinedMeetingRemap: MeetingIDRemap = [:]
         for group in groups {
@@ -923,6 +924,10 @@ final class AppModel {
             // so the survivor is the first member as stored now.
             let members = document.courses.filter { includedIDs.contains($0.id) }
             guard members.count >= 2 else { continue }
+            guard canMergeCourseSchedules(members, context: document.scheduleContext) else {
+                skippedSchedules = true
+                continue
+            }
             let gradeSourceID = gradeChoices[group.normalizedName].flatMap { $0 }
             // An unresolved grade conflict must never reach
             // mergeDuplicateGroup: skip the group and leave it on
@@ -940,7 +945,10 @@ final class AppModel {
             combinedMeetingRemap.merge(droppedMeetingRemap(of: resolvedGroup)) { _, new in new }
             computed.append(ComputedMerge(merged: result.course, removedIDs: Set(result.remap.keys)))
         }
-        guard !computed.isEmpty else { return }
+        guard !computed.isEmpty else {
+            if skippedSchedules { banner = "周次、教室或同一时段的单双周规则不同，已保留为独立课程。" }
+            return
+        }
 
         // 2. Back up the current (pre-merge) document into the
         // timetable library (design §6). `duplicateTimetable`
@@ -1000,7 +1008,7 @@ final class AppModel {
         // groups remain (per-group merge) it stays open.
         showDuplicateImportBanner = false
         let mergedCount = computed.count
-        banner = "已合并 \(mergedCount) 组同名课程"
+        banner = "已合并 \(mergedCount) 组同名课程" + (skippedSchedules ? "；周次、教室或同一时段单双周不同的课程已保持独立。" : "")
         persist(markUserEdited: true)
     }
 
