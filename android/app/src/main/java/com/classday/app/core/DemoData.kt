@@ -156,7 +156,7 @@ fun canMergeCourseSchedules(courses: List<Course>, document: StoreDocument): Boo
     val parities = mutableMapOf<MeetingSlot, WeekParity>()
     for (course in courses) for (meeting in course.meetings) {
         val slot = MeetingSlot(meeting.weekday, meeting.startPeriod, meeting.endPeriod)
-        val parity = document.parity(meeting.id)
+        val parity = document.scheduleContext.parity(meeting.id)
         if (parities[slot]?.let { it != parity } == true) return false
         parities[slot] = parity
     }
