@@ -2,6 +2,132 @@ import Foundation
 import XCTest
 import ClassdayCore
 
+final class ImportedPeriodValidationTests: XCTestCase {
+    func testExplicitlyAdoptingExistingClockTimesResolvesInvalidPeriods() {
+        let periods = DemoData.makeDocument().semester.periods
+        for (startPeriod, endPeriod) in [(11, 12), (6, 3)] {
+            var meeting = ImportedMeetingDraft(weekday: 1, startMinutes: 480, endMinutes: 580,
+                                               startPeriod: startPeriod, endPeriod: endPeriod,
+                                               location: "A301", parity: 1)
+            let original = meeting
+            meeting.normalizeForClockEditing(in: periods)
+            XCTAssertEqual(meeting, original)
+            XCTAssertNil(meeting.validatedExplicitPeriodSpan(in: periods))
+            XCTAssertTrue(meeting.hasValidClockTime)
+            XCTAssertTrue(meeting.adoptClockTime())
+            var expected = original
+            expected.startPeriod = nil
+            expected.endPeriod = nil
+            XCTAssertEqual(meeting, expected)
+            XCTAssertTrue(meeting.adoptClockTime())
+            XCTAssertEqual(meeting, expected)
+        }
+    }
+
+    func testAdoptingIncompleteOrInvalidClockTimesKeepsOriginalPeriods() {
+        let times: [(Int?, Int?)] = [(nil, nil), (480, nil), (nil, 580),
+                                    (580, 480), (480, 480), (-1, 580), (480, 1440)]
+        for (start, end) in times {
+            var meeting = ImportedMeetingDraft(weekday: 1, startMinutes: start, endMinutes: end,
+                                               startPeriod: 11, endPeriod: 12)
+            let original = meeting
+            XCTAssertFalse(meeting.hasValidClockTime)
+            XCTAssertFalse(meeting.adoptClockTime())
+            XCTAssertEqual(meeting, original)
+        }
+    }
+
+    func testEditingPreservesInvalidPeriodsUntilClockTimesAreCorrected() {
+        let periods = DemoData.makeDocument().semester.periods
+        for original in [
+            ImportedMeetingDraft(weekday: 1, startPeriod: 11, endPeriod: 12),
+            ImportedMeetingDraft(weekday: 1, startMinutes: 480, endMinutes: 540, startPeriod: 11, endPeriod: 12),
+            ImportedMeetingDraft(weekday: 1, startPeriod: 6, endPeriod: 3)
+        ] {
+            var meeting = original
+            meeting.normalizeForClockEditing(in: periods)
+            meeting.normalizeForClockEditing(in: periods)
+            XCTAssertEqual(meeting, original)
+            XCTAssertNil(meeting.validatedExplicitPeriodSpan(in: periods))
+            meeting.setClockTime(600, isStart: true)
+            XCTAssertEqual(meeting.startPeriod, original.startPeriod)
+            meeting.setClockTime(660, isStart: false)
+            XCTAssertNil(meeting.startPeriod)
+            XCTAssertNil(meeting.endPeriod)
+            XCTAssertEqual(meeting.startMinutes, 600)
+            XCTAssertEqual(meeting.endMinutes, 660)
+            XCTAssertEqual(meeting.id, original.id)
+        }
+    }
+
+    func testValidPeriodsNormalizeIncludingSinglePeriodAndKeepMissingIndexes() {
+        let periods = DemoData.makeDocument().semester.periods
+        var single = ImportedMeetingDraft(weekday: 1, startPeriod: 1)
+        single.normalizeForClockEditing(in: periods)
+        XCTAssertNotNil(single.startMinutes)
+        XCTAssertNotNil(single.endMinutes)
+        XCTAssertNil(single.startPeriod)
+        let original = ImportedMeetingDraft(weekday: 1, startPeriod: 1, endPeriod: 3)
+        var gap = original
+        gap.normalizeForClockEditing(in: periods.filter { $0.index != 2 })
+        XCTAssertEqual(gap, original)
+    }
+
+    func testExplicitPeriodsMustExistInSemester() {
+        let periods = DemoData.makeDocument().semester.periods
+        let valid = ImportedMeetingDraft(weekday: 1, startPeriod: 1, endPeriod: 2)
+        XCTAssertEqual(valid.validatedExplicitPeriodSpan(in: periods)?.0, 1)
+        XCTAssertEqual(valid.validatedExplicitPeriodSpan(in: periods)?.1, 2)
+        let single = ImportedMeetingDraft(weekday: 1, startPeriod: 3)
+        XCTAssertEqual(single.validatedExplicitPeriodSpan(in: periods)?.1, 3)
+        for (start, end) in [(11, 12), (0, 2), (6, 3), (1, Int.max)] {
+            let meeting = ImportedMeetingDraft(weekday: 1, startPeriod: start, endPeriod: end)
+            XCTAssertNil(meeting.validatedExplicitPeriodSpan(in: periods))
+        }
+        XCTAssertNil(valid.validatedExplicitPeriodSpan(in: []))
+        XCTAssertNil(valid.validatedExplicitPeriodSpan(in: Array(periods.prefix(1))))
+        let gap = periods.filter { $0.index != 2 }
+        XCTAssertNil(ImportedMeetingDraft(weekday: 1, startPeriod: 1, endPeriod: 3).validatedExplicitPeriodSpan(in: gap))
+    }
+}
+
+final class WidgetIDTests: XCTestCase {
+    func testTimelineKindsCoverAllExistingWidgetsWithoutChangingIdentifiers() {
+        XCTAssertEqual(WidgetID.timelineKinds, [
+            "NextClassWidget", "TodayCoursesWidget", "FanStackWidget", "WeekBoardWidget", "LockNextWidget"
+        ])
+        XCTAssertEqual(Set(WidgetID.timelineKinds).count, WidgetID.timelineKinds.count)
+        XCTAssertEqual(WidgetID.nextClassControl, "NextClassControl")
+        XCTAssertFalse(WidgetID.timelineKinds.contains(WidgetID.nextClassControl))
+    }
+}
+
+final class RoomNavigationTests: XCTestCase {
+    func testSearchUsesQueryAndPreservesSpecialCharacters() throws {
+        let pin = RoomPin(name: "Room", query: "  教学楼 A&B #2  ")
+        let url = try XCTUnwrap(RoomNavigation.searchURL(location: "Other", pin: pin))
+        let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        XCTAssertEqual(components.host, "maps.apple.com")
+        XCTAssertEqual(components.queryItems, [URLQueryItem(name: "q", value: "教学楼 A&B #2")])
+    }
+
+    func testSearchFallsBackToLocationAndRejectsEmptyDestination() throws {
+        let pin = RoomPin(name: "Room", query: " \n ")
+        let url = try XCTUnwrap(RoomNavigation.searchURL(location: " Library ", pin: pin))
+        XCTAssertEqual(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first?.value, "Library")
+        XCTAssertNil(RoomNavigation.searchURL(location: " \n ", pin: nil))
+    }
+
+    func testCoordinatesMustBeCompleteFiniteAndInRange() {
+        XCTAssertFalse(RoomNavigation.hasValidCoordinates(nil))
+        XCTAssertFalse(RoomNavigation.hasValidCoordinates(RoomPin(name: "Room", latitude: 51)))
+        XCTAssertFalse(RoomNavigation.hasValidCoordinates(RoomPin(name: "Room", latitude: .nan, longitude: 0)))
+        XCTAssertFalse(RoomNavigation.hasValidCoordinates(RoomPin(name: "Room", latitude: 91, longitude: 0)))
+        XCTAssertFalse(RoomNavigation.hasValidCoordinates(RoomPin(name: "Room", latitude: 0, longitude: 181)))
+        XCTAssertTrue(RoomNavigation.hasValidCoordinates(RoomPin(name: "Room", latitude: 51.5, longitude: -0.1)))
+    }
+}
+
 final class V2FeatureTests: XCTestCase {
     private let calendar = TestSupport.calendar()
 
@@ -362,7 +488,7 @@ func testGridParsesTimetableScreenshotLayout() {
 final class ChangelogStructureTests: XCTestCase {
     func testChangelogIsNewestFirstAndComplete() {
         let versions = AppChangelog.entries.map(\.version)
-        XCTAssertEqual(versions.first, "2.7.1")
+        XCTAssertEqual(Array(versions.prefix(5)), ["2.9.2", "2.9.1", "2.9.0", "2.8.0", "2.7.1"])
         XCTAssertEqual(Set(versions).count, versions.count)
         let parsed = versions.map { $0.split(separator: ".").compactMap { Int($0) } }
         for index in 1..<parsed.count {

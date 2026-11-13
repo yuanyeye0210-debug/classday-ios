@@ -3,6 +3,13 @@ import Foundation
 public enum WidgetID {
     public static let nextClass = "NextClassWidget"
     public static let todayCourses = "TodayCoursesWidget"
+    public static let fanStack = "FanStackWidget"
+    public static let weekBoard = "WeekBoardWidget"
+    public static let lockNext = "LockNextWidget"
+    public static let nextClassControl = "NextClassControl"
+
+    /// Control widgets do not have timelines and are excluded from this list.
+    public static let timelineKinds = [nextClass, todayCourses, fanStack, weekBoard, lockNext]
 }
 
 public enum DataOrigin: String, Codable, Equatable, Hashable, Sendable {

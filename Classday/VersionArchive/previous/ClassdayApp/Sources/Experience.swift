@@ -1265,14 +1265,15 @@ enum QRCode {
 
 enum RoomNavigator {
     static func open(location: String, pin: RoomPin?) {
-        let item: MKMapItem
-        if let pin, let latitude = pin.latitude, let longitude = pin.longitude {
-            item = MKMapItem(placemark: MKPlacemark(coordinate: CLLocationCoordinate2D(latitude: latitude, longitude: longitude)))
-        } else {
-            item = MKMapItem(placemark: MKPlacemark(coordinate: CLLocationCoordinate2D(latitude: 39.9, longitude: 116.4)))
-            item.name = location
+        guard RoomNavigation.hasValidCoordinates(pin),
+              let pin, let latitude = pin.latitude, let longitude = pin.longitude else {
+            if let url = RoomNavigation.searchURL(location: location, pin: pin) {
+                UIApplication.shared.open(url)
+            }
+            return
         }
-        item.name = pin?.query ?? location
+        let item = MKMapItem(placemark: MKPlacemark(coordinate: CLLocationCoordinate2D(latitude: latitude, longitude: longitude)))
+        item.name = pin.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? location : pin.query
         item.openInMaps(launchOptions: [MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeWalking])
     }
 }

@@ -404,7 +404,7 @@ final class AppModel {
             return
         }
         guard let meetingID = meetingID ?? course.meetings.first?.id else { return }
-        tab = .timetable
+        tab = .week
         if let week = SemesterCalendar.weekIndex(for: Date(), semester: document.semester, calendar: calendar),
            course.weeks.contains(week) {
             weekIndex = week

@@ -83,7 +83,7 @@ struct OpenNextClassIntent: AppIntent {
 
 struct FanStackWidget: Widget {
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "FanStackWidget", provider: ClassdayProvider()) { entry in
+        StaticConfiguration(kind: WidgetID.fanStack, provider: ClassdayProvider()) { entry in
             FanStackView(date: entry.date)
         }
         .configurationDisplayName("卡片叠放")
@@ -139,7 +139,7 @@ struct FanStackView: View {
 
 struct WeekBoardWidget: Widget {
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "WeekBoardWidget", provider: ClassdayProvider()) { entry in
+        StaticConfiguration(kind: WidgetID.weekBoard, provider: ClassdayProvider()) { entry in
             WeekBoardView(date: entry.date)
         }
         .configurationDisplayName("本周课表")
@@ -185,7 +185,7 @@ struct WeekBoardView: View {
 
 struct LockNextWidget: Widget {
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "LockNextWidget", provider: ClassdayProvider()) { entry in
+        StaticConfiguration(kind: WidgetID.lockNext, provider: ClassdayProvider()) { entry in
             LockNextView(date: entry.date)
         }
         .configurationDisplayName("锁屏下一节")
@@ -267,7 +267,7 @@ struct NextClassActivityWidget: Widget {
 @available(iOS 18.0, *)
 struct NextClassControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
-        StaticControlConfiguration(kind: "NextClassControl") {
+        StaticControlConfiguration(kind: WidgetID.nextClassControl) {
             ControlWidgetButton(action: OpenNextClassIntent()) {
                 Label("下一节", systemImage: "clock")
             }

@@ -56,10 +56,9 @@ final class ReminderScheduler {
             content.title = reminder.title
             content.body = reminder.body
             content.sound = .default
-            content.userInfo = [
-                "courseID": reminder.courseID.uuidString,
-                "meetingID": reminder.meetingID.uuidString,
-            ]
+            content.userInfo = ["reminderKind": reminder.kind.rawValue]
+            if let courseID = reminder.courseID { content.userInfo["courseID"] = courseID.uuidString }
+            if let meetingID = reminder.meetingID { content.userInfo["meetingID"] = meetingID.uuidString }
             var components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: reminder.fireDate)
             components.calendar = calendar
             components.timeZone = calendar.timeZone

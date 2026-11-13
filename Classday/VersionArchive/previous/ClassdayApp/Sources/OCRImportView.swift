@@ -184,7 +184,7 @@ struct SmartImportView: View {
         VStack(alignment: .leading, spacing: 12) {
             sectionHeader("确认识别结果", caption: "点开任意一门课就能改，勾选的才会导入")
             ForEach(Array(drafts.enumerated()), id: \.element.id) { index, draft in
-                DraftCard(draft: draft,
+                DraftCard(draft: draftWithPeriodIssues(draft),
                           colorID: Self.palette[index % Self.palette.count],
                           included: !excluded.contains(draft.id),
                           duplicate: model.document.courses.contains { $0.name == draft.name && !draft.name.isEmpty },
@@ -456,6 +456,11 @@ struct SmartImportView: View {
     }
 
     private func importSelected() {
+        let invalid = drafts.filter { !excluded.contains($0.id) && hasInvalidExplicitPeriods($0) }
+        guard invalid.isEmpty else {
+            model.banner = "节次超出当前学期范围或起止倒序，请修改或取消勾选：" + invalid.map(\.name).joined(separator: "、")
+            return
+        }
         let (courses, parities) = buildCourses()
         guard !courses.isEmpty else {
             model.banner = "选中的课程还缺名称或时间，先点开补上"
@@ -503,9 +508,23 @@ struct SmartImportView: View {
         return (built, parities)
     }
 
+    private func hasInvalidExplicitPeriods(_ draft: ImportedCourseDraft) -> Bool {
+        draft.meetings.contains {
+            $0.startPeriod != nil && $0.validatedExplicitPeriodSpan(in: model.document.semester.periods) == nil
+        }
+    }
+
+    private func draftWithPeriodIssues(_ draft: ImportedCourseDraft) -> ImportedCourseDraft {
+        var result = draft
+        if hasInvalidExplicitPeriods(draft) {
+            result.issues.append("节次超出学期范围或倒序")
+        }
+        return result
+    }
+
     private func periodSpan(for meeting: ImportedMeetingDraft, periods: [PeriodTemplate]) -> (Int, Int)? {
-        if let start = meeting.startPeriod {
-            return (start, max(start, meeting.endPeriod ?? start))
+        if meeting.startPeriod != nil {
+            return meeting.validatedExplicitPeriodSpan(in: periods)
         }
         guard let startMinutes = meeting.startMinutes, !periods.isEmpty else { return nil }
         let starts = periods.map { Self.minutes(of: $0.start) }
@@ -781,9 +800,20 @@ private struct DraftEditorView: View {
                     .buttonStyle(JournalPressStyle())
                 }
             }
+            if value.startPeriod != nil,
+               value.validatedExplicitPeriodSpan(in: model.document.semester.periods) == nil {
+                Text("原安排第 \(value.startPeriod ?? 0)–\(value.endPeriod ?? value.startPeriod ?? 0) 节超出当前学期范围、缺少节次或起止倒序。" + (value.hasValidClockTime ? "请确认采用下方时间，或修改、删除这个安排；未确认前不能导入。" : "请设置有效的开始和结束时间，或删除这个安排；未修正前不能导入。"))
+                    .font(.caption).foregroundStyle(.red)
+                if value.hasValidClockTime {
+                    Button("忽略原节次，采用当前时间") {
+                        meeting.wrappedValue.adoptClockTime()
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
             HStack(spacing: 12) {
-                timeField("开始", binding: timeBinding(meeting, isStart: true))
-                timeField("结束", binding: timeBinding(meeting, isStart: false))
+                timeField(value.startMinutes == nil ? "开始（未设置）" : "开始", binding: timeBinding(meeting, isStart: true))
+                timeField(value.endMinutes == nil ? "结束（未设置）" : "结束", binding: timeBinding(meeting, isStart: false))
             }
             VStack(alignment: .leading, spacing: 8) {
                 Text("这个安排的单双周").font(.caption.weight(.bold)).foregroundStyle(Theme.secondary)
@@ -837,16 +867,7 @@ private struct DraftEditorView: View {
     /// Period-based drafts are converted to clock times for editing, using the
     /// semester's period table.
     private func normalize(_ meeting: inout ImportedMeetingDraft) {
-        guard meeting.startMinutes == nil, let start = meeting.startPeriod else { return }
-        let periods = model.document.semester.periods
-        if let period = periods.first(where: { $0.index == start }) {
-            meeting.startMinutes = SmartImportView.minutes(of: period.start)
-        }
-        if let end = meeting.endPeriod, let period = periods.first(where: { $0.index == end }) {
-            meeting.endMinutes = SmartImportView.minutes(of: period.end)
-        }
-        meeting.startPeriod = nil
-        meeting.endPeriod = nil
+        meeting.normalizeForClockEditing(in: model.document.semester.periods)
     }
 
     private func timeBinding(_ meeting: Binding<ImportedMeetingDraft>, isStart: Bool) -> Binding<Date> {
@@ -858,7 +879,7 @@ private struct DraftEditorView: View {
             set: { date in
                 let components = Calendar.current.dateComponents([.hour, .minute], from: date)
                 let minutes = (components.hour ?? 0) * 60 + (components.minute ?? 0)
-                if isStart { meeting.wrappedValue.startMinutes = minutes } else { meeting.wrappedValue.endMinutes = minutes }
+                meeting.wrappedValue.setClockTime(minutes, isStart: isStart)
             }
         )
     }

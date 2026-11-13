@@ -96,6 +96,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Classday-android-v2.9.2
+          name: Classday-android-v2.9.3
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error

@@ -5,16 +5,22 @@ public struct PlannedReminder: Equatable, Hashable, Identifiable, Sendable {
     public var fireDate: Date
     public var title: String
     public var body: String
-    public var courseID: UUID
-    public var meetingID: UUID
+    public var courseID: UUID?
+    public var meetingID: UUID?
+    public var kind: Kind
 
-    public init(id: String, fireDate: Date, title: String, body: String, courseID: UUID, meetingID: UUID) {
+    public enum Kind: Int, Sendable {
+        case exam, homework, course
+    }
+
+    public init(id: String, fireDate: Date, title: String, body: String, courseID: UUID? = nil, meetingID: UUID? = nil, kind: Kind = .course) {
         self.id = id
         self.fireDate = fireDate
         self.title = title
         self.body = body
         self.courseID = courseID
         self.meetingID = meetingID
+        self.kind = kind
     }
 }
 
@@ -29,8 +35,9 @@ public enum NotificationPlan {
         limit: Int = pendingLimit
     ) -> [PlannedReminder] {
         guard limit > 0 else { return [] }
+        var planned = extraReminders(document: document, now: now, calendar: calendar)
         guard let startMonday = SemesterCalendar.semesterMonday(document.semester, calendar: calendar) else {
-            return []
+            return capped(planned, limit: limit)
         }
         let startWeek: Int
         if now < startMonday {
@@ -38,10 +45,9 @@ public enum NotificationPlan {
         } else if let week = SemesterCalendar.weekIndex(for: now, semester: document.semester, calendar: calendar) {
             startWeek = week
         } else {
-            return []
+            return capped(planned, limit: limit)
         }
 
-        var planned: [PlannedReminder] = []
         for week in startWeek...document.semester.totalWeeks {
             let items = ScheduleEngine.occurrences(
                 inWeek: week,
@@ -66,10 +72,39 @@ public enum NotificationPlan {
                         meetingID: item.meetingID
                     )
                 )
-                if planned.count == limit { return planned }
             }
         }
-        return planned
+        return capped(planned, limit: limit)
+    }
+
+    private static func capped(_ reminders: [PlannedReminder], limit: Int) -> [PlannedReminder] {
+        Array(reminders.sorted {
+            if $0.fireDate != $1.fireDate { return $0.fireDate < $1.fireDate }
+            if $0.kind != $1.kind { return $0.kind.rawValue < $1.kind.rawValue }
+            return $0.id < $1.id
+        }.prefix(min(limit, pendingLimit)))
+    }
+
+    private static func extraReminders(document: StoreDocument, now: Date, calendar: Calendar) -> [PlannedReminder] {
+        let lead = document.semester.defaultReminderMinutes
+        guard lead > 0 else { return [] }
+        func fire(_ stamp: String) -> Date? {
+            guard let date = CivilStamp.date(from: stamp, calendar: calendar), date > now,
+                  let fireDate = calendar.date(byAdding: .minute, value: -lead, to: date), fireDate > now else { return nil }
+            return fireDate
+        }
+        var reminders: [PlannedReminder] = []
+        for exam in document.exams {
+            guard let date = fire(exam.startISO) else { continue }
+            reminders.append(PlannedReminder(id: "classday-exam-\(exam.id.uuidString)", fireDate: date,
+                title: "即将考试 · \(exam.courseName)", body: "\(lead) 分钟后 · \(exam.location)", kind: .exam))
+        }
+        for task in document.homework where !task.done {
+            guard let date = fire(task.dueISO) else { continue }
+            reminders.append(PlannedReminder(id: "classday-homework-\(task.id.uuidString)", fireDate: date,
+                title: "作业即将截止 · \(task.title)", body: "\(lead) 分钟后截止 · \(task.courseName)", kind: .homework))
+        }
+        return reminders
     }
 
     public static func identifier(for occurrence: Occurrence, calendar: Calendar) -> String {

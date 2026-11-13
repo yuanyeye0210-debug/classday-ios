@@ -1615,6 +1615,9 @@ public enum AppChangelog {
     }
 
     public static let entries: [Entry] = [
+        Entry(version: "2.9.3", title: "新图标", changes: [
+            "换了新图标：白底黑线的课表加时钟"
+        ]),
         Entry(version: "2.9.2", title: "锁屏课程后台刷新完善", changes: [
             "锁屏课程与小组件预排未来 7 天的刷新，每天午夜续排，跨周末也能衔接下一节课",
             "首课距离较远时安排课前刷新；课程过期后显示「已结束，打开课曜查看下一节」，倒计时不再往上数",

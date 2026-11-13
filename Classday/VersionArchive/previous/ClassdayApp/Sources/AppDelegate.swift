@@ -53,6 +53,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         didReceive response: UNNotificationResponse
     ) async {
         let info = response.notification.request.content.userInfo
+        if let kind = info["reminderKind"] as? Int, kind != PlannedReminder.Kind.course.rawValue {
+            NotificationCenter.default.post(name: .classdayOpenCourse, object: nil, userInfo: ["reminderKind": kind])
+            return
+        }
         guard let rawCourse = info["courseID"] as? String, let courseID = UUID(uuidString: rawCourse) else { return }
         let meetingID = (info["meetingID"] as? String).flatMap(UUID.init(uuidString:))
         var payload: [String: Any] = ["courseID": courseID]

@@ -129,6 +129,23 @@ public struct RoomPin: Codable, Equatable, Hashable, Sendable, Identifiable {
     }
 }
 
+public enum RoomNavigation {
+    public static func hasValidCoordinates(_ pin: RoomPin?) -> Bool {
+        guard let latitude = pin?.latitude, let longitude = pin?.longitude else { return false }
+        return latitude.isFinite && longitude.isFinite
+            && (-90...90).contains(latitude) && (-180...180).contains(longitude)
+    }
+
+    public static func searchURL(location: String, pin: RoomPin?) -> URL? {
+        let query = pin?.query.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let destination = query.isEmpty ? location.trimmingCharacters(in: .whitespacesAndNewlines) : query
+        guard !destination.isEmpty else { return nil }
+        var components = URLComponents(string: "https://maps.apple.com/")!
+        components.queryItems = [URLQueryItem(name: "q", value: destination)]
+        return components.url
+    }
+}
+
 public struct StoredTimetable: Codable, Equatable, Hashable, Sendable, Identifiable {
     public var id: UUID
     public var name: String
@@ -650,6 +667,55 @@ public struct ImportedMeetingDraft: Equatable, Sendable, Identifiable {
     public var endPeriod: Int?
     public var location: String
     public var parity: Int // per-meeting: 0 = every week, 1 = odd weeks, 2 = even weeks
+
+    public func validatedExplicitPeriodSpan(in periods: [PeriodTemplate]) -> (Int, Int)? {
+        guard let start = startPeriod else { return nil }
+        let end = endPeriod ?? start
+        let indexes = Set(periods.map(\.index))
+        guard start <= end, indexes.contains(start), indexes.contains(end),
+              (start...end).allSatisfy({ indexes.contains($0) }) else { return nil }
+        return (start, end)
+    }
+
+    /// Keep unresolved explicit periods intact so merely opening the editor cannot lose an arrangement.
+    public mutating func normalizeForClockEditing(in periods: [PeriodTemplate]) {
+        guard startMinutes == nil,
+              let span = validatedExplicitPeriodSpan(in: periods),
+              let first = periods.first(where: { $0.index == span.0 }),
+              let last = periods.first(where: { $0.index == span.1 }) else { return }
+        func minutes(_ clock: String) -> Int? {
+            let parts = clock.split(separator: ":")
+            guard parts.count == 2, let hour = Int(parts[0]), let minute = Int(parts[1]),
+                  (0...23).contains(hour), (0...59).contains(minute) else { return nil }
+            return hour * 60 + minute
+        }
+        guard let start = minutes(first.start), let end = minutes(last.end), start < end else { return }
+        startMinutes = start
+        endMinutes = end
+        startPeriod = nil
+        endPeriod = nil
+    }
+
+    /// Clock values must describe a complete, ordered range within one day.
+    public var hasValidClockTime: Bool {
+        guard let start = startMinutes, let end = endMinutes else { return false }
+        return (0..<1440).contains(start) && (0..<1440).contains(end) && start < end
+    }
+
+    /// Use only in response to an explicit choice to replace the original period notation.
+    @discardableResult
+    public mutating func adoptClockTime() -> Bool {
+        guard hasValidClockTime else { return false }
+        startPeriod = nil
+        endPeriod = nil
+        return true
+    }
+
+    /// Explicit user edits replace period notation only after both clock values are valid.
+    public mutating func setClockTime(_ minutes: Int, isStart: Bool) {
+        if isStart { startMinutes = minutes } else { endMinutes = minutes }
+        adoptClockTime()
+    }
 
     public init(id: UUID = UUID(), weekday: Int, startMinutes: Int? = nil, endMinutes: Int? = nil,
                 startPeriod: Int? = nil, endPeriod: Int? = nil, location: String = "", parity: Int = 0) {
@@ -1549,6 +1615,24 @@ public enum AppChangelog {
     }
 
     public static let entries: [Entry] = [
+        Entry(version: "2.9.2", title: "锁屏课程后台刷新完善", changes: [
+            "锁屏课程与小组件预排未来 7 天的刷新，每天午夜续排，跨周末也能衔接下一节课",
+            "首课距离较远时安排课前刷新；课程过期后显示「已结束，打开课曜查看下一节」，倒计时不再往上数",
+            "关于页在系统关闭后台刷新时显示提示"
+        ]),
+        Entry(version: "2.9.1", title: "我的页面分组导航", changes: [
+            "「我的」改为课表与通用两组入口，上课时间、学期、假期、提醒、数据和关于各有独立页面",
+            "提醒页提供独立保存按钮，返回上一级时保留未保存的草稿"
+        ]),
+        Entry(version: "2.9.0", title: "同名课程合并", changes: [
+            "自动发现同名课程，确认后合并上课时段和周次，成绩统计只计一次",
+            "成绩冲突由你选择，合并前自动备份到课表库；导入产生重复课程时显示合并提示"
+        ]),
+        Entry(version: "2.8.0", title: "锁屏课程与应用内更新", changes: [
+            "打开应用时同步锁屏课程，并安排后台刷新，避免一直显示已结束的课",
+            "检查更新读取发布清单，并在清单不可用时尝试备用发布来源",
+            "应用内下载支持断点续传、大小与 SHA-256 校验；必须更新时不能跳过"
+        ]),
         Entry(version: "2.7.1", title: "课程页滑动修复", changes: [
             "修复课程页上下滑不动的问题：课程页改用系统原生列表，滑动恢复顺畅，左滑删除保留、依旧先弹确认",
             "安装包改为英文注册名加中文显示名：SideStore 安装新版不再被中文名拦下，检查更新下载的包可以直接装"
