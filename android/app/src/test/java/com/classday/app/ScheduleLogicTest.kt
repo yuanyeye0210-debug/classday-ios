@@ -179,6 +179,47 @@ class ScheduleLogicTest {
     }
 
     @Test
+    fun csvDifferentRoomsOrTeachersKeepSeparateCoursesAndParity() {
+        val rows = listOf(
+            "数学,周一,1-2,1-9周 单周,张老师,实验楼",
+            "数学,周三,3-4,1-9周 双周,张老师,教学楼",
+            "数学,周五,5-6,1-9周 双周,李老师,实验楼",
+            "数学,周二,7-8,1-9周 单周,张老师,实验楼",
+        )
+        for (ordered in listOf(rows, rows.reversed())) {
+            val parsed = ScheduleTextImporter.parseCsv(
+                "课程,星期,节次,周次,教师,教室\n" + ordered.joinToString("\n")
+            )
+            assertTrue(parsed.unparsed.isEmpty())
+            assertEquals(3, parsed.drafts.size)
+            val (courses, parities) = ScheduleTextImporter.toCourses(parsed.drafts, DemoData.makeDocument().semester)
+            assertEquals(3, courses.size)
+            val rules = parities.toMap()
+            val lab = courses.single { it.teacher == "张老师" && it.location == "实验楼" }
+            assertEquals(setOf(1, 2), lab.meetings.map { it.weekday }.toSet())
+            assertTrue(lab.meetings.all { rules[it.id] == WeekParity.odd })
+            for (course in courses.filter { it.id != lab.id }) {
+                assertEquals(1, course.meetings.size)
+                assertEquals(WeekParity.even, rules[course.meetings.single().id])
+            }
+            assertTrue(courses.all { it.weeks == (1..9).toList() })
+        }
+    }
+
+    @Test
+    fun csvUnknownRoomDoesNotInheritAnotherMeetingsRoom() {
+        val parsed = ScheduleTextImporter.parseCsv("""
+            课程,星期,节次,周次,教师,教室
+            数学,周一,1-2,1-9周 单周,张老师,
+            数学,周三,3-4,1-9周 双周,张老师,实验楼
+        """.trimIndent())
+        val (courses, _) = ScheduleTextImporter.toCourses(parsed.drafts, DemoData.makeDocument().semester)
+        assertEquals(2, courses.size)
+        assertEquals("", courses.single { it.meetings.single().weekday == 1 }.location)
+        assertEquals("实验楼", courses.single { it.meetings.single().weekday == 3 }.location)
+    }
+
+    @Test
     fun csvSameWeeksKeepOddEvenAndEveryWeekMeetingsInOneCourse() {
         for (rules in listOf(
             listOf("1-9周 单周", "1-9周 双周", "1-9周"),

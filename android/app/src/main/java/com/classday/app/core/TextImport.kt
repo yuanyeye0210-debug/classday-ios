@@ -22,6 +22,13 @@ data class CourseDraft(
 data class DraftImport(val drafts: List<CourseDraft>, val unparsed: List<String>)
 
 object ScheduleTextImporter {
+    private data class CsvCourseKey(
+        val name: String,
+        val weeks: List<Int>,
+        val teacher: String,
+        val location: String,
+    )
+
     fun parseCsv(text: String): DraftImport {
         val lines = text.removePrefix("\uFEFF").replace("\r\n", "\n").replace('\r', '\n').lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toList()
         if (lines.isEmpty()) return DraftImport(emptyList(), emptyList())
@@ -43,7 +50,7 @@ object ScheduleTextImporter {
         if (rows.first().count { weekdayOf(it) != null } >= 3) return parseGrid(rows)
         if (best == null) return DraftImport(emptyList(), lines)
         val columns = best.third
-        val grouped = linkedMapOf<Pair<String, List<Int>>, CourseDraft>()
+        val grouped = linkedMapOf<CsvCourseKey, CourseDraft>()
         val unparsed = mutableListOf<String>()
         var lastName = ""
         var lastWeeks: Pair<List<Int>, WeekParity>? = null
@@ -81,8 +88,9 @@ object ScheduleTextImporter {
                 location = location,
                 parity = parity,
             )
-            // Different week ranges must not share meetings: their cross-product is incorrect.
-            val key = name to weeks
+            // A course has only one teacher/location. Keep distinct metadata separate,
+            // including unknown values, rather than assigning one row's room to another.
+            val key = CsvCourseKey(name, weeks, teacher, location)
             val existing = grouped[key]
             if (existing == null) {
                 grouped[key] = CourseDraft(name, teacher, location, weeks, listOf(meeting), parity)
