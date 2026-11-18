@@ -1,0 +1,19 @@
+name: classday-version-snapshot
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  version-snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fetch base branch
+        run: git fetch origin "${{ github.base_ref }}"
+      - name: Require a snapshot of the replaced Classday version
+        run: python3 Classday/Tools/check_version_snapshot.py --base "origin/${{ github.base_ref }}"

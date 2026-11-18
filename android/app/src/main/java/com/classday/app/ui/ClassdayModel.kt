@@ -1,0 +1,662 @@
+package com.classday.app.ui
+
+import android.app.Application
+import android.content.Context
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
+import androidx.lifecycle.AndroidViewModel
+import com.classday.app.ClassAlerts
+import com.classday.app.core.CivilCalendar
+import com.classday.app.core.CivilStamp
+import com.classday.app.core.ClassdayThemes
+import com.classday.app.core.Course
+import com.classday.app.core.CourseDraft
+import com.classday.app.core.CourseReminder
+import com.classday.app.core.DataOrigin
+import com.classday.app.core.DemoData
+import com.classday.app.core.DuplicateGroup
+import com.classday.app.core.ExamEvent
+import com.classday.app.core.HomeworkTask
+import com.classday.app.core.Meeting
+import com.classday.app.core.Occurrence
+import com.classday.app.core.OccurrenceOverride
+import com.classday.app.core.OverrideKind
+import com.classday.app.core.PerformanceTier
+import com.classday.app.core.ScheduleEngine
+import com.classday.app.core.ScheduleTextImporter
+import com.classday.app.core.Semester
+import com.classday.app.core.ShareCodec
+import com.classday.app.core.StoreCodec
+import com.classday.app.core.StoreDocument
+import com.classday.app.core.TimetableLibrary
+import com.classday.app.core.WeekParity
+import com.classday.app.core.applyMerge
+import com.classday.app.core.findDuplicateGroups
+import com.classday.app.core.newId
+import com.classday.app.platform.ClassdayStore
+import java.time.LocalDate
+import java.time.ZoneId
+
+sealed class Screen {
+    data object Today : Screen()
+    data object Week : Screen()
+    data object Countdown : Screen()
+    data object Settings : Screen()
+    data object Appearance : Screen()
+    data object Periods : Screen()
+    data object SemesterEdit : Screen()
+    data object Holidays : Screen()
+    data object Reminders : Screen()
+    data object DataPage : Screen()
+    data object RoomLocations : Screen()
+    data object About : Screen()
+    data object StudyGrades : Screen()
+    data class GradePrediction(val courseId: String) : Screen()
+    data object ImportReview : Screen()
+    data object Merge : Screen()
+    data class Detail(val courseId: String, val meetingId: String?, val week: Int) : Screen()
+    data class Editor(val courseId: String?) : Screen()
+}
+
+class ClassdayModel(app: Application) : AndroidViewModel(app) {
+    private val initialLoad = ClassdayStore.loadWithStatus(app)
+    private var lastSavedDocument = initialLoad.document
+    var document by mutableStateOf(initialLoad.document)
+        private set
+    var banner by mutableStateOf(initialLoad.error)
+    var loadError by mutableStateOf(initialLoad.error)
+        private set
+    private var weekNavigator by mutableStateOf(com.classday.app.core.WeekNavigator())
+    val weekShift: Int
+        get() = weekNavigator.synced(LocalDate.now(calendar.zone), document.semester).shift
+    var screen by mutableStateOf<Screen>(Screen.Today)
+    var detailSheet by mutableStateOf<Screen.Detail?>(null)
+    var reminderDraft by mutableStateOf<Int?>(null)
+    var semesterDraft by mutableStateOf<Semester?>(null)
+    var importDrafts by mutableStateOf<List<CourseDraft>>(emptyList())
+    var importNote by mutableStateOf("")
+
+    init {
+        // 2.9.8：打开应用就把同名且安排可并存的课程合成一门，不再要求先确认。
+        val autoMerged = com.classday.app.core.autoMergeDuplicateCourses(document)
+        if (autoMerged.mergedGroups > 0) {
+            document = autoMerged.document
+            if (loadError == null) banner = "已自动合并 ${autoMerged.mergedGroups} 组同名课程"
+            persist(markUser = false)
+        }
+    }
+
+    private val history = ArrayDeque<Screen>()
+    private var undoDocument: StoreDocument? = null
+    val calendar: CivilCalendar
+        get() = CivilCalendar(ZoneId.systemDefault())
+
+    val theme get() = ClassdayThemes.theme(document.appearance.themeID)
+    val tier: PerformanceTier
+        get() {
+            val power = (getApplication<Application>().getSystemService(android.os.PowerManager::class.java))?.isPowerSaveMode == true
+            val scale = android.provider.Settings.Global.getFloat(getApplication<Application>().contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
+            return ClassdayThemes.effectiveTier(document.appearance.performance, power, scale == 0f)
+        }
+
+    fun weekIndex(): Int {
+        val cal = calendar
+        val today = LocalDate.now(cal.zone)
+        return weekNavigator.currentWeek(today, document.semester, cal)
+    }
+
+    fun open(next: Screen) {
+        if (next is Screen.Detail) {
+            detailSheet = next
+            return
+        }
+        detailSheet = null
+        history.addLast(screen)
+        screen = next
+    }
+
+    fun dismissDetailSheet() {
+        detailSheet = null
+    }
+
+    fun canGoBack(): Boolean = detailSheet != null || history.isNotEmpty()
+
+    fun back() {
+        if (detailSheet != null) {
+            detailSheet = null
+            return
+        }
+        screen = if (history.isEmpty()) Screen.Today else history.removeLast()
+    }
+
+    fun goHome(tab: Screen) {
+        detailSheet = null
+        history.clear()
+        if (tab == Screen.Week && screen != Screen.Week) {
+            backToThisWeek()
+        }
+        screen = tab
+    }
+
+    /** 某门课下一次上课（往后找最多 4 周）；列表右侧显示「下一次」。 */
+    fun nextOccurrenceFor(courseId: String): Occurrence? {
+        val now = java.time.Instant.now()
+        val startWeek = weekIndex()
+        val total = document.semester.totalWeeks
+        val only = document.courses.filter { it.id == courseId }
+        if (only.isEmpty()) return null
+        for (offset in 0..3) {
+            val week = startWeek + offset
+            if (week > total) break
+            val found = ScheduleEngine.occurrences(week, only, document.semester, calendar, document.scheduleContext)
+                .filter { it.startEpochMillis > now.toEpochMilli() }
+                .minByOrNull { it.startEpochMillis }
+            if (found != null) return found
+        }
+        return null
+    }
+    fun occurrences(): List<Occurrence> =
+        ScheduleEngine.occurrences(weekIndex(), document.courses, document.semester, calendar, document.scheduleContext)
+
+    fun cycleTheme() {
+        val next = ClassdayThemes.cycle(document.appearance.themeID)
+        document = document.copy(appearance = document.appearance.copy(themeID = next))
+        haptic(ClassdayThemes.theme(next).haptic)
+        persist(markUser = false)
+        banner = ClassdayThemes.theme(next).name
+    }
+
+    fun setTheme(id: String) {
+        document = document.copy(appearance = document.appearance.copy(themeID = ClassdayThemes.theme(id).id))
+        haptic(theme.haptic)
+        persist(markUser = false)
+    }
+
+    fun setTier(tier: PerformanceTier) {
+        document = document.copy(appearance = document.appearance.copy(performance = tier))
+        persist(markUser = false)
+    }
+
+    fun shiftWeek(delta: Int) {
+        val cal = calendar
+        val today = LocalDate.now(cal.zone)
+        weekNavigator = weekNavigator.shifted(delta, today, document.semester, cal)
+    }
+
+    fun backToThisWeek() {
+        val cal = calendar
+        val today = LocalDate.now(cal.zone)
+        weekNavigator = weekNavigator.reset(today, document.semester)
+    }
+
+    fun cancelThisWeek(item: Occurrence) {
+        document = TimetableLibrary.overriding(document, OccurrenceOverride(courseID = item.courseID, meetingID = item.meetingID, week = item.weekIndex, kind = OverrideKind.cancelled))
+        banner = "已取消本周这一节，其他周不变"
+        persist(markUser = true)
+    }
+
+    fun delayThisWeek(item: Occurrence, minutes: Int = 10) {
+        document = TimetableLibrary.overriding(document, OccurrenceOverride(courseID = item.courseID, meetingID = item.meetingID, week = item.weekIndex, kind = OverrideKind.delayed, delayMinutes = minutes))
+        banner = "本周这一节推迟 $minutes 分钟"
+        persist(markUser = true)
+    }
+
+    fun moveThisWeek(item: Occurrence, weekday: Int, startPeriod: Int) {
+        val duration = item.endPeriod - item.startPeriod + 1
+        val end = startPeriod + duration - 1
+        val max = document.semester.periods.maxOfOrNull { it.index } ?: 0
+        if (weekday !in 1..7 || startPeriod < 1 || end > max) {
+            haptic("reject")
+            banner = "调出范围了"
+            return
+        }
+        document = TimetableLibrary.overriding(
+            document,
+            OccurrenceOverride(courseID = item.courseID, meetingID = item.meetingID, week = item.weekIndex, kind = OverrideKind.moved, weekday = weekday, startPeriod = startPeriod, endPeriod = end),
+        )
+        banner = "只改了本周这一节"
+        persist(markUser = true)
+    }
+
+    fun clearThisWeek(item: Occurrence) {
+        document = TimetableLibrary.clearingOverride(document, item.courseID, item.meetingID, item.weekIndex)
+        banner = "本周改动已撤销"
+        persist(markUser = true)
+    }
+
+    fun setParity(meetingId: String, parity: WeekParity) {
+        document = TimetableLibrary.settingParity(document, meetingId, parity)
+        persist(markUser = true)
+    }
+
+    fun moveMeeting(courseId: String, meetingId: String, weekday: Int, startPeriod: Int) {
+        when (val result = ScheduleEngine.validateMove(courseId, meetingId, weekday, startPeriod, document.courses, document.semester, document.scheduleContext)) {
+            is com.classday.app.core.MoveValidation.Unchanged -> Unit
+            is com.classday.app.core.MoveValidation.Ok -> {
+                undoDocument = document
+                document = document.copy(courses = result.courses, origin = DataOrigin.user)
+                haptic(theme.haptic)
+                banner = "已调整时间，可撤销"
+                persist(markUser = true)
+            }
+            is com.classday.app.core.MoveValidation.Conflict -> {
+                haptic("reject")
+                banner = "和${result.conflicts.firstOrNull()?.otherCourseName ?: "其他课"}冲突，没有放下"
+            }
+            com.classday.app.core.MoveValidation.OutOfBounds -> {
+                haptic("reject")
+                banner = "放不下"
+            }
+            com.classday.app.core.MoveValidation.Missing -> banner = "找不到这节课"
+        }
+    }
+
+    fun undo() {
+        val previous = undoDocument ?: return
+        document = previous
+        undoDocument = null
+        banner = "已撤销"
+        persist(markUser = true)
+    }
+
+    /** 保存某间教室的地图搜索词（RoomPin.query），之后导航直接用它。 */
+    fun bindRoomQuery(location: String, query: String) {
+        val name = location.trim()
+        val value = query.trim()
+        if (name.isEmpty() || value.isEmpty()) return
+        val rooms = document.rooms.toMutableList()
+        val index = rooms.indexOfFirst { it.name.equals(name, ignoreCase = true) }
+        val pin = com.classday.app.core.RoomPin(
+            id = if (index >= 0) rooms[index].id else com.classday.app.core.newId(),
+            name = name,
+            latitude = if (index >= 0) rooms[index].latitude else null,
+            longitude = if (index >= 0) rooms[index].longitude else null,
+            query = value,
+        )
+        if (index >= 0) rooms[index] = pin else rooms += pin
+        document = document.copy(rooms = rooms)
+        persist(markUser = true)
+        banner = "已保存「$name」的地图关键词"
+    }
+    fun saveCourse(course: Course) {
+        val cleaned = course.normalized().copy(name = course.name.trim())
+        if (cleaned.name.isEmpty() || cleaned.meetings.isEmpty() || cleaned.weeks.isEmpty()) {
+            banner = "名称、周次和上课时间都要有"
+            haptic("reject")
+            return
+        }
+        val others = document.courses.filter { !it.id.equals(cleaned.id, ignoreCase = true) }
+        document = document.copy(courses = others + cleaned, origin = DataOrigin.user)
+        banner = "已保存"
+        haptic(theme.haptic)
+        persist(markUser = true)
+        back()
+    }
+
+    /** 当前课表里还有没有案例/演示课程。 */
+    fun hasDemoCourses(): Boolean = document.courses.any { DemoData.isDemoCourse(it.id) }
+
+    /** 一键删掉案例课程，只留下自己导入/新建的课。 */
+    fun removeDemoCourses() {
+        val kept = document.courses.filterNot { DemoData.isDemoCourse(it.id) }
+        if (kept.size == document.courses.size) { banner = "没有案例课程"; return }
+        val removed = document.courses.size - kept.size
+        document = document.copy(courses = kept, origin = DataOrigin.user)
+        banner = "已删除 $removed 门案例课程"
+        haptic(theme.haptic)
+        persist(markUser = true)
+    }
+    fun deleteCourse(id: String) {
+        document = document.copy(courses = document.courses.filter { !it.id.equals(id, ignoreCase = true) }, origin = DataOrigin.user)
+        detailSheet = null
+        banner = "已删除"
+        persist(markUser = true)
+        if (screen is Screen.Detail || screen is Screen.Editor) back()
+    }
+
+    fun saveSemester(semester: Semester) {
+        val report = StoreCodec.validate(document.copy(semester = semester), calendar)
+        if (!report.isAcceptable) {
+            banner = report.errors.firstOrNull() ?: "学期无效"
+            return
+        }
+        document = document.copy(semester = semester, origin = DataOrigin.user)
+        semesterDraft = semester
+        backToThisWeek()
+        banner = "学期已保存"
+        persist(markUser = true)
+    }
+
+    fun ensureReminderDraft() {
+        if (reminderDraft == null) reminderDraft = document.semester.defaultReminderMinutes
+    }
+
+    fun saveReminderDraft() {
+        val minutes = reminderDraft ?: return
+        if (minutes !in 0..180) {
+            banner = "提醒分钟数要在 0 到 180"
+            return
+        }
+        document = document.copy(semester = document.semester.copy(defaultReminderMinutes = minutes), origin = DataOrigin.user)
+        banner = "提醒已保存"
+        persist(markUser = true)
+    }
+
+    fun saveExam(existing: ExamEvent?, name: String, start: String, end: String, location: String): Boolean {
+        if (existing != null && document.exams.none { it.id == existing.id }) { banner = "考试已不存在，请返回重试"; return false }
+        val saved = com.classday.app.core.StudyEntryEditor.exam(existing?.let { source -> document.exams.first { it.id == source.id } }, name, start, end, location, calendar)
+        if (saved == null) { banner = "考试未保存：填写课程名和有效起止时间，结束需晚于开始"; return false }
+        document = document.copy(exams = if (existing == null) document.exams + saved else document.exams.map { if (it.id == saved.id) saved else it })
+        persist(markUser = true)
+        return document.exams.any { it == saved }
+    }
+
+    fun saveHomework(existing: HomeworkTask?, course: String, title: String, due: String): Boolean {
+        if (existing != null && document.homework.none { it.id == existing.id }) { banner = "作业已不存在，请返回重试"; return false }
+        val saved = com.classday.app.core.StudyEntryEditor.homework(existing?.let { source -> document.homework.first { it.id == source.id } }, course, title, due, calendar)
+        if (saved == null) { banner = "作业未保存：填写标题和有效截止时间（如 2026-12-01T18:00）"; return false }
+        document = document.copy(homework = if (existing == null) document.homework + saved else document.homework.map { if (it.id == saved.id) saved else it })
+        persist(markUser = true)
+        return document.homework.any { it == saved }
+    }
+
+    fun deleteHomework(id: String) {
+        document = document.copy(homework = document.homework.filter { it.id != id })
+        persist(markUser = true)
+    }
+
+    fun toggleHomework(id: String) {
+        document = document.copy(homework = document.homework.map { if (it.id == id) it.copy(done = !it.done) else it })
+        persist(markUser = true)
+    }
+
+    fun deleteExam(id: String) {
+        document = document.copy(exams = document.exams.filter { it.id != id })
+        persist(markUser = true)
+    }
+
+    fun savePersonalEvent(title: String, note: String, startISO: String, endISO: String): Boolean {
+        val cleanTitle = title.trim()
+        val s = CivilStamp.instant(startISO.trim(), calendar)
+        val e = CivilStamp.instant(endISO.trim(), calendar)
+        if (cleanTitle.isEmpty() || s == null || e == null || !e.isAfter(s)) {
+            banner = "日程未保存：请填写标题与有效起止时间，结束需晚于开始"
+            return false
+        }
+        val event = com.classday.app.core.PersonalEvent(
+            id = newId(),
+            title = cleanTitle,
+            note = note.trim(),
+            startISO = CivilStamp.string(s, calendar),
+            endISO = CivilStamp.string(e, calendar),
+        )
+        document = document.copy(personalEvents = document.personalEvents + event, origin = DataOrigin.user)
+        banner = "已添加日程"
+        persist(markUser = true)
+        return true
+    }
+
+    fun deletePersonalEvent(id: String) {
+        document = document.copy(personalEvents = document.personalEvents.filter { it.id != id }, origin = DataOrigin.user)
+        persist(markUser = true)
+    }
+
+    fun cycleCourseReminder(courseId: String) {
+        val course = document.courses.firstOrNull { it.id.equals(courseId, ignoreCase = true) } ?: return
+        // null 表示沿用学期默认，0 表示这门课已关闭提醒，两者不能混为一谈。
+        val nextLead = CourseReminder.nextLead(course.reminderLeadMinutes, document.semester.defaultReminderMinutes)
+        document = document.copy(
+            courses = document.courses.map {
+                if (it.id.equals(courseId, ignoreCase = true)) it.copy(reminderLeadMinutes = nextLead) else it
+            },
+            origin = DataOrigin.user,
+        )
+        banner = if (nextLead == 0) "已关闭这门课的课前提醒" else "这门课已设为提前 $nextLead 分钟提醒"
+        persist(markUser = true)
+    }
+
+    fun importDocument(raw: String, replace: Boolean) {
+        val outcome = StoreCodec.importing(raw, calendar)
+        val imported = outcome.document
+        if (imported == null) {
+            banner = outcome.errors.firstOrNull() ?: "无法解析"
+            return
+        }
+        document = if (replace) imported.copy(origin = DataOrigin.user) else document.copy(
+            courses = document.courses + imported.courses,
+            exams = document.exams + imported.exams,
+            homework = document.homework + imported.homework,
+            weekRules = document.weekRules + imported.weekRules,
+            origin = DataOrigin.user,
+        )
+        backToThisWeek()
+        banner = if (outcome.warnings.isEmpty()) "已导入" else outcome.warnings.first()
+        val autoMerged = autoMergeAfterImport()
+        if (autoMerged > 0) banner = "$banner；已自动合并 $autoMerged 组同名课程"
+        persist(markUser = true)
+    }
+
+    fun importShare(raw: String) {
+        val token = ShareCodec.tokenFromUrl(raw) ?: raw.trim()
+        val payload = ShareCodec.decode(token)
+        if (payload == null) {
+            banner = "这份分享读不出来"
+            return
+        }
+        document = document.copy(
+            semester = payload.semester,
+            courses = payload.courses,
+            weekRules = payload.weekRules,
+            overrides = payload.overrides,
+            exams = payload.exams,
+            homework = payload.homework,
+            origin = DataOrigin.user,
+        )
+        val autoMerged = autoMergeAfterImport()
+        backToThisWeek()
+        banner = if (autoMerged > 0) "已导入分享的课表，自动合并 $autoMerged 组同名课程" else "已导入分享的课表"
+        persist(markUser = true)
+    }
+
+    fun importCalendar(courses: List<Course>, exams: List<com.classday.app.core.ExamEvent>, homework: List<HomeworkTask>, subscribe: String? = null) {
+        document = document.copy(
+            courses = document.courses + courses,
+            exams = document.exams + exams,
+            homework = document.homework + homework,
+            subscribedICSURL = subscribe ?: document.subscribedICSURL,
+            origin = DataOrigin.user,
+        )
+        banner = "导入 ${courses.size} 门课、${exams.size} 场考试、${homework.size} 项作业"
+        val autoMerged = autoMergeAfterImport()
+        if (autoMerged > 0) banner = "$banner；已自动合并 $autoMerged 组同名课程"
+        else if (mergeableGroups().isNotEmpty()) banner = "导入后有 ${mergeableGroups().size} 组同名课程安排冲突，需手动合并"
+        persist(markUser = true)
+    }
+
+    fun saveGradeScores(courseId: String, entries: Map<String, String>) {
+        val course = document.courses.firstOrNull { it.id == courseId } ?: return
+        val updated = com.classday.app.core.GradeScoreEditor.applying(course, entries)
+        if (updated == null) {
+            banner = "成绩未保存：分数需在满分范围内；每条算法的权重需非负、合计为 1，并引用已有分项"
+            return
+        }
+        undoDocument = document
+        document = document.copy(courses = document.courses.map { if (it.id == courseId) updated else it })
+        banner = "分项成绩已保存，可撤销"
+        persist(markUser = true)
+    }
+
+    fun stageDrafts(text: String, csv: Boolean = false, mail: Boolean = false) {
+        val parsed = when {
+            mail -> ScheduleTextImporter.parseMail(text)
+            csv -> ScheduleTextImporter.parseCsv(text)
+            else -> ScheduleTextImporter.parseText(text)
+        }
+        stageDraftImport(parsed)
+    }
+
+    fun stageDraftImport(parsed: com.classday.app.core.DraftImport) {
+        val checked = ScheduleTextImporter.validateDrafts(parsed.drafts, document.semester)
+        importDrafts = checked.drafts
+        importNote = if (importDrafts.isEmpty()) "没有可导入的课程" else "认出 ${importDrafts.size} 门，确认后才写入"
+        if (parsed.unparsed.isNotEmpty()) importNote += "；${parsed.unparsed.size} 行未识别，请检查源文件"
+        if (checked.notes.isNotEmpty()) importNote += "；" + checked.notes.joinToString("；")
+        if (checked.unparsed.isNotEmpty()) importNote += "；已跳过 ${checked.unparsed.size} 项无法匹配当前学期作息或节次的安排：" + checked.unparsed.joinToString("；")
+        if (importDrafts.isNotEmpty()) open(Screen.ImportReview)
+        else banner = importNote
+    }
+
+    /** 识别/导入预览里逐条编辑：改名、改周次、改教室、改星期与节次。 */
+    fun editDraft(index: Int, transform: (CourseDraft) -> CourseDraft) {
+        if (index !in importDrafts.indices) return
+        val next = importDrafts.toMutableList()
+        next[index] = transform(next[index])
+        importDrafts = next
+    }
+
+    /** 预览里删掉一条识别错的课程。 */
+    fun removeDraft(index: Int) {
+        if (index !in importDrafts.indices) return
+        val next = importDrafts.toMutableList()
+        next.removeAt(index)
+        importDrafts = next
+        importNote = if (importDrafts.isEmpty()) "没有可导入的课程" else "认出 ${importDrafts.size} 门，确认后才写入"
+    }
+
+    fun confirmDrafts() {
+    val (courses, parities) = ScheduleTextImporter.toCourses(importDrafts, document.semester)
+        if (courses.isEmpty()) {
+            banner = "没有可导入的课程，请检查当前学期的节次设置"
+            return
+        }
+        document = document.copy(courses = document.courses + courses, origin = DataOrigin.user)
+        parities.forEach { (meeting, parity) -> document = TimetableLibrary.settingParity(document, meeting, parity) }
+        importDrafts = emptyList()
+        banner = "已添加 ${courses.size} 门课"
+        persist(markUser = true)
+        back()
+    }
+
+    fun duplicates(): List<DuplicateGroup> = findDuplicateGroups(document.courses)
+    fun mergeableGroups(): List<DuplicateGroup> = com.classday.app.core.mergeableScheduleGroups(document)
+
+    fun merge(group: DuplicateGroup, gradeSource: String?) {
+        if (group.courses.size < 2) return
+        if (!com.classday.app.core.canMergeCourseSchedules(group.courses, document)) {
+            banner = "周次、教室或同一时段单双周不同，已保持独立课程"
+            return
+        }
+        val backup = TimetableLibrary.storingCurrent(document, document.semester.shortName.ifBlank { "合并前" })
+        val merged = applyMerge(backup, group, gradeSource)
+        if (merged == null) {
+            banner = "这几门课的成绩不一样，先选一个保留"
+            return
+        }
+        document = merged.copy(origin = DataOrigin.user)
+        banner = "已合并，合并前的课表留在课表库"
+        persist(markUser = true)
+    }
+
+    fun storeLibrary(name: String) {
+        document = TimetableLibrary.storingCurrent(document, name)
+        banner = "已存入课表库"
+        persist(markUser = true)
+    }
+
+    fun switchLibrary(id: String) {
+        val next = TimetableLibrary.switching(document, id)
+        if (next == null) {
+            banner = "找不到这套课表"
+            return
+        }
+        document = next
+        backToThisWeek()
+        banner = "已切换到 ${document.semester.shortName}"
+        persist(markUser = true)
+    }
+
+    fun clearAll() {
+        document = document.copy(courses = emptyList(), exams = emptyList(), homework = emptyList(), weekRules = emptyList(), overrides = emptyList(), origin = DataOrigin.user)
+        backToThisWeek()
+        banner = "课程已清空"
+        persist(markUser = true)
+    }
+
+    fun exportJson(): String = StoreCodec.exporting(document)
+
+    fun blankCourse(): Course = Course(
+        id = newId(),
+        name = "",
+        teacher = "",
+        location = "",
+        colorID = "blue",
+        weeks = (1..document.semester.totalWeeks).toList(),
+        meetings = listOf(Meeting(newId(), 1, 1, 2)),
+    )
+
+    fun haptic(kind: String) {
+        if (tier == PerformanceTier.saver && kind != "reject") return
+        val context = getApplication<Application>()
+        val vibrator = if (Build.VERSION.SDK_INT >= 31) {
+            context.getSystemService(VibratorManager::class.java)?.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+        } ?: return
+        val effect = effectFor(kind)
+        vibrator.vibrate(effect)
+    }
+
+    /** 2.9.8：导入之后立刻自动合并同名课程，返回这次合并的组数。 */
+    private fun autoMergeAfterImport(): Int {
+        val outcome = com.classday.app.core.autoMergeDuplicateCourses(document)
+        if (outcome.mergedGroups > 0) document = outcome.document
+        return outcome.mergedGroups
+    }
+
+    private fun persist(markUser: Boolean) {
+        if (markUser && document.origin == DataOrigin.demo) {
+            document = document.copy(origin = DataOrigin.user)
+        }
+        try {
+            ClassdayStore.save(getApplication(), document)
+            lastSavedDocument = document
+            loadError = null
+        } catch (error: Exception) {
+            document = lastSavedDocument
+            banner = error.message ?: "未能保存课表，已恢复到上次保存的内容"
+            return
+        }
+        ClassAlerts.refreshAsync(getApplication(), document)
+        com.classday.app.platform.ClassroomDnd.refreshAsync(getApplication())
+    }
+}
+
+private fun effectFor(kind: String): VibrationEffect {
+    val waveform = when (kind) {
+        "electric" -> longArrayOf(0, 14, 18, 22, 16, 36) to intArrayOf(0, 255, 0, 180, 0, 255)
+        "soft" -> longArrayOf(0, 24) to intArrayOf(0, 60)
+        "tick" -> longArrayOf(0, 12) to intArrayOf(0, 140)
+        "particle" -> longArrayOf(0, 10, 16, 10, 16, 18) to intArrayOf(0, 80, 0, 120, 0, 180)
+        "metal" -> longArrayOf(0, 28, 20, 40) to intArrayOf(0, 255, 0, 220)
+        "glide" -> longArrayOf(0, 18, 30, 22) to intArrayOf(0, 70, 120, 90)
+        "glass" -> longArrayOf(0, 16, 12, 28) to intArrayOf(0, 200, 0, 255)
+        "reject" -> longArrayOf(0, 20, 30, 20) to intArrayOf(0, 180, 0, 180)
+        else -> longArrayOf(0, 18) to intArrayOf(0, 160)
+    }
+    return if (Build.VERSION.SDK_INT >= 26) {
+        VibrationEffect.createWaveform(waveform.first, waveform.second, -1)
+    } else {
+        @Suppress("DEPRECATION")
+        VibrationEffect.createOneShot(20, VibrationEffect.DEFAULT_AMPLITUDE)
+    }
+}
+
+fun tiltOffset(x: Float, y: Float, enabled: Boolean): Offset =
+    if (!enabled) Offset.Zero else Offset(x.coerceIn(-16f, 16f), y.coerceIn(-16f, 16f))
