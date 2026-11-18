@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">课曜</string>
+    <string name="widget_next">下一节</string>
+    <string name="widget_today">今日课程</string>
+    <string name="widget_week">本周课表</string>
+    <string name="widget_next_desc">显示即将开始的课程、地点和倒计时。</string>
+    <string name="widget_today_desc">在一张卡片里查看今天的课程。</string>
+    <string name="widget_week_desc">用静态皮肤看这一周，并可以标记已到教室或推迟 10 分钟。</string>
+    <string name="tile_next">下一节</string>
+    <string name="shortcut_today">今日课表</string>
+    <string name="shortcut_update">检查更新</string>
+</resources>

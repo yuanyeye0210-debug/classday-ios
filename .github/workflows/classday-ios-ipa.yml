@@ -1,0 +1,204 @@
+name: classday-ios-ipa
+
+# Push trigger: a workflow that exists only on this branch is not eligible for
+# workflow_dispatch until it is on the default branch. Push to the branch runs it.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - cursor/shared-app-group-92bb
+      - cursor/classday-2-themes-92bb
+      - main
+      - 'autoloop/**'
+      - ios-build
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  unsigned-iphoneos-ipa:
+    runs-on: macos-13
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode version
+        run: |
+          sw_vers
+          xcodebuild -version
+          xcodebuild -showsdks
+
+      - name: Package tests
+        continue-on-error: true
+        run: |
+          cd Classday/ClassdayCore
+          swift test
+
+      - name: Build unsigned iphoneos app and widget
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project Classday/Classday.xcodeproj \
+            -scheme Classday \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO \
+            ONLY_ACTIVE_ARCH=NO \
+            ARCHS=arm64 \
+            build | tee "$RUNNER_TEMP/xcodebuild-iphoneos.log"
+            STATUS=${PIPESTATUS[0]}
+            if [ "$STATUS" -ne 0 ]; then
+              echo "================ 编译错误摘要 ================"
+              grep -n ": error:" "$RUNNER_TEMP/xcodebuild-iphoneos.log" | head -n 25 || true
+              echo "============================================="
+              exit "$STATUS"
+            fi
+
+      - name: Package unsigned IPA
+        run: |
+          set -euo pipefail
+          APP="$(find "$RUNNER_TEMP/DerivedData/Build/Products" -type d -name 'Classday.app' -path '*iphoneos*' | head -n 1)"
+          test -n "$APP"
+          test -d "$APP/PlugIns/ClassdayWidget.appex"
+          # The Mach-O stays unsigned. Resign tools that look for this Xcode filename
+          # still see the App Group the entitlements declare.
+          cp Classday/Config/Classday.entitlements "$APP/archived-expanded-entitlements.xcent"
+          cp Classday/Config/ClassdayWidget.entitlements "$APP/PlugIns/ClassdayWidget.appex/archived-expanded-entitlements.xcent"
+          VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist")"
+          mkdir -p dist/Payload
+          cp -R "$APP" dist/Payload/Classday.app
+          # SideStore registration rejects non-ASCII appIdName: ship an ASCII base
+          # display name and carry the Chinese name via zh-Hans localization.
+          python3 - <<'PYEOF'
+          import plistlib, os
+          app = "dist/Payload/Classday.app"
+          for sub, name in [("", "Classday"), ("PlugIns/ClassdayWidget.appex", "Classday Widget")]:
+              info = os.path.join(app, sub, "Info.plist")
+              d = plistlib.load(open(info, "rb"))
+              d["CFBundleDisplayName"] = name
+              plistlib.dump(d, open(info, "wb"), fmt=plistlib.FMT_BINARY)
+              loc = os.path.join(app, sub, "zh-Hans.lproj")
+              os.makedirs(loc, exist_ok=True)
+              with open(os.path.join(loc, "InfoPlist.strings"), "w", encoding="utf-8") as f:
+                  f.write('"CFBundleDisplayName" = "\u8bfe\u66dc";\n"CFBundleName" = "\u8bfe\u66dc";\n')
+          print("patched display names for SideStore")
+          PYEOF
+          (cd dist && zip -r -y "Classday-v${VERSION}.ipa" Payload)
+          bash Classday/Tools/verify-device-ipa.sh "dist/Classday-v${VERSION}.ipa" | tee dist/verify.txt
+          shasum -a 256 "dist/Classday-v${VERSION}.ipa" | tee dist/SHA256SUMS
+          cp "$RUNNER_TEMP/xcodebuild-iphoneos.log" dist/xcodebuild-iphoneos.log
+
+      - name: Simulator compile smoke
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project Classday/Classday.xcodeproj \
+            -scheme Classday \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedDataSim" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build | tee dist/xcodebuild-simulator.log
+
+      - name: Theme screenshots
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          mkdir -p dist/screenshots
+          APP="$(find "$RUNNER_TEMP/DerivedDataSim/Build/Products" -type d -name 'Classday.app' -path '*iphonesimulator*' | head -n 1)"
+          test -n "$APP"
+          xcrun simctl list devices available | head -n 40 || true
+          RUNTIME="$(xcrun simctl list runtimes available | grep -oE 'com.apple.CoreSimulator.SimRuntime.iOS-[0-9-]+' | tail -n 1 || true)"
+          if [ -n "$RUNTIME" ]; then xcrun simctl create "iPhone 15 Pro" "com.apple.CoreSimulator.SimDeviceType.iPhone-15-Pro" "$RUNTIME" > /dev/null 2>&1 || true; fi
+          DEVICE="$(xcrun simctl list devices available | grep 'iPhone 15 Pro (' | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}' | head -n 1 || true)"
+          if [ -z "$DEVICE" ]; then DEVICE="$(xcrun simctl list devices available | grep 'iPhone' | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}' | head -n 1 || true)"; fi
+          test -n "$DEVICE"
+          xcrun simctl boot "$DEVICE" || true
+          xcrun simctl bootstatus "$DEVICE" -b
+          xcrun simctl install "$DEVICE" "$APP"
+          for theme in neon glass hud aurora mech orbit cube; do
+            xcrun simctl terminate "$DEVICE" com.classday.app || true
+            xcrun simctl launch "$DEVICE" com.classday.app --theme "$theme"
+            sleep 4
+            xcrun simctl io "$DEVICE" screenshot "dist/screenshots/${theme}.png"
+          done
+          xcrun simctl terminate "$DEVICE" com.classday.app || true
+          xcrun simctl launch "$DEVICE" com.classday.app --theme glass --detail
+          sleep 4
+          xcrun simctl io "$DEVICE" screenshot "dist/screenshots/detail-glass.png"
+          xcrun simctl terminate "$DEVICE" com.classday.app || true
+          xcrun simctl launch "$DEVICE" com.classday.app --theme glass --week
+          sleep 3
+          xcrun simctl io "$DEVICE" screenshot "dist/screenshots/week-glass.png"
+          xcrun simctl terminate "$DEVICE" com.classday.app || true
+          xcrun simctl launch "$DEVICE" com.classday.app --theme glass --courses
+          sleep 3
+          xcrun simctl io "$DEVICE" screenshot "dist/screenshots/courses-glass.png"
+          xcrun simctl terminate "$DEVICE" com.classday.app || true
+          xcrun simctl launch "$DEVICE" com.classday.app --theme glass --exams
+          sleep 3
+          xcrun simctl io "$DEVICE" screenshot "dist/screenshots/exams-glass.png"
+          xcrun simctl terminate "$DEVICE" com.classday.app || true
+          xcrun simctl launch "$DEVICE" com.classday.app --theme glass --smartimport
+          sleep 3
+          xcrun simctl io "$DEVICE" screenshot "dist/screenshots/smartimport-glass.png"
+          xcrun simctl terminate "$DEVICE" com.classday.app || true
+          xcrun simctl launch "$DEVICE" com.classday.app --theme glass --mine
+          sleep 3
+          xcrun simctl io "$DEVICE" screenshot "dist/screenshots/mine-glass.png"
+
+      - name: Publish release with IPA
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ios-latest
+          name: Classday iOS latest (unsigned)
+          body: |
+            自动构建的未签名 IPA（${{ github.sha }}）。
+          files: |
+            dist/Classday-v*.ipa
+            dist/SHA256SUMS
+          fail_on_unmatched_files: false
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Classday-unsigned-ipa
+          path: |
+            dist/Classday-v*.ipa
+            dist/verify.txt
+            dist/SHA256SUMS
+            dist/xcodebuild-iphoneos.log
+            dist/xcodebuild-simulator.log
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload theme screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Classday-theme-screenshots
+          path: dist/screenshots/*.png
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: classday-iphoneos-build-log
+          path: |
+            ${{ runner.temp }}/xcodebuild-iphoneos.log
+          if-no-files-found: ignore

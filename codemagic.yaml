@@ -1,0 +1,188 @@
+# Codemagic CI for Classday (iOS). Port of .github/workflows/classday-ios-ipa.yml.
+# Produces an UNSIGNED device IPA (app + ClassdayWidget.appex) for re-signing
+# with Sideloadly/SideStore. No Apple certificates or profiles are used.
+workflows:
+  classday-ios-unsigned:
+    name: Classday unsigned IPA
+    instance_type: mac_mini_m2
+    max_build_duration: 30
+    environment:
+      xcode: latest
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+        # 2.9.7：本地工作流长期停在 autoloop/improvements，构建也从这条分支起，
+        # 免得为了打一次 IPA 硬推 main。
+        - pattern: autoloop/improvements
+          include: true
+      cancel_previous_builds: true
+    scripts:
+      - name: Xcode version
+        script: |
+          sw_vers
+          xcodebuild -version
+          xcodebuild -showsdks
+      # 测试失败不阻断出包（日志里完整保留错误），避免个别测试编译问题挡住 IPA。
+      - name: Package tests
+        script: |
+          cd Classday/ClassdayCore
+          if swift test; then
+            echo "✓ swift test 全部通过"
+          else
+            echo "⚠︎ swift test 未通过（构建继续，错误见本步骤输出）"
+          fi
+      - name: Install Metal toolchain
+        script: |
+          set -euo pipefail
+          xcodebuild -downloadComponent MetalToolchain || echo "Metal toolchain download skipped"
+      - name: Build unsigned iphoneos app and widget
+        script: |
+          set -o pipefail
+          mkdir -p "$CM_BUILD_DIR/cm-tmp"
+          xcodebuild \
+            -project Classday/Classday.xcodeproj \
+            -scheme Classday \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$CM_BUILD_DIR/cm-tmp/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO \
+            ONLY_ACTIVE_ARCH=NO \
+            ARCHS=arm64 \
+            build | tee "$CM_BUILD_DIR/cm-tmp/xcodebuild-iphoneos.log"
+          STATUS=${PIPESTATUS[0]}
+          if [ "$STATUS" -ne 0 ]; then
+            echo "================ 编译错误摘要 ================"
+            grep -n ": error:" "$CM_BUILD_DIR/cm-tmp/xcodebuild-iphoneos.log" | head -n 25 || true
+            echo "============================================="
+            exit "$STATUS"
+          fi
+      - name: Package unsigned IPA
+        script: |
+          set -euo pipefail
+          APP="$(find "$CM_BUILD_DIR/cm-tmp/DerivedData/Build/Products" -type d -name 'Classday.app' -path '*iphoneos*' | head -n 1)"
+          test -n "$APP"
+          test -d "$APP/PlugIns/ClassdayWidget.appex"
+          # The Mach-O stays unsigned. Resign tools that look for this Xcode filename
+          # still see the App Group the entitlements declare.
+          cp Classday/Config/Classday.entitlements "$APP/archived-expanded-entitlements.xcent"
+          cp Classday/Config/ClassdayWidget.entitlements "$APP/PlugIns/ClassdayWidget.appex/archived-expanded-entitlements.xcent"
+          VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist")"
+          rm -rf dist
+          mkdir -p dist/Payload
+          cp -R "$APP" dist/Payload/Classday.app
+          # SideStore registration rejects non-ASCII appIdName: ship an ASCII base
+          # display name and carry the Chinese name via zh-Hans localization.
+          python3 - <<'PYEOF'
+          import plistlib, os
+          app = "dist/Payload/Classday.app"
+          for sub, name in [("", "Classday"), ("PlugIns/ClassdayWidget.appex", "Classday Widget")]:
+              info = os.path.join(app, sub, "Info.plist")
+              d = plistlib.load(open(info, "rb"))
+              d["CFBundleDisplayName"] = name
+              plistlib.dump(d, open(info, "wb"), fmt=plistlib.FMT_BINARY)
+              loc = os.path.join(app, sub, "zh-Hans.lproj")
+              os.makedirs(loc, exist_ok=True)
+              with open(os.path.join(loc, "InfoPlist.strings"), "w", encoding="utf-8") as f:
+                  f.write('"CFBundleDisplayName" = "\u8bfe\u66dc";\n"CFBundleName" = "\u8bfe\u66dc";\n')
+          print("patched display names for SideStore")
+          PYEOF
+          (cd dist && zip -r -y "Classday-v${VERSION}.ipa" Payload)
+          bash Classday/Tools/verify-device-ipa.sh "dist/Classday-v${VERSION}.ipa" | tee dist/verify.txt
+          shasum -a 256 "dist/Classday-v${VERSION}.ipa" | tee dist/SHA256SUMS
+          cp "$CM_BUILD_DIR/cm-tmp/xcodebuild-iphoneos.log" dist/xcodebuild-iphoneos.log
+    artifacts:
+      - dist/Classday-v*.ipa
+      - dist/verify.txt
+      - dist/SHA256SUMS
+      - dist/xcodebuild-iphoneos.log
+      - cm-tmp/xcodebuild-iphoneos.log
+
+  # App Preview 需要 iphonesimulator 构建出的 .app（设备版 IPA 不能用）。
+  # 用这个 workflow 出包后，在 Codemagic 的 App Preview 里 Quick launch 即可在浏览器里跑模拟器。
+  classday-ios-simulator:
+    name: Classday simulator app (App Preview)
+    instance_type: mac_mini_m2
+    max_build_duration: 30
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: sim-preview
+          include: true
+          source: true
+    environment:
+      xcode: latest
+    scripts:
+      - name: Xcode version
+        script: |
+          set -e
+          xcodebuild -version
+          xcodebuild -showsdks | sed -n '1,20p'
+          xcrun simctl list devices available | sed -n '1,20p'
+      - name: Install Metal toolchain
+        script: |
+          set -euo pipefail
+          xcodebuild -downloadComponent MetalToolchain || echo "Metal toolchain download skipped"
+      - name: Build for simulator
+        script: |
+          set -e
+          mkdir -p "$CM_BUILD_DIR/sim"
+          LOG="$CM_BUILD_DIR/xcodebuild-sim.log"
+          xcodebuild \
+            -project Classday/Classday.xcodeproj \
+            -scheme Classday \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$CM_BUILD_DIR/sim" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            ONLY_ACTIVE_ARCH=NO \
+            build > "$LOG" 2>&1 || {
+              echo "=== xcodebuild 失败，最后 120 行 ==="
+              tail -n 120 "$LOG"
+              echo "=== 项目 schemes ==="
+              xcodebuild -list -project Classday/Classday.xcodeproj || true
+              exit 1
+            }
+          tail -n 15 "$LOG"
+      - name: Package app
+        script: |
+          set -e
+          APP="$(find "$CM_BUILD_DIR/sim/Build/Products" -type d -name 'Classday.app' -path '*iphonesimulator*' | head -n 1)"
+          echo "APP=$APP"
+          test -n "$APP"
+          test -d "$APP"
+          mkdir -p dist
+          rm -rf dist/Classday.app
+          cp -R "$APP" dist/Classday.app
+          ( cd dist && zip -q -r -y Classday-simulator.zip Classday.app )
+          ls -la dist
+          du -sh dist/Classday.app
+      - name: Upload to Appetize (optional)
+        script: |
+          if [ -z "${APPTIZE_TOKEN:-}" ]; then
+            echo "未配置 APPTIZE_TOKEN，跳过上传（在 Codemagic 环境变量里加 APPTIZE_TOKEN 即可自动生成可交互预览链接）"
+            exit 0
+          fi
+          if [ ! -f dist/Classday-simulator.zip ]; then echo "没有模拟器包，跳过"; exit 0; fi
+          RESP=$(curl -sS -X POST "https://api.appetize.io/v1/apps" \
+            -H "Authorization: Bearer ${APPTIZE_TOKEN}" \
+            -F "file=@dist/Classday-simulator.zip" \
+            -F "platform=ios")
+          echo "$RESP"
+          URL=$(echo "$RESP" | sed -n 's/.*"publicURL":"\([^"]*\)".*/\1/p')
+          echo "================ Appetize 可交互预览 ================"
+          echo "https://appetize.io/app/${URL}"
+          echo "===================================================="
+    artifacts:
+      - dist/Classday-simulator.zip
+      - dist/Classday.app
+      - xcodebuild-sim.log
